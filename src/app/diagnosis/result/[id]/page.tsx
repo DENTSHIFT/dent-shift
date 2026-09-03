@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { getDiagnosisById } from "@/server/db/diagnosisRepository";
 import type { DomainScore } from "@/domain/diagnosis/types";
 import type { PatientQuestionResult } from "@/domain/competitor/types";
@@ -109,6 +110,37 @@ export default async function DiagnosisResultPage({
               </p>
             </div>
           ))}
+        </div>
+      </Section>
+
+      <Section title="この医院を管理する">
+        <div
+          style={{
+            border: "1px solid #dbeafe",
+            background: "#eff6ff",
+            borderRadius: 8,
+            padding: 16,
+          }}
+        >
+          <p style={{ fontSize: 13, color: "#1e3a8a", margin: 0 }}>
+            無料会員登録すると、過去の診断結果をダッシュボードでまとめて確認できるようになります(電話番号不要・営業電話なし)。
+          </p>
+          <Link
+            href={`/signup?clinicId=${diagnosis.clinicId}`}
+            style={{
+              display: "inline-block",
+              marginTop: 12,
+              background: "#2563eb",
+              color: "#fff",
+              padding: "10px 20px",
+              borderRadius: 999,
+              textDecoration: "none",
+              fontWeight: 600,
+              fontSize: 14,
+            }}
+          >
+            無料会員登録する
+          </Link>
         </div>
       </Section>
 

@@ -15,26 +15,49 @@ datasource db {
 }
 
 model Clinic {
-  id        String      @id @default(cuid())
-  name      String
-  url       String
-  gbpUrl    String?
+  id         String      @id @default(cuid())
+  name       String
+  url        String
+  gbpUrl     String?
   bookingUrl String?
-  createdAt DateTime    @default(now())
-  diagnoses Diagnosis[]
+  createdAt  DateTime    @default(now())
+  diagnoses  Diagnosis[]
+  contacts   Contact[]
 }
 
 model Diagnosis {
-  id               String   @id @default(cuid())
-  clinicId         String
-  clinic           Clinic   @relation(fields: [clinicId], references: [id])
-  totalPoints      Int
-  totalStatus      String
+  id                   String   @id @default(cuid())
+  clinicId             String
+  clinic               Clinic   @relation(fields: [clinicId], references: [id])
+  totalPoints          Int
+  totalStatus          String
   // 以下はJSON文字列として保存(SQLite制約。DATA_MODEL.md参照)
-  scoreBreakdownJson String
-  competitorsJson    String
-  questionResultsJson String
+  scoreBreakdownJson   String
+  competitorsJson      String
+  questionResultsJson  String
   improvementTasksJson String
-  dataDisclaimer   String
-  measuredAt       DateTime @default(now())
+  dataDisclaimer       String
+  measuredAt           DateTime @default(now())
+}
+
+// Step4: 認証・無料会員。医院側の「人」(院長・スタッフ・制作会社)。患者ではない。
+// 患者個人情報(氏名・電話番号等)はこのモデルに一切含めない(DATA_MODEL.md参照)。
+model Contact {
+  id           String    @id @default(cuid())
+  clinicId     String
+  clinic       Clinic    @relation(fields: [clinicId], references: [id])
+  email        String    @unique
+  passwordHash String
+  role         String    @default("owner") // "owner" | "staff" | "agency"
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+}
+
+// サーバー側で失効管理する不透明トークン方式のセッション(JWT等の追加依存を増やさないため)。
+model Session {
+  token     String   @id
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id])
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }

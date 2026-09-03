@@ -1,4 +1,4 @@
-# DENT SHIFT — P0 Step3: 無料診断 vertical slice
+# DENT SHIFT — P0 Step3〜4: 無料診断 vertical slice + 認証・無料会員
 
 IMPLEMENTATION_PLAN.md の Step3(無料60秒AI集患診断のvertical slice)実装。
 医院URL入力 → clinic作成 → mock providerによる分析 → 6領域スコア → 競合3院(mock) →
@@ -33,10 +33,17 @@ npm test
 
 `tests/unit/scoring.test.ts` がドメイン層のスコア集計ロジックを検証します。
 
+## Step4: 認証・無料会員
+
+`/signup`(医院名+URLで新規登録、または診断結果画面の「無料会員登録する」からclinicIdを引き継いで登録)、
+`/login`、`/dashboard`(その医院の過去診断一覧、`contact.clinicId`でスコープしたテナント分離クエリ)を追加。
+パスワードはNode標準の`crypto.scrypt`でハッシュ化(bcrypt等の追加依存なし)、セッションはJWTではなく
+DBに保存する不透明トークン+httpOnly cookie方式(`ds_session`)。電話番号は引き続き一切要求しない。
+
 ## このsliceでやっていないこと(意図的にスコープ外)
 
 - 実際のChatGPT/Gemini/GA4/Search Console/GBPへの接続(すべてmock providerのまま)
-- 認証・課金・アンバサダー等(IMPLEMENTATION_PLAN.mdのStep4以降)
+- 課金・アンバサダー・スタッフ複数人招待等(IMPLEMENTATION_PLAN.mdのStep5以降)
 - Postgresへの切り替え(開発中はSQLite。ARCHITECTURE.md参照)
 
 ## 事業ルールの実装上のポイント
