@@ -1,0 +1,83 @@
+import { NextResponse } from "next/server";
+import {
+  BillingConfigError,
+  resolveBillingConfigFromProcessEnv,
+} from "@/server/config/billingConfig";
+import { applyBillingWebhookEvent } from "@/server/db/billingRepository";
+import {
+  normalizeStripeBillingEvent,
+  StripeWebhookVerificationError,
+  verifyStripeWebhookEvent,
+} from "@/server/providers/billing/stripeWebhookProvider";
+import { prisma } from "@/server/db/prismaClient";
+import { activateTrialIfEligible } from "@/server/services/activateTrial";
+
+export const runtime = "nodejs";
+
+export async function POST(request: Request) {
+  let config;
+  try {
+    config = resolveBillingConfigFromProcessEnv();
+  } catch (error) {
+    if (error instanceof BillingConfigError) {
+      console.error("[POST /api/billing/webhook] billing configuration error");
+      return NextResponse.json({ error: "決済通知は現在無効です。" }, { status: 503 });
+    }
+    throw error;
+  }
+  if (config.provider === "disabled") {
+    return NextResponse.json({ error: "決済通知は現在無効です。" }, { status: 503 });
+  }
+
+  const signature = request.headers.get("stripe-signature");
+  if (!signature) {
+    return NextResponse.json({ error: "署名がありません。" }, { status: 400 });
+  }
+
+  // JSONへ変換する前の本文がStripeの署名検証に必要。
+  const payload = await request.text();
+  let event;
+  try {
+    event = verifyStripeWebhookEvent({
+      payload,
+      signature,
+      apiKey: config.apiKey,
+      webhookSecret: config.webhookSecret,
+    });
+  } catch (error) {
+    if (error instanceof StripeWebhookVerificationError) {
+      return NextResponse.json({ error: "署名を確認できませんでした。" }, { status: 400 });
+    }
+    throw error;
+  }
+
+  try {
+    const command = normalizeStripeBillingEvent(event);
+    const result = await applyBillingWebhookEvent(command);
+
+    // 決済方法登録完了(checkout完了)を契機に、他の3条件(SMS/メール/規約同意)が
+    // 既に揃っていればtrialを開始する(指示書4章、activateTrial.ts参照)。
+    if (result === "processed" && command.action?.kind === "checkout_completed") {
+      const clinicId = command.action.identity.clinicId;
+      if (clinicId) {
+        const contacts = await prisma.contact.findMany({ where: { clinicId } });
+        for (const contact of contacts) {
+          await activateTrialIfEligible(contact.id).catch((activationError) => {
+            console.error(
+              "[POST /api/billing/webhook] activateTrialIfEligible failed:",
+              activationError
+            );
+          });
+        }
+      }
+    }
+
+    return NextResponse.json({ received: true, result });
+  } catch (error) {
+    console.error(
+      "[POST /api/billing/webhook] processing failed:",
+      error instanceof Error ? error.name : "UnknownError"
+    );
+    return NextResponse.json({ error: "決済通知を処理できませんでした。" }, { status: 500 });
+  }
+}

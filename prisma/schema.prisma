@@ -15,14 +15,24 @@ datasource db {
 }
 
 model Clinic {
-  id         String      @id @default(cuid())
-  name       String
-  url        String
-  gbpUrl     String?
-  bookingUrl String?
-  createdAt  DateTime    @default(now())
-  diagnoses  Diagnosis[]
-  contacts   Contact[]
+  id             String          @id @default(cuid())
+  name           String
+  url            String
+  // 医院の代表連絡先。患者個人情報ではない。無料診断結果メールの送信先として保持する。
+  // 既存行との互換性を保つためnullableとし、新規診断・新規会員登録から保存する。
+  contactEmail   String?
+  // 医院の代表電話。患者個人情報ではない。既存行との互換性のためnullable。
+  contactPhone   String?
+  gbpUrl         String?
+  bookingUrl     String?
+  createdAt      DateTime        @default(now())
+  diagnoses      Diagnosis[]
+  contacts       Contact[]
+  subscriptions  Subscription[]
+  billingWebhookEvents BillingWebhookEvent[]
+  // 2026-09-05: ai_observationsをdiagnosis単位だけでなくclinic単位でも
+  // テナント分離して参照できるようにする(SECURITY.md「テナント分離の実装方針」)
+  aiObservations AiObservation[]
 }
 
 model Diagnosis {
@@ -38,10 +48,105 @@ model Diagnosis {
   improvementTasksJson String
   dataDisclaimer       String
   measuredAt           DateTime @default(now())
+  // 診断結果メールは診断保存後に送信するため、診断自体の成功と分離して状態を保持する。
+  // "pending" | "sent" | "failed" | "disabled"
+  resultEmailStatus    String   @default("pending")
+  resultEmailSentAt    DateTime?
+
+  // 2026-09-05: 無料診断結果への正式統合(医療広告AIチェック結果の永続化)。
+  // AdComplianceCheckResultを丸ごと保存する(findings[].sourceType/provisional/
+  // sourceLabel/evidence[].sourceTypeを含む。既存の4列と同じJSON文字列パターン)。
+  // 既存行への安全なマイグレーションのため空結果をデフォルト値にする。
+  adComplianceChecksJson String @default("{\"findings\":[],\"disclaimer\":\"\",\"checkedAt\":\"\"}")
+
+  // 2026-09-05: 診断行単位で「サンプル/mockデータを含むか」を機械的に判定できるようにする
+  // (docs/DATA_MODEL.md正本の diagnoses.is_sample に対応)。criterion単位のdataSource・
+  // ai_observationのdataSource・ad-compliance findingのsourceTypeのいずれかに"mock"が
+  // 1件でも含まれていればtrue(runFreeDiagnosis.tsのcomputeIsSample()で機械的に算出する。
+  // providerや呼び出し側が直接assertする値ではない)。既存行(P0はmockのみで運用してきた)
+  // に対する安全なデフォルトとしてtrueにする。
+  isSample Boolean @default(true)
+
+  // 2026-09-05: AI別・質問別の生観測結果(「どのAIに・どの質問を投げ・自院/競合が
+  // どう表示されたか」を後から説明・再現するため)。診断のJSON列に埋め込むのではなく、
+  // 独立したテーブルとして保存する(ユーザー指示)。
+  aiObservations AiObservation[]
+}
+
+// 2026-09-05: AI別・質問別の生観測結果(無料診断結果への正式統合、ユーザー指示①)。
+// 「どのAIに・どの質問を投げ・自院/競合がどう表示されたか」を後から説明・再現できることを
+// 目的とする。患者個人情報は一切含めない(質問文・医院側の観測結果のみ)。
+// 無制限な生レスポンスの保存はしない(evidenceは要約済みの文字列のみを保持する。
+// ARCHITECTURE.md/DATA_MODEL.mdのai_observationsに対応するが、SQLite制約により
+// citations/competitorsは配列をJSON文字列として保存する)。
+model AiObservation {
+  id              String   @id @default(cuid())
+  diagnosisId     String
+  diagnosis       Diagnosis @relation(fields: [diagnosisId], references: [id])
+  // diagnosisId経由でも辿れるが、clinic単位のテナント分離クエリ・監査を
+  // JOINなしで行えるようにするため直接持たせる(ユーザー指示)。
+  clinicId        String
+  clinic          Clinic    @relation(fields: [clinicId], references: [id])
+  patientQuestion String
+  provider        String // "chatgpt" | "gemini" (AiObservationResult.aiProvider)
+  model           String
+  // 2026-09-07: 実AI計測provider導入に向け、unavailable観測(provider障害等)を
+  // 「非言及(false)」や「0件」と混同せず表現できるようnullable化した(ユーザー指示)。
+  // 値が存在するのはmeasurementStatusが"measured"|"reference"の場合のみ。
+  // "unavailable"の場合は必ずnullとし、非言及として扱わない。
+  mention         Boolean?
+  // 取得不能/非言及時はnull(0扱いにしない。DATA_MODEL.md ai_observations.recommendation_rank参照)
+  rank            Int?
+  // 2026-09-07: 同上の理由でnullable化。SQL NULL=未測定/unavailable、"[]"=測定して0件、
+  // JSON配列=測定して値ありを区別する(ユーザー指示)。
+  citationsJson   String?
+  competitorsJson String?
+  // 医院の商圏・エリア情報を収集する入力がP0にはまだ存在しないため常にnull
+  region          String?
+  // このai_observationが属する診断の測定時刻(Diagnosis.measuredAtと同一値)
+  measurementAt   DateTime
+  // このai_observation自体が取得された時刻(AiObservationResult.capturedAt)
+  capturedAt      DateTime
+  evidence        String
+  // AiObservationResult.dataSource("mock"|"live")をそのまま保持する
+  sourceType      String
+  // 2026-09-07: 実AI計測provider導入の設計により追加(ユーザー承認済み設計書
+  // docs/AI_MEASUREMENT_PROVIDER_DESIGN_2026-09-07.md参照)。
+  // "measured" | "reference" | "unavailable" の3値のみを許容する(アプリ側でpure
+  // validationを設け、DB制約だけに依存しない)。
+  // phase1(nullableで追加し既存48行をbackfill)を経て、phase2としてNOT NULL化した。
+  // 新規書き込みはsrc/server/db/diagnosisRepository.tsの
+  // resolveMeasurementStatusForNewObservation()が必ずmeasurementStatusを決定するか、
+  // (dataSource="live"のlegacy観測の場合)LegacyLiveAiObservationErrorをthrowして
+  // 保存自体を拒否するため、null書き込み経路は存在しない。
+  // 恒久的な@defaultは付与しない(新規ai_provider行の設定漏れを"型エラー"として
+  // 検出できる状態を維持するため。@defaultを付けるとその検出力が失われる)。
+  measurementStatus String
+  // measurementStatus="unavailable"の時のみ非null。それ以外は必ずnull。
+  unavailableReason String?
+  // sourceType="ai_provider"の観測は原則必須(tool種別・実行された検索クエリ・
+  // usage・フィールド単位のprovenance等を正規化して保持する。生レスポンスは保存しない)。
+  // legacy行・既存mock/reference行に限りnullを許容する。
+  measurementMetaJson String?
+  // sourceType="mock"のときのみtrue。provider/呼び出し側が直接assertせず、
+  // sourceTypeから機械的に導出する(ad-compliance findingのprovisionalと同じ原則)。
+  // 2026-09-07: measurementStatus==="reference"の観測も含める(ユーザー指示)。
+  // measurementStatus==="unavailable"の場合はfalseを格納するが、可用性判定は
+  // 必ずmeasurementStatusを先に見ること(provisionalだけで判定しない)。
+  provisional     Boolean
+  createdAt       DateTime @default(now())
+
+  // P0: 診断結果取得(diagnosisId単位)とclinic_idテナント分離クエリで
+  // 頻繁に使用するためインデックスを追加する(2026-09-05のユーザー指示)。
+  @@index([diagnosisId])
+  @@index([clinicId])
 }
 
 // Step4: 認証・無料会員。医院側の「人」(院長・スタッフ・制作会社)。患者ではない。
 // 患者個人情報(氏名・電話番号等)はこのモデルに一切含めない(DATA_MODEL.md参照)。
+// 2026-09-20: 会員本人確認(SMS OTP・メール確認)のためphoneNumber等を追加。
+// これは無料トライアル登録者(Contact=院長・スタッフ・制作会社)自身の連絡先であり、
+// 上記の「患者個人情報を含めない」原則の対象外(患者の電話番号ではない)。
 model Contact {
   id           String    @id @default(cuid())
   clinicId     String
@@ -51,6 +156,27 @@ model Contact {
   role         String    @default("owner") // "owner" | "staff" | "agency"
   createdAt    DateTime  @default(now())
   sessions     Session[]
+
+  // 会員本人(Contact)のSMS OTP認証。E.164正規化して保存する。
+  phoneNumber      String?
+  phoneVerifiedAt  DateTime?
+  // "pending" | "sent" | "verified" | "failed" | "locked"
+  smsStatus        String?
+  smsSentAt        DateTime?
+  smsAttemptCount  Int       @default(0)
+  smsResendCount   Int       @default(0)
+
+  // 会員本人(Contact)のメールアドレス確認。トークン平文は保存せずハッシュのみ保持する。
+  emailVerifiedAt             DateTime?
+  emailVerificationTokenHash  String?
+  emailVerificationExpiresAt  DateTime?
+
+  // 登録途中離脱からの再開に使う進捗ステップ。
+  // "profile" | "sms" | "email" | "payment" | "consent" | "completed"
+  registrationStep   String    @default("profile")
+  consentAcceptedAt  DateTime?
+
+  @@index([phoneNumber])
 }
 
 // サーバー側で失効管理する不透明トークン方式のセッション(JWT等の追加依存を増やさないため)。
@@ -60,4 +186,80 @@ model Session {
   contact   Contact  @relation(fields: [contactId], references: [id])
   expiresAt DateTime
   createdAt DateTime @default(now())
+}
+
+// Step5: 契約・決済。カード番号などの決済情報は保持せず、決済サービス側のIDだけを持つ。
+model Subscription {
+  id                     String    @id @default(cuid())
+  clinicId               String
+  clinic                 Clinic    @relation(fields: [clinicId], references: [id])
+  plan                   String
+  status                 String    @default("trial")
+  externalSubscriptionId String?   @unique
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  // Stripe通知の到着順が前後しても、古い状態で上書きしないための時刻。
+  statusEventAt          DateTime?
+  payments               Payment[]
+
+  // 7日間無料トライアルの開始・終了予定日時。SMS・メール・決済方法・規約同意が
+  // すべて揃うまでtrialStartedAtは設定しない(activateTrial.ts参照)。
+  trialStartedAt         DateTime?
+  trialEndsAt            DateTime?
+  // Stripeの決済方法登録状態("none" | "pending" | "completed" 等)。カード情報自体は保持しない。
+  paymentMethodStatus    String?
+
+  @@index([clinicId])
+}
+
+// Stripeから受け取った通知IDだけを保存し、同じ通知の再送を二重処理しない。
+// カード情報や通知の生本文は保存しない。
+model BillingWebhookEvent {
+  id              String   @id @default(cuid())
+  providerEventId String   @unique
+  eventType       String
+  status          String
+  clinicId        String?
+  clinic          Clinic?  @relation(fields: [clinicId], references: [id])
+  occurredAt      DateTime
+  processedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@index([clinicId])
+}
+
+model Payment {
+  id                String       @id @default(cuid())
+  subscriptionId    String
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id])
+  status            String
+  externalPaymentId String?      @unique
+  occurredAt        DateTime
+  createdAt         DateTime     @default(now())
+
+  @@index([subscriptionId])
+}
+
+// 2026-09-20: Salesforce CRM同期キュー(指示書9章「Salesforce同期方式」)。
+// 内部DB更新をSalesforceへの外部API呼び出しに密結合させず、このテーブルを介して
+// 非同期に同期する。Salesforceへ送ってはいけない値(OTP・認証トークン・Stripe Secret・
+// カード情報・パスワードhash・セッション)はpayloadJsonに含めない(salesforceSync.ts参照)。
+model IntegrationEvent {
+  id           String    @id @default(cuid())
+  // Salesforce側のLead/Contact等のRecord ID(取得後に保持する)。
+  externalId   String?
+  eventType    String
+  // ホワイトリスト方式で組み立てた同期用データ(SQLite制約によりJSON文字列で保存)。
+  payloadJson  String
+  // "pending" | "processing" | "synced" | "failed"
+  status       String    @default("pending")
+  retryCount   Int       @default(0)
+  lastError    String?
+  contactId    String?
+  clinicId     String?
+  createdAt    DateTime  @default(now())
+  processedAt  DateTime?
+
+  @@index([status])
+  @@index([createdAt])
 }

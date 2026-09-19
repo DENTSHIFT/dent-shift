@@ -1,0 +1,171 @@
+// Vercelのテスト・本番環境専用スキーマ。
+// ローカル開発は ../schema.prisma (SQLite) を使い続ける。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Clinic {
+  id             String          @id @default(cuid())
+  name           String
+  url            String
+  contactEmail   String?
+  contactPhone   String?
+  gbpUrl         String?
+  bookingUrl     String?
+  createdAt      DateTime        @default(now())
+  diagnoses      Diagnosis[]
+  contacts       Contact[]
+  subscriptions  Subscription[]
+  billingWebhookEvents BillingWebhookEvent[]
+  aiObservations AiObservation[]
+}
+
+model Diagnosis {
+  id                     String          @id @default(cuid())
+  clinicId               String
+  clinic                 Clinic          @relation(fields: [clinicId], references: [id])
+  totalPoints            Int
+  totalStatus            String
+  scoreBreakdownJson     String
+  competitorsJson        String
+  questionResultsJson    String
+  improvementTasksJson   String
+  dataDisclaimer         String
+  measuredAt             DateTime        @default(now())
+  resultEmailStatus      String          @default("pending")
+  resultEmailSentAt      DateTime?
+  adComplianceChecksJson String          @default("{\"findings\":[],\"disclaimer\":\"\",\"checkedAt\":\"\"}")
+  isSample               Boolean         @default(true)
+  aiObservations         AiObservation[]
+}
+
+model AiObservation {
+  id                  String    @id @default(cuid())
+  diagnosisId         String
+  diagnosis           Diagnosis @relation(fields: [diagnosisId], references: [id])
+  clinicId            String
+  clinic              Clinic    @relation(fields: [clinicId], references: [id])
+  patientQuestion     String
+  provider            String
+  model               String
+  mention             Boolean?
+  rank                Int?
+  citationsJson       String?
+  competitorsJson     String?
+  region              String?
+  measurementAt       DateTime
+  capturedAt          DateTime
+  evidence            String
+  sourceType          String
+  measurementStatus   String
+  unavailableReason   String?
+  measurementMetaJson String?
+  provisional         Boolean
+  createdAt           DateTime  @default(now())
+
+  @@index([diagnosisId])
+  @@index([clinicId])
+}
+
+model Contact {
+  id           String    @id @default(cuid())
+  clinicId     String
+  clinic       Clinic    @relation(fields: [clinicId], references: [id])
+  email        String    @unique
+  passwordHash String
+  role         String    @default("owner")
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+
+  phoneNumber      String?
+  phoneVerifiedAt  DateTime?
+  smsStatus        String?
+  smsSentAt        DateTime?
+  smsAttemptCount  Int       @default(0)
+  smsResendCount   Int       @default(0)
+
+  emailVerifiedAt             DateTime?
+  emailVerificationTokenHash  String?
+  emailVerificationExpiresAt  DateTime?
+
+  registrationStep   String    @default("profile")
+  consentAcceptedAt  DateTime?
+
+  @@index([phoneNumber])
+}
+
+model Session {
+  token     String   @id
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id])
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Subscription {
+  id                     String    @id @default(cuid())
+  clinicId               String
+  clinic                 Clinic    @relation(fields: [clinicId], references: [id])
+  plan                   String
+  status                 String    @default("trial")
+  externalSubscriptionId String?   @unique
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  statusEventAt          DateTime?
+  payments               Payment[]
+
+  trialStartedAt         DateTime?
+  trialEndsAt            DateTime?
+  paymentMethodStatus    String?
+
+  @@index([clinicId])
+}
+
+model BillingWebhookEvent {
+  id              String   @id @default(cuid())
+  providerEventId String   @unique
+  eventType       String
+  status          String
+  clinicId        String?
+  clinic          Clinic?  @relation(fields: [clinicId], references: [id])
+  occurredAt      DateTime
+  processedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@index([clinicId])
+}
+
+model Payment {
+  id                String       @id @default(cuid())
+  subscriptionId    String
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id])
+  status            String
+  externalPaymentId String?      @unique
+  occurredAt        DateTime
+  createdAt         DateTime     @default(now())
+
+  @@index([subscriptionId])
+}
+
+model IntegrationEvent {
+  id           String    @id @default(cuid())
+  externalId   String?
+  eventType    String
+  payloadJson  String
+  status       String    @default("pending")
+  retryCount   Int       @default(0)
+  lastError    String?
+  contactId    String?
+  clinicId     String?
+  createdAt    DateTime  @default(now())
+  processedAt  DateTime?
+
+  @@index([status])
+  @@index([createdAt])
+}

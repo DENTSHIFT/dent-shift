@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prismaClient";
 import { hashPassword } from "@/server/auth/password";
 import { createSession, setSessionCookie } from "@/server/auth/session";
-
-export class InvalidSignupInputError extends Error {}
+import { findClinicDuplicateCandidate } from "@/server/db/clinicDuplicateRepository";
+import { duplicateCandidateMessage } from "@/domain/clinic/duplicateDetection";
+import { sendEmailVerification } from "@/server/services/sendEmailVerification";
+import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -57,8 +59,26 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    const duplicateCandidate = await findClinicDuplicateCandidate({
+      clinicName: clinicName.trim(),
+      clinicUrl: clinicUrl.trim(),
+    });
+    if (duplicateCandidate) {
+      return NextResponse.json(
+        {
+          error: duplicateCandidateMessage(duplicateCandidate.matchType),
+          code: "clinic_duplicate_candidate",
+          matchType: duplicateCandidate.matchType,
+        },
+        { status: 409 }
+      );
+    }
     const clinic = await prisma.clinic.create({
-      data: { name: clinicName.trim(), url: clinicUrl.trim() },
+      data: {
+        name: clinicName.trim(),
+        url: clinicUrl.trim(),
+        contactEmail: normalizedEmail,
+      },
     });
     resolvedClinicId = clinic.id;
   }
@@ -70,11 +90,38 @@ export async function POST(request: NextRequest) {
       passwordHash,
       clinicId: resolvedClinicId,
       role: "owner",
+      // sms→email→payment→consentの順で進む(registrationStep.ts参照)。
+      // 電話番号は登録直後には未収集のため"sms"ステップから開始する。
+      registrationStep: "sms",
     },
   });
 
   const token = await createSession(contact.id);
   await setSessionCookie(token);
+
+  // メール確認・Salesforce同期は登録成功を阻害しない(外部サービス障害時も
+  // 会員登録自体は完了させる、指示書18章「エラー設計」)。
+  const clinic = await prisma.clinic.findUnique({ where: { id: resolvedClinicId } });
+  await sendEmailVerification({
+    contactId: contact.id,
+    email: normalizedEmail,
+    clinicName: clinic?.name ?? normalizedEmail,
+  }).catch((error) => {
+    console.error("[POST /api/auth/signup] email verification send failed:", error);
+  });
+
+  await enqueueIntegrationEvent({
+    eventType: "trial_signup_started",
+    clinicId: resolvedClinicId,
+    contactId: contact.id,
+    payload: {
+      email: normalizedEmail,
+      clinic_name: clinic?.name ?? null,
+      registration_step: "sms",
+    },
+  }).catch((error) => {
+    console.error("[POST /api/auth/signup] Salesforce sync enqueue failed:", error);
+  });
 
   return NextResponse.json({ contactId: contact.id, clinicId: resolvedClinicId }, { status: 201 });
 }
