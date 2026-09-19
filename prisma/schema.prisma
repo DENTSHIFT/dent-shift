@@ -294,3 +294,43 @@ model Attribution {
   @@index([ambassadorId])
   @@index([status])
 }
+
+// 2026-09-20: 運営側(社内オペレーター)。医院側Contactとは完全に別の認証ドメインとする
+// (SECURITY.md「認証ドメインを2系統に分ける」)。エンドユーザー向けセッションと混在させない。
+// 自己サインアップは提供しない(社内で個別に発行する運用を想定、`scripts/`等でシード)。
+model Operator {
+  id           String            @id @default(cuid())
+  email        String            @unique
+  passwordHash String
+  // "admin" | "cs" | "analyst" | "finance"
+  role         String
+  createdAt    DateTime          @default(now())
+  sessions     OperatorSession[]
+  auditLogs    AuditLog[]
+}
+
+// 医院側Sessionモデルと同型だが、テーブル・Cookie名を分離し、権限を混在させない。
+model OperatorSession {
+  token      String   @id
+  operatorId String
+  operator   Operator @relation(fields: [operatorId], references: [id])
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+}
+
+// クロステナント参照・外部書き込みを伴う運営側操作の監査ログ(SECURITY.md F「外部書き込みの
+// 人承認ゲート」)。実行内容の diff 等はmetadataJsonへ構造化して保存する(SQLite制約により文字列化)。
+model AuditLog {
+  id           String   @id @default(cuid())
+  operatorId   String
+  operator     Operator @relation(fields: [operatorId], references: [id])
+  action       String
+  targetType   String
+  targetId     String?
+  metadataJson String?
+  createdAt    DateTime @default(now())
+
+  @@index([operatorId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}

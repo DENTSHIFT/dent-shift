@@ -41,11 +41,12 @@
       (`confirmAttributionForClinic`はStripe `invoice.paid`到達時のみconfirmedへ遷移)
 
 ## 権限・監査
-- [ ] 医院側/運営側で権限が分離されている(`Contact.role`は医院側owner/staff/agencyのみ。
-      運営側ポータル・権限は未着手、P1候補)
-- [ ] 外部書き込みを伴う操作に監査ログが残る(未着手。現状「人の承認なしに外部変更しない」設計
-      自体で外部書き込み操作自体が存在しないため実害は限定的だが、将来の外部書き込み機能追加前に
-      監査ログ基盤の整備が必要)
+- [x] 医院側/運営側で権限が分離されている(`Operator`モデル+`/ops/login`+`ds_ops_session`
+      Cookieで医院側`Contact`/`ds_session`とは完全に別の認証ドメイン。SECURITY.md準拠。
+      Operatorの自己サインアップは提供せず`scripts/create-operator.ts`で個別発行する)
+- [x] 外部書き込みを伴う操作に監査ログが残る(`AuditLog`モデル、`recordAuditLog()`。現状は
+      opsログインとクロステナント医院一覧参照を記録。実際の外部書き込み機能(GBP変更等)は
+      まだ存在しないため、それらを実装するタイミングで同じ`recordAuditLog()`を呼び出す)
 
 ## データ・表現の安全性
 - [x] 患者個人情報(氏名/電話/メール/病歴/診療記録/相談本文/予約フォーム本文)を一切保存していない

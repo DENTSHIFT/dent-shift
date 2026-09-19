@@ -194,3 +194,36 @@ model Attribution {
   @@index([ambassadorId])
   @@index([status])
 }
+
+model Operator {
+  id           String            @id @default(cuid())
+  email        String            @unique
+  passwordHash String
+  role         String
+  createdAt    DateTime          @default(now())
+  sessions     OperatorSession[]
+  auditLogs    AuditLog[]
+}
+
+model OperatorSession {
+  token      String   @id
+  operatorId String
+  operator   Operator @relation(fields: [operatorId], references: [id])
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  operatorId   String
+  operator     Operator @relation(fields: [operatorId], references: [id])
+  action       String
+  targetType   String
+  targetId     String?
+  metadataJson String?
+  createdAt    DateTime @default(now())
+
+  @@index([operatorId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}

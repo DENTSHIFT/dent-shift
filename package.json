@@ -18,7 +18,8 @@
     "prisma:validate:postgres": "prisma validate --schema prisma/postgres/schema.prisma",
     "prisma:migrate:postgres:status": "prisma migrate status --schema prisma/postgres/schema.prisma",
     "prisma:migrate:postgres:deploy": "prisma migrate deploy --schema prisma/postgres/schema.prisma",
-    "smoke:openai-measurement": "tsx --conditions=react-server scripts/openai-measurement-smoke.ts"
+    "smoke:openai-measurement": "tsx --conditions=react-server scripts/openai-measurement-smoke.ts",
+    "ops:create-operator": "tsx --conditions=react-server scripts/create-operator.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
