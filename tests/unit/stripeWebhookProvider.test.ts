@@ -1,0 +1,142 @@
+import { describe, expect, it } from "vitest";
+import Stripe from "stripe";
+import {
+  normalizeStripeBillingEvent,
+  StripeWebhookVerificationError,
+  verifyStripeWebhookEvent,
+} from "@/server/providers/billing/stripeWebhookProvider";
+
+const stripe = new Stripe("sk_test_for_signature_only");
+
+function event(type: string, object: Record<string, unknown>, id = "evt_test_1") {
+  return {
+    id,
+    object: "event",
+    type,
+    created: 1_788_969_600,
+    data: { object },
+  } as unknown as Stripe.Event;
+}
+
+describe("Stripe webhook signature verification", () => {
+  it("raw本文と正しい署名だけを受け付ける", () => {
+    const payload = JSON.stringify(event("test.event", { id: "obj_1" }));
+    const secret = "whsec_test_only";
+    const signature = stripe.webhooks.generateTestHeaderString({ payload, secret });
+
+    expect(
+      verifyStripeWebhookEvent({
+        payload,
+        signature,
+        apiKey: "sk_test_for_signature_only",
+        webhookSecret: secret,
+      }).id
+    ).toBe("evt_test_1");
+  });
+
+  it("改ざんされた本文を拒否し、秘密値を例外へ含めない", () => {
+    const payload = JSON.stringify(event("test.event", { id: "obj_1" }));
+    const secret = "whsec_must_not_leak";
+    const signature = stripe.webhooks.generateTestHeaderString({ payload, secret });
+
+    let caught: unknown;
+    try {
+      verifyStripeWebhookEvent({
+        payload: `${payload} `,
+        signature,
+        apiKey: "sk_test_must_not_leak",
+        webhookSecret: secret,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(StripeWebhookVerificationError);
+    expect((caught as Error).message).not.toContain(secret);
+    expect((caught as Error).message).not.toContain("sk_test_must_not_leak");
+  });
+});
+
+describe("Stripe billing event normalization", () => {
+  it("完了したCheckoutを医院・プラン・契約IDへ結び付ける", () => {
+    const command = normalizeStripeBillingEvent(
+      event("checkout.session.completed", {
+        id: "cs_test_1",
+        client_reference_id: "clinic-1",
+        subscription: "sub_1",
+        payment_status: "paid",
+        metadata: { clinic_id: "clinic-1", plan: "standard" },
+      })
+    );
+    expect(command.action).toEqual({
+      kind: "checkout_completed",
+      identity: {
+        externalSubscriptionId: "sub_1",
+        clinicId: "clinic-1",
+        plan: "standard",
+      },
+      initialStatus: "active",
+    });
+  });
+
+  it("現行Invoiceのsubscription_detailsから支払い成功を取り出す", () => {
+    const command = normalizeStripeBillingEvent(
+      event("invoice.paid", {
+        id: "in_1",
+        parent: {
+          type: "subscription_details",
+          subscription_details: {
+            subscription: "sub_1",
+            metadata: { clinic_id: "clinic-1", plan: "standard" },
+          },
+        },
+      })
+    );
+    expect(command.action).toEqual({
+      kind: "invoice_status",
+      identity: {
+        externalSubscriptionId: "sub_1",
+        clinicId: "clinic-1",
+        plan: "standard",
+      },
+      status: "active",
+      paymentStatus: "paid",
+      externalPaymentId: "in_1",
+    });
+  });
+
+  it("支払い失敗はpast_dueへ変換する", () => {
+    const command = normalizeStripeBillingEvent(
+      event("invoice.payment_failed", {
+        id: "in_failed",
+        parent: {
+          subscription_details: {
+            subscription: { id: "sub_1" },
+            metadata: { clinic_id: "clinic-1", plan: "light" },
+          },
+        },
+      })
+    );
+    expect(command.action).toEqual(
+      expect.objectContaining({
+        kind: "invoice_status",
+        status: "past_due",
+        paymentStatus: "failed",
+      })
+    );
+  });
+
+  it("医院IDが一致しないCheckoutと未対応イベントは安全に無視する", () => {
+    expect(
+      normalizeStripeBillingEvent(
+        event("checkout.session.completed", {
+          client_reference_id: "clinic-other",
+          subscription: "sub_1",
+          metadata: { clinic_id: "clinic-1", plan: "standard" },
+        })
+      ).action
+    ).toEqual({ kind: "ignored" });
+    expect(normalizeStripeBillingEvent(event("charge.succeeded", { id: "ch_1" })).action).toEqual({
+      kind: "ignored",
+    });
+  });
+});

@@ -1,0 +1,19 @@
+import { describe, expect, it } from "vitest";
+import { isPlanId, PLAN_FEATURE_ROWS, PLAN_SUMMARIES } from "@/domain/billing/planCatalog";
+
+describe("プラン比較カタログ", () => {
+  it("3プランを重複なく定義する", () => {
+    expect(PLAN_SUMMARIES.map((plan) => plan.id)).toEqual(["light", "standard", "premium"]);
+    expect(PLAN_SUMMARIES.filter((plan) => plan.recommended)).toHaveLength(1);
+  });
+
+  it("料金をカタログへハードコードしない", () => {
+    expect(JSON.stringify(PLAN_SUMMARIES)).not.toMatch(/[¥￥]\s*\d|月額\s*\d/);
+    expect(PLAN_FEATURE_ROWS.length).toBeGreaterThan(10);
+  });
+
+  it("許可されたプランIDだけを受け付ける", () => {
+    expect(isPlanId("standard")).toBe(true);
+    expect(isPlanId("enterprise")).toBe(false);
+  });
+});
