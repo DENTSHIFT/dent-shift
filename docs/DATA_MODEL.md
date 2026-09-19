@@ -11,6 +11,7 @@
 - `name`
 - `official_url`
 - `contact_email` (医院の代表連絡先。患者情報ではない)
+- `contact_phone` (医院の代表電話番号。無料診断で必須入力。患者情報ではない)
 - `gbp_url` (任意)
 - `booking_url` (任意)
 - `departments` (診療科目, 任意)
@@ -42,6 +43,8 @@
 - `score_total`, `score_aio`, `score_meo`, `score_seo`, `score_llmo`, `score_booking`, `score_reputation`
 - `is_sample` (mock/サンプルデータかどうかを明示するフラグ。実績表示禁止判定に使用)
 - `measurement_condition` (計測条件のスナップショット: 使用AI、地域、日時等)
+- `result_email_status` (`pending` / `sent` / `failed` / `disabled`。診断本体の成否と分離)
+- `result_email_sent_at` (実際に送信できた時刻、nullable)
 - `captured_at`
 - `created_at`
 
