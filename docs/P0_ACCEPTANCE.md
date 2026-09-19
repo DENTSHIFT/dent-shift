@@ -17,8 +17,9 @@
 - [x] ChatGPT / Gemini を計測対象として扱っている(P0初期はmockでも可、`is_sample` を明示)
 - [x] 医院言及・引用・情報正確性を計測項目に含んでいる
 - [x] 競合3院との比較ができる(`competitorProvider.findNearbyCompetitors`、結果画面の競合カード表示)
-- [ ] AI推薦シェア(Share of Voice)を算出している(質問別mention率はスコアリング内部でのみ使用。
-      医院向けの独立した指標としては未実装、P1候補)
+- [x] AI推薦シェア(Share of Voice)を算出している(`domain/competitor/shareOfVoice.ts`。
+      患者質問のうちstatus==="win"の割合。測定対象0件時は0%ではなく「算出できませんでした」と
+      表示し、取得不能値を0として扱わない方針を維持。結果画面の総合スコアカードに表示)
 - [x] 患者質問別のAI表示状況を中立的な表現で表示できる
 - [x] 改善余地がある理由(候補)を表示できる
 - [x] 改善TOP3を提示できる

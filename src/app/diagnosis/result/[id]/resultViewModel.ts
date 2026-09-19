@@ -13,6 +13,7 @@ import type {
   QuestionOutcomeStatus,
 } from "@/domain/competitor/types";
 import { aggregateAioLossRootCauses } from "@/domain/competitor/aioLossAttribution";
+import { computeShareOfVoice, type ShareOfVoiceResult } from "@/domain/competitor/shareOfVoice";
 import type { ImpactLevel, ImprovementCandidate } from "@/domain/improvement-task/types";
 import type { AdComplianceCheckResult, AdRiskFinding, AdRiskSeverity } from "@/domain/ad-compliance/types";
 import { buildDataDisclaimer } from "@/domain/diagnosis/dataDisclaimer";
@@ -579,6 +580,7 @@ export interface FreeDiagnosisResultViewModel {
   clinicUrl: string;
   sampleBanner: SampleBannerViewModel;
   overall: OverallScoreViewModel;
+  shareOfVoice: ShareOfVoiceResult;
   domains: DomainViewModel[];
   questionResults: QuestionResultViewModel[];
   lossRootCauses: LossRootCauseViewModel[];
@@ -600,6 +602,7 @@ export function buildFreeDiagnosisResultViewModel(
       diagnosis.totalStatus,
       diagnosis.scoreBreakdown.maxPoints
     ),
+    shareOfVoice: computeShareOfVoice(diagnosis.questionResults),
     domains: buildDomainViewModels(diagnosis.scoreBreakdown.domains),
     questionResults: buildQuestionResultViewModels(diagnosis.questionResults),
     lossRootCauses: buildLossRootCauseViewModels(diagnosis.questionResults),

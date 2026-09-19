@@ -15,6 +15,7 @@ import {
   type LossRootCauseViewModel,
   type QuestionResultViewModel,
 } from "./resultViewModel";
+import type { ShareOfVoiceResult } from "@/domain/competitor/shareOfVoice";
 import { shouldShowDashboardReturnLink } from "./resultNavigation";
 import { formatMeasuredAtInJapan } from "@/domain/diagnosis/formatMeasuredAt";
 import { buildResultEmailDeliveryNotice } from "@/domain/email/resultEmailDeliveryStatus";
@@ -259,6 +260,7 @@ export default async function DiagnosisResultPage({
                   <p style={{ marginTop: 10, fontSize: 12, color: MUTED }}>
                     データソース: {vm.measurement.domainSourceSummary}
                   </p>
+                  <ShareOfVoiceStat shareOfVoice={vm.shareOfVoice} />
                 </div>
               </div>
             </Card>
@@ -506,6 +508,27 @@ function Tag({ children, tone }: { children: ReactNode; tone: "warn" | "info" | 
     >
       {children}
     </span>
+  );
+}
+
+/**
+ * AI推薦シェア(Share of Voice)。患者質問のうちAIに優位推薦されている割合。
+ * 測定対象質問が1件もない(insufficient_data)場合は0%と表示せず、
+ * 「算出できませんでした」と明示する(取得不能値を0として扱わない方針)。
+ */
+function ShareOfVoiceStat({ shareOfVoice }: { shareOfVoice: ShareOfVoiceResult }) {
+  if (shareOfVoice.status === "insufficient_data") {
+    return (
+      <p style={{ marginTop: 6, fontSize: 12, color: MUTED }}>
+        AI推薦シェア: 算出できませんでした(測定対象の質問がありません)
+      </p>
+    );
+  }
+  return (
+    <p style={{ marginTop: 6, fontSize: 12, color: MUTED }}>
+      AI推薦シェア: <strong style={{ color: NAVY }}>{shareOfVoice.percentage}%</strong>
+      (患者質問{shareOfVoice.measuredQuestionCount}件中{shareOfVoice.winCount}件で優位推薦)
+    </p>
   );
 }
 
