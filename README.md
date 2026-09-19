@@ -22,6 +22,8 @@ npm run dev
 APIを使わず参考データだけで動かす場合は、`.env`で
 `AI_MEASUREMENT_PROVIDER=mock`を明示してください。OpenAI検索API計測を使う場合は
 `AI_MEASUREMENT_PROVIDER=openai`とし、APIキーとモデルをサーバー側の環境変数へ設定します。
+SMS認証・Salesforce連携・TimeRex Webhookは`.env.example`で`disabled`が既定値です。設定項目の
+詳細は`.env.example`のコメントと本READMEの「Step7」節を参照してください。
 
 `http://localhost:3000` を開き、「無料でAI集患診断する」から医院名・URL・メールアドレス・医院代表電話番号を入力すると、
 診断結果画面(`/diagnosis/result/[id]`)まで到達できます。
@@ -85,12 +87,37 @@ DBに保存する不透明トークン+httpOnly cookie方式(`ds_session`)。認
 内税10%のTax Rate、署名検証付きWebhookを設定しています。本番決済は有効にせず、
 テストカードによる確認が完了するまでは実請求を開始しません。
 
+## Step7: SMS/メール確認・trial開始条件・Salesforce CRM連携
+
+「DENT SHIFT Claude実装指示書_認証・決済・Salesforce連携_2026-09-17」に基づき追加。
+無料トライアル登録は`Contact.registrationStep`(profile→sms→email→payment→consent→completed)で
+進捗を管理し、SMS OTP認証・メールアドレス確認・規約同意・Stripe決済方法登録の**4条件がすべて
+揃うまでtrial_started_atを設定しません**(`src/server/services/activateTrial.ts`)。
+
+- SMS OTP認証: `SMS_PROVIDER=disabled`が安全な既定値。Twilio Verifyを仮実装として用意していますが、
+  IVRy側でOTP APIが利用可能か未確認のため本番採用は未確定です(`src/server/config/smsConfig.ts`)。
+- メール確認: 診断結果メールと同じResend基盤を再利用し、24時間有効なトークンをハッシュ化して
+  保存します(平文トークンはDB・ログに残しません)。
+- Salesforce CRM連携: 診断・登録・認証・決済の各イベントを`IntegrationEvent`テーブルへ一旦積み、
+  Salesforce障害時もサービス本体を止めずに再試行します(`src/server/services/salesforceSync.ts`、
+  Vercel Cronで15分おきに再試行)。OTP・認証トークン・カード情報・パスワードhash等は
+  Salesforceへ一切送信しません(`src/domain/integration/events.ts`のホワイトリスト検証)。
+  既定値は`SALESFORCE_PROVIDER=disabled`です。
+- オンライン説明・電話問い合わせ: 診断結果画面のCTAクリックを計測し(`/api/events/track`)、
+  TimeRexからの予約状態通知は暫定の共有シークレット方式Webhook(`/api/webhooks/timerex`、
+  実際の署名方式は契約確定後に差し替え予定)で受け取ります。
+
+以前は「CRMはSalesforce/HubSpot等に依存せず自社開発する」という事業ルールでしたが、上記指示書に
+基づきユーザー承認のうえで撤回しています(`docs/PRODUCT_SPEC.md`参照)。
+
 ## このsliceでやっていないこと(意図的にスコープ外)
 
 - Gemini / GA4 / Search Console / GBPへの実接続
 - 消費者向けChatGPT画面そのものの計測(OpenAI Web Search API計測とは別物)
 - Stripe決済の本番有効化、アンバサダー、スタッフ複数人招待等
 - Postgresへの切り替え(開発中はSQLite。ARCHITECTURE.md参照)
+- IVRyの着信・通話結果連携(電話問い合わせのクリック計測まで。API/Webhook仕様確定後に追加)
+- TimeRex予約ページとのAPI連携(単なる外部リンク+暫定Webhookのみ。正式な署名検証は契約確定後)
 
 ## 事業ルールの実装上のポイント
 
