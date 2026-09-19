@@ -14,7 +14,7 @@ export async function POST() {
     return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
   }
 
-  const nextStep: RegistrationStep = "consent";
+  const nextStep: RegistrationStep = "completed";
   const currentStep = contact.registrationStep as RegistrationStep;
   const updatedStep = canTransitionRegistrationStep(currentStep, nextStep) ? nextStep : currentStep;
 

@@ -7,6 +7,7 @@ import { resolveBillingConfigFromProcessEnv } from "@/server/config/billingConfi
 import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
 import { getDiagnosisById, getDiagnosesByClinicId } from "@/server/db/diagnosisRepository";
 import { LogoutButton } from "./LogoutButton";
+import { RegistrationProgressBanner } from "./RegistrationProgressBanner";
 import { buildDashboardViewModel } from "./dashboardViewModel";
 import { buildSubscriptionViewModel, type SubscriptionTone } from "./subscriptionViewModel";
 import styles from "./dashboard.module.css";
@@ -164,6 +165,8 @@ export default async function DashboardPage() {
               新しく診断する
             </Link>
           </div>
+
+          <RegistrationProgressBanner registrationStep={contact.registrationStep} />
 
           <section className={styles.subscriptionCard} id="subscription" aria-label="契約状況">
             <div className={styles.subscriptionCopy}>
