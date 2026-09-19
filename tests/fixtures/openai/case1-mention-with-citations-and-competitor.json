@@ -1,0 +1,42 @@
+{
+  "ok": true,
+  "response": {
+    "id": "resp_case1_mention_with_citations",
+    "model": "gpt-search-fixture-model",
+    "output": [
+      {
+        "type": "web_search_call",
+        "id": "ws_call_1",
+        "status": "completed",
+        "action": { "type": "search", "query": "駅前 おすすめ 歯科医院" }
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "駅前でおすすめの歯科医院を探しているなら、まず「さくら歯科クリニック」が挙げられます。丁寧なカウンセリングで評判です。他には「みどり歯科医院」も候補になります。",
+            "annotations": [
+              {
+                "type": "url_citation",
+                "url": "https://www.sakura-dental-clinic.example.com/",
+                "title": "さくら歯科クリニック公式サイト",
+                "start_index": 20,
+                "end_index": 32
+              },
+              {
+                "type": "url_citation",
+                "url": "https://midori-shika.example.com/reviews?utm_source=chat",
+                "title": "みどり歯科医院 口コミ",
+                "start_index": 60,
+                "end_index": 68
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "usage": { "input_tokens": 120, "output_tokens": 80, "total_tokens": 200 }
+  }
+}

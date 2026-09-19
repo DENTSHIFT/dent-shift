@@ -1,0 +1,5 @@
+{
+  "ok": false,
+  "reason": "timeout",
+  "message": "integration test fixture: OpenAI Responses API request timed out after 30s"
+}

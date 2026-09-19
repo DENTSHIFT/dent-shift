@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "response": {
+    "id": "resp_case2_no_mention",
+    "model": "gpt-search-fixture-model",
+    "output": [
+      {
+        "type": "web_search_call",
+        "id": "ws_call_2",
+        "status": "completed",
+        "action": { "type": "search", "query": "このエリア 歯科 おすすめ" }
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "このエリアでは「あおぞら歯科」や「はなデンタルクリニック」が候補として挙げられます。",
+            "annotations": []
+          }
+        ]
+      }
+    ],
+    "usage": { "input_tokens": 100, "output_tokens": 40, "total_tokens": 140 }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "ok": true,
+  "response": {
+    "id": "resp_case3_no_search",
+    "model": "gpt-search-fixture-model",
+    "output": [
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "一般的には「さくら歯科クリニック」のような駅前の医院が候補に挙がることが多いです。",
+            "annotations": []
+          }
+        ]
+      }
+    ],
+    "usage": { "input_tokens": 90, "output_tokens": 30, "total_tokens": 120 }
+  }
+}

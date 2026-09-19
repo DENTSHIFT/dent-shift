@@ -1,0 +1,35 @@
+{
+  "ok": true,
+  "response": {
+    "id": "resp_case5_rank_order",
+    "model": "gpt-search-fixture-model",
+    "output": [
+      {
+        "type": "web_search_call",
+        "id": "ws_call_5",
+        "status": "completed",
+        "action": { "type": "search", "query": "駅前 歯科 ランキング" }
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "「はな歯科」が第一候補として多く紹介されます。次に「さくら歯科クリニック」も良い選択肢として挙げられます。",
+            "annotations": [
+              {
+                "type": "url_citation",
+                "url": "https://www.sakura-dental-clinic.example.com/",
+                "title": "さくら歯科クリニック公式サイト",
+                "start_index": 30,
+                "end_index": 42
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "usage": { "input_tokens": 110, "output_tokens": 60, "total_tokens": 170 }
+  }
+}

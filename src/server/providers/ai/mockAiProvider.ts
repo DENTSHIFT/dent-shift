@@ -40,6 +40,10 @@ export class MockAiProvider implements AiProvider {
           evidence: mentioned
             ? `[mock] "${question}" への回答で ${input.clinicName} が言及されました(順位目安: ${recommendationRank})`
             : `[mock] "${question}" への回答で ${input.clinicName} の言及は確認できませんでした`,
+          // 実際の引用取得・商圏/エリア収集の仕組みがP0にはまだ存在しないため、
+          // 架空の値で埋めず常に空配列/nullを返す(2026-09-05のユーザー指示)。
+          citations: [],
+          region: null,
           dataSource: "mock",
           capturedAt,
         });
