@@ -1,6 +1,9 @@
 node_modules/
 .next/
+.vercel/
 .env
 *.db
 dev.db
 coverage/
+.vercel
+.env*

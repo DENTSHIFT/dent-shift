@@ -1,0 +1,24 @@
+# Secrets and machine-local configuration
+.env
+.env.*
+!.env.example
+
+# Local build/runtime state
+.git
+.next
+.vercel
+node_modules
+coverage
+*.db
+*.db-*
+*.db.*
+*.log
+tsconfig.tsbuildinfo
+
+# Local working material that is not required by the deployed application
+/Claude outputs
+/_to_delete
+/brand
+/design
+/docs
+/tests
