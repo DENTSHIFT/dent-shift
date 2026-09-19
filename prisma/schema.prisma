@@ -33,6 +33,7 @@ model Clinic {
   // 2026-09-05: ai_observationsをdiagnosis単位だけでなくclinic単位でも
   // テナント分離して参照できるようにする(SECURITY.md「テナント分離の実装方針」)
   aiObservations AiObservation[]
+  attribution    Attribution?
 }
 
 model Diagnosis {
@@ -262,4 +263,34 @@ model IntegrationEvent {
 
   @@index([status])
   @@index([createdAt])
+}
+
+// 2026-09-20: Step8アンバサダー機能の最小実装(仮仕様)。
+// 紹介報酬率・支払い条件は未確定のため、ここでは紹介コード発行と成果(attribution)の
+// 状態追跡のみを行う。実際の報酬計算・支払い処理は含まない(IMPLEMENTATION_PLAN.md Step8参照)。
+model Ambassador {
+  id           String       @id @default(cuid())
+  name         String
+  email        String       @unique
+  referralCode String       @unique
+  createdAt    DateTime     @default(now())
+  attributions Attribution[]
+}
+
+// 紹介経由の医院登録を追跡する。成果(confirmed)は「有料契約+初回入金確定時点」のみで、
+// 紹介コード入力(pending)だけでは成果化しない(ユーザー指示、IMPLEMENTATION_PLAN.md Step8)。
+model Attribution {
+  id           String     @id @default(cuid())
+  ambassadorId String
+  ambassador   Ambassador @relation(fields: [ambassadorId], references: [id])
+  clinicId     String
+  clinic       Clinic     @relation(fields: [clinicId], references: [id])
+  // "pending" | "confirmed"
+  status       String     @default("pending")
+  referredAt   DateTime   @default(now())
+  confirmedAt  DateTime?
+
+  @@unique([clinicId])
+  @@index([ambassadorId])
+  @@index([status])
 }

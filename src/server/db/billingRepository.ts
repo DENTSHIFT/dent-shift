@@ -11,6 +11,7 @@ import type {
   BillingWebhookCommand,
   BillingWebhookIdentity,
 } from "@/domain/billing/billingWebhook";
+import { confirmAttributionForClinic } from "./ambassadorRepository";
 
 export class BillingRepositoryStateError extends Error {}
 
@@ -198,6 +199,10 @@ export async function applyBillingWebhookEvent(
               occurredAt: input.occurredAt,
             },
           });
+          // Step8(アンバサダー、仮仕様): 有料契約+初回入金確定時点でのみ紹介成果を確定する。
+          if (input.action.paymentStatus === "paid") {
+            await confirmAttributionForClinic(tx, subscription.clinicId);
+          }
         }
         // checkout完了(=決済方法登録完了)は、trialStartedAt自体を即設定せず
         // paymentMethodStatusのみ更新する。trial開始はactivateTrial.tsが

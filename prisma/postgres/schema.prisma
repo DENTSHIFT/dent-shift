@@ -24,6 +24,7 @@ model Clinic {
   subscriptions  Subscription[]
   billingWebhookEvents BillingWebhookEvent[]
   aiObservations AiObservation[]
+  attribution    Attribution?
 }
 
 model Diagnosis {
@@ -168,4 +169,28 @@ model IntegrationEvent {
 
   @@index([status])
   @@index([createdAt])
+}
+
+model Ambassador {
+  id           String       @id @default(cuid())
+  name         String
+  email        String       @unique
+  referralCode String       @unique
+  createdAt    DateTime     @default(now())
+  attributions Attribution[]
+}
+
+model Attribution {
+  id           String     @id @default(cuid())
+  ambassadorId String
+  ambassador   Ambassador @relation(fields: [ambassadorId], references: [id])
+  clinicId     String
+  clinic       Clinic     @relation(fields: [clinicId], references: [id])
+  status       String     @default("pending")
+  referredAt   DateTime   @default(now())
+  confirmedAt  DateTime?
+
+  @@unique([clinicId])
+  @@index([ambassadorId])
+  @@index([status])
 }

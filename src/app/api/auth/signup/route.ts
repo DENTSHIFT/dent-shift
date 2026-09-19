@@ -6,6 +6,8 @@ import { findClinicDuplicateCandidate } from "@/server/db/clinicDuplicateReposit
 import { duplicateCandidateMessage } from "@/domain/clinic/duplicateDetection";
 import { sendEmailVerification } from "@/server/services/sendEmailVerification";
 import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
+import { normalizeReferralCode, ReferralCodeFormatError } from "@/domain/ambassador/referralCode";
+import { findAmbassadorByReferralCode, recordPendingAttribution } from "@/server/db/ambassadorRepository";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -23,7 +25,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "リクエストボディがJSONとして解釈できません" }, { status: 400 });
   }
 
-  const { email, password, clinicId, clinicName, clinicUrl } = (body ?? {}) as Record<string, unknown>;
+  const { email, password, clinicId, clinicName, clinicUrl, referralCode } = (body ?? {}) as Record<
+    string,
+    unknown
+  >;
 
   if (typeof email !== "string" || !EMAIL_RE.test(email.trim())) {
     return NextResponse.json({ error: "メールアドレスの形式が正しくありません" }, { status: 400 });
@@ -33,6 +38,17 @@ export async function POST(request: NextRequest) {
   }
   if (clinicId !== undefined && (typeof clinicId !== "string" || !clinicId)) {
     return NextResponse.json({ error: "clinicIdの形式が不正です" }, { status: 400 });
+  }
+
+  // 紹介コードは任意入力。不正な形式でも登録自体は失敗させず、単に紐付けをスキップする
+  // (Step8は仮仕様のため、登録フロー本体をブロックしない)。
+  let normalizedReferralCode: string | null = null;
+  if (typeof referralCode === "string" && referralCode.trim()) {
+    try {
+      normalizedReferralCode = normalizeReferralCode(referralCode);
+    } catch (error) {
+      if (!(error instanceof ReferralCodeFormatError)) throw error;
+    }
   }
 
   const normalizedEmail = email.trim();
@@ -98,6 +114,17 @@ export async function POST(request: NextRequest) {
 
   const token = await createSession(contact.id);
   await setSessionCookie(token);
+
+  if (normalizedReferralCode) {
+    const ambassador = await findAmbassadorByReferralCode(normalizedReferralCode);
+    if (ambassador) {
+      await recordPendingAttribution({ ambassadorId: ambassador.id, clinicId: resolvedClinicId }).catch(
+        (error) => {
+          console.error("[POST /api/auth/signup] attribution recording failed:", error);
+        }
+      );
+    }
+  }
 
   // メール確認・Salesforce同期は登録成功を阻害しない(外部サービス障害時も
   // 会員登録自体は完了させる、指示書18章「エラー設計」)。
