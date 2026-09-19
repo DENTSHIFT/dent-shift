@@ -1,0 +1,14 @@
+import { NextResponse } from "next/server";
+import { getCurrentContact } from "./session";
+
+/**
+ * Route Handler(API)向けの認証チェック。requireContact()はredirect()を使うため
+ * Server Component専用。APIでは401 JSONを返す必要があるため別関数として用意する。
+ */
+export async function requireContactApi() {
+  const contact = await getCurrentContact();
+  if (!contact) {
+    return { contact: null as null, response: NextResponse.json({ error: "ログインが必要です" }, { status: 401 }) };
+  }
+  return { contact, response: null as null };
+}

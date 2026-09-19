@@ -1,0 +1,83 @@
+import { prisma } from "@/server/db/prismaClient";
+
+/**
+ * プロモコードのバリデーションと割引計算(2026-09-06のユーザー指示)。
+ * 「クーポン重複利用ルール」の最小実装として、同一医院が同一クーポンを
+ * 既に適用済み(CouponRedemptionが存在する)場合はalready_usedとして拒否する
+ * (prisma/schema.prismaの@@unique([couponId, clinicId])と対になる業務ルール)。
+ */
+export type CouponValidationReason =
+  | "not_found"
+  | "inactive"
+  | "expired"
+  | "exhausted"
+  | "already_used";
+
+export interface CouponValidationOk {
+  ok: true;
+  couponId: string;
+  code: string;
+  percentOff: number | null;
+  amountOffJpy: number | null;
+  priceBeforeDiscountJpy: number;
+  priceAfterDiscountJpy: number;
+}
+
+export interface CouponValidationError {
+  ok: false;
+  reason: CouponValidationReason;
+}
+
+export type CouponValidationResult = CouponValidationOk | CouponValidationError;
+
+export async function validateCoupon(
+  code: string,
+  clinicId: string,
+  planPriceJpy: number
+): Promise<CouponValidationResult> {
+  const coupon = await prisma.coupon.findUnique({ where: { code: code.trim() } });
+
+  if (!coupon) return { ok: false, reason: "not_found" };
+  if (!coupon.isActive) return { ok: false, reason: "inactive" };
+  if (coupon.expiresAt && coupon.expiresAt.getTime() < Date.now()) {
+    return { ok: false, reason: "expired" };
+  }
+  if (coupon.maxRedemptions !== null && coupon.redeemedCount >= coupon.maxRedemptions) {
+    return { ok: false, reason: "exhausted" };
+  }
+
+  const existingRedemption = await prisma.couponRedemption.findUnique({
+    where: { couponId_clinicId: { couponId: coupon.id, clinicId } },
+  });
+  if (existingRedemption) return { ok: false, reason: "already_used" };
+
+  const discountJpy = coupon.percentOff
+    ? Math.round((planPriceJpy * coupon.percentOff) / 100)
+    : (coupon.amountOffJpy ?? 0);
+  const priceAfterDiscountJpy = Math.max(0, planPriceJpy - discountJpy);
+
+  return {
+    ok: true,
+    couponId: coupon.id,
+    code: coupon.code,
+    percentOff: coupon.percentOff,
+    amountOffJpy: coupon.amountOffJpy,
+    priceBeforeDiscountJpy: planPriceJpy,
+    priceAfterDiscountJpy,
+  };
+}
+
+export function couponValidationErrorMessage(reason: CouponValidationReason): string {
+  switch (reason) {
+    case "not_found":
+      return "プロモコードが見つかりません。入力内容をご確認ください。";
+    case "inactive":
+      return "このプロモコードは現在ご利用いただけません。";
+    case "expired":
+      return "このプロモコードの有効期限が切れています。";
+    case "exhausted":
+      return "このプロモコードは利用上限に達しています。";
+    case "already_used":
+      return "このプロモコードは既にご利用済みです。";
+  }
+}

@@ -1,0 +1,37 @@
+import { prisma } from "./prismaClient";
+
+/**
+ * 2026-09-06のユーザー指示: 料金・トライアル日数をコードに固定しない
+ * (HANDOFF.md 35章「料金をコード固定」禁止)ため、PlanはDBで管理する。
+ * ただしP0では料金管理画面をまだ作らないため、初回アクセス時にStandardプランが
+ * 存在しなければ既定値でupsertする(冪等)。価格変更は今後、DBを直接更新するか、
+ * 管理画面(未実装)から行う想定。ここでの初期値はあくまで「初回投入時の既定値」であり、
+ * 一度作成された後はこの関数が上書きすることはない(upsertのupdateは空)。
+ */
+export async function ensureDefaultPlansSeeded(): Promise<void> {
+  await prisma.plan.upsert({
+    where: { key: "standard" },
+    update: {},
+    create: {
+      key: "standard",
+      name: "Standard",
+      priceJpy: 29800,
+      trialDays: 7,
+      sortOrder: 0,
+      isActive: true,
+    },
+  });
+}
+
+export async function listActivePlans() {
+  await ensureDefaultPlansSeeded();
+  return prisma.plan.findMany({
+    where: { isActive: true },
+    orderBy: { sortOrder: "asc" },
+  });
+}
+
+export async function getPlanByKey(key: string) {
+  await ensureDefaultPlansSeeded();
+  return prisma.plan.findUnique({ where: { key } });
+}

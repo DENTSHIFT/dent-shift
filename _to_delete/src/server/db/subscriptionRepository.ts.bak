@@ -1,0 +1,74 @@
+import { prisma } from "./prismaClient";
+
+export async function getSubscriptionByClinicId(clinicId: string) {
+  return prisma.subscription.findUnique({
+    where: { clinicId },
+    include: { plan: true, coupon: true },
+  });
+}
+
+export interface CreateTrialSubscriptionInput {
+  clinicId: string;
+  planId: string;
+  couponId: string | null;
+  paymentProvider: string;
+  providerCustomerId: string;
+  providerSubscriptionId: string;
+  trialEndsAt: Date;
+  card: { brand: string; last4: string; expMonth: number; expYear: number };
+}
+
+/**
+ * 契約確定(2026-09-06のユーザー指示のフロー最終ステップ)。以下を1トランザクションで行う。
+ * - Subscriptionの作成("trialing"状態)
+ * - クーポン利用時: CouponRedemptionの作成 + Coupon.redeemedCountの加算
+ *   (「クーポン重複利用ルール」はCouponRedemptionの@@unique制約とvalidateCoupon()の
+ *   事前チェックで担保しているが、同時多重送信への保険としてここでも一意制約違反を
+ *   利用してDBレベルで二重契約・二重クーポン適用を防ぐ)
+ * - PaymentEvent(card_registered → 必要なら three_ds_verified → subscription_created)の記録
+ *   (HANDOFF.md 32章「重要変更には監査ログ」に対応する最小限の履歴)
+ */
+export async function createTrialSubscription(input: CreateTrialSubscriptionInput) {
+  return prisma.$transaction(async (tx) => {
+    const subscription = await tx.subscription.create({
+      data: {
+        clinicId: input.clinicId,
+        planId: input.planId,
+        couponId: input.couponId,
+        status: "trialing",
+        paymentProvider: input.paymentProvider,
+        providerCustomerId: input.providerCustomerId,
+        providerSubscriptionId: input.providerSubscriptionId,
+        cardBrand: input.card.brand,
+        cardLast4: input.card.last4,
+        cardExpMonth: input.card.expMonth,
+        cardExpYear: input.card.expYear,
+        trialEndsAt: input.trialEndsAt,
+      },
+    });
+
+    if (input.couponId) {
+      await tx.couponRedemption.create({
+        data: {
+          couponId: input.couponId,
+          clinicId: input.clinicId,
+          subscriptionId: subscription.id,
+        },
+      });
+      await tx.coupon.update({
+        where: { id: input.couponId },
+        data: { redeemedCount: { increment: 1 } },
+      });
+    }
+
+    await tx.paymentEvent.create({
+      data: {
+        subscriptionId: subscription.id,
+        type: "subscription_created",
+        message: `trial_ends_at=${input.trialEndsAt.toISOString()}`,
+      },
+    });
+
+    return subscription;
+  });
+}

@@ -1,0 +1,15 @@
+import { NextResponse } from "next/server";
+import { listActivePlans } from "@/server/db/planRepository";
+
+// 公開エンドポイント(料金比較は未ログインでも閲覧できる想定。ログインは決済ステップから要求する)。
+export async function GET() {
+  const plans = await listActivePlans();
+  return NextResponse.json({
+    plans: plans.map((p) => ({
+      key: p.key,
+      name: p.name,
+      priceJpy: p.priceJpy,
+      trialDays: p.trialDays,
+    })),
+  });
+}

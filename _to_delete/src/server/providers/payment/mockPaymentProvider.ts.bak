@@ -1,0 +1,86 @@
+import { randomBytes } from "node:crypto";
+import {
+  ConfirmThreeDsInput,
+  ConfirmThreeDsResult,
+  CreateSubscriptionInput,
+  CreateSubscriptionResult,
+  PaymentDeclinedError,
+  PaymentProvider,
+  RegisterCardInput,
+  RegisterCardResult,
+} from "./types";
+
+/**
+ * P0のMockPaymentProvider(2026-09-06のユーザー指示)。実際の決済代行(Stripe等)へは
+ * 接続しない。UI側は生のカード番号を入力させず、3種類の「テストカード」ボタン
+ * (成功 / 3Dセキュア要求 / 拒否)から不透明トークンを送る設計にする(types.ts参照)。
+ * 下4桁・ブランドはStripeの公式テストカード番号の下4桁を踏襲し、開発者が見慣れた
+ * 値にしている(実カード情報ではない)。
+ */
+const TEST_TOKENS = {
+  success: "mock_card_success",
+  threeDsRequired: "mock_card_3ds_required",
+  declined: "mock_card_declined",
+} as const;
+
+export class MockPaymentProvider implements PaymentProvider {
+  readonly name = "mock";
+
+  async registerCard(input: RegisterCardInput): Promise<RegisterCardResult> {
+    const providerCustomerId = `mock_cus_${input.clinicId}`;
+
+    if (input.cardToken === TEST_TOKENS.declined) {
+      throw new PaymentDeclinedError();
+    }
+
+    if (input.cardToken === TEST_TOKENS.threeDsRequired) {
+      return {
+        providerCustomerId,
+        card: { brand: "visa", last4: "3184", expMonth: 12, expYear: new Date().getFullYear() + 2 },
+        requiresThreeDs: true,
+        threeDsChallengeId: `mock_3ds_${randomBytes(8).toString("hex")}`,
+      };
+    }
+
+    if (input.cardToken === TEST_TOKENS.success) {
+      return {
+        providerCustomerId,
+        card: { brand: "visa", last4: "4242", expMonth: 12, expYear: new Date().getFullYear() + 2 },
+        requiresThreeDs: false,
+        threeDsChallengeId: null,
+      };
+    }
+
+    throw new Error(`未知のテストカードトークンです: ${input.cardToken}`);
+  }
+
+  async confirmThreeDs(_input: ConfirmThreeDsInput): Promise<ConfirmThreeDsResult> {
+    // mockは常に認証成功として扱う(実プロバイダー接続時はACS/issuerからの結果を反映する)
+    return { verified: true };
+  }
+
+  async createSubscription(input: CreateSubscriptionInput): Promise<CreateSubscriptionResult> {
+    const trialEndsAt = new Date(Date.now() + input.trialDays * 24 * 60 * 60 * 1000);
+    return {
+      providerSubscriptionId: `mock_sub_${input.providerCustomerId}_${Date.now()}`,
+      status: "trialing",
+      trialEndsAt: trialEndsAt.toISOString(),
+    };
+  }
+}
+
+export const TEST_CARD_TOKENS = TEST_TOKENS;
+
+let cachedProvider: PaymentProvider | null = null;
+
+/**
+ * 現在有効なPaymentProviderを返す。P0はmock固定。
+ * 将来STRIPE_SECRET_KEYが設定された場合にStripePaymentProviderを返す分岐を
+ * ここに追加する(HANDOFF.md 36章の方針: provider adapterで差し替え可能にする)。
+ */
+export function getPaymentProvider(): PaymentProvider {
+  if (!cachedProvider) {
+    cachedProvider = new MockPaymentProvider();
+  }
+  return cachedProvider;
+}

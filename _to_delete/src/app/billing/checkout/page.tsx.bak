@@ -1,0 +1,38 @@
+import { redirect } from "next/navigation";
+import { requireContact } from "@/server/auth/requireContact";
+import { getPlanByKey } from "@/server/db/planRepository";
+import { getSubscriptionByClinicId } from "@/server/db/subscriptionRepository";
+import { CheckoutForm } from "./CheckoutForm";
+
+/**
+ * 決済フロー画面(2026-09-06のユーザー指示: プロモコード→カード登録→3DS→契約完了)。
+ * requireContact()でログイン必須にする(カード登録以降は必ずアカウントに紐づける)。
+ */
+export default async function CheckoutPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ planKey?: string }>;
+}) {
+  const contact = await requireContact();
+  const { planKey } = await searchParams;
+
+  if (!planKey) redirect("/plan");
+
+  const [plan, existingSubscription] = await Promise.all([
+    getPlanByKey(planKey),
+    getSubscriptionByClinicId(contact.clinicId),
+  ]);
+
+  if (!plan) redirect("/plan");
+  if (existingSubscription) redirect("/billing/complete");
+
+  return (
+    <main style={{ maxWidth: 560, margin: "0 auto", padding: "48px 24px" }}>
+      <h1 style={{ fontSize: 22, color: "#0F1B2D", margin: 0 }}>{plan.name}プランの契約手続き</h1>
+      <p style={{ color: "#6B7280", fontSize: 13, marginTop: 8 }}>
+        {contact.clinic.name} 様のアカウントで契約します。
+      </p>
+      <CheckoutForm plan={{ key: plan.key, name: plan.name, priceJpy: plan.priceJpy, trialDays: plan.trialDays }} />
+    </main>
+  );
+}

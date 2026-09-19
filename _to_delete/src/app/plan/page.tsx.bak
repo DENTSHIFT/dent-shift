@@ -1,0 +1,110 @@
+import Link from "next/link";
+import { getCurrentContact } from "@/server/auth/session";
+import { listActivePlans } from "@/server/db/planRepository";
+import { getSubscriptionByClinicId } from "@/server/db/subscriptionRepository";
+
+const NAVY = "#0F1B2D";
+const BLUE = "#2563EB";
+const BORDER = "#E5E9F0";
+const MUTED = "#6B7280";
+
+/**
+ * プラン選択ページ(2026-09-06のユーザー指示: 診断結果→プラン選択→…の入口)。
+ * 未ログインでも料金比較自体は閲覧できる公開ページにする(一般的なSaaSの料金ページと同様)。
+ * 決済(カード登録)から先のみログインを必須にする(/billing/checkoutでrequireContact()する)。
+ */
+export default async function PlanPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ clinicId?: string }>;
+}) {
+  const { clinicId } = await searchParams;
+  const [plans, contact] = await Promise.all([listActivePlans(), getCurrentContact()]);
+  const existingSubscription = contact ? await getSubscriptionByClinicId(contact.clinicId) : null;
+
+  return (
+    <main style={{ maxWidth: 720, margin: "0 auto", padding: "48px 24px" }}>
+      <h1 style={{ fontSize: 24, color: NAVY, margin: 0 }}>プランを選択</h1>
+      <p style={{ color: MUTED, fontSize: 14, marginTop: 8 }}>
+        カード登録が必要です。トライアル期間中はいつでも解約でき、期間中の請求は発生しません。
+      </p>
+
+      {existingSubscription && (
+        <div style={{ marginTop: 24, padding: 16, borderRadius: 10, background: "#EFF6FF", border: `1px solid ${BORDER}` }}>
+          <p style={{ margin: 0, fontSize: 13, color: "#1E3A8A" }}>
+            既にご契約中です。契約状況は<Link href="/dashboard">ダッシュボード</Link>からご確認いただけます。
+          </p>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: 16, marginTop: 24 }}>
+        {plans.map((plan) => {
+          const checkoutPath = `/billing/checkout?planKey=${plan.key}`;
+          const ctaHref = contact
+            ? checkoutPath
+            : `/signup?clinicId=${encodeURIComponent(clinicId ?? "")}&next=${encodeURIComponent(checkoutPath)}`;
+
+          return (
+            <section
+              key={plan.key}
+              style={{ border: `1px solid ${BORDER}`, borderRadius: 12, padding: 24, background: "#fff" }}
+            >
+              <h2 style={{ fontSize: 18, color: NAVY, margin: 0 }}>{plan.name}</h2>
+              <p style={{ fontSize: 28, fontWeight: 700, color: NAVY, margin: "8px 0" }}>
+                ¥{plan.priceJpy.toLocaleString("ja-JP")}
+                <span style={{ fontSize: 13, fontWeight: 400, color: MUTED }}> / 月(税抜)</span>
+              </p>
+              <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>
+                {plan.trialDays}日間無料トライアル後、自動的に課金が開始されます。
+              </p>
+
+              {existingSubscription ? (
+                <button
+                  disabled
+                  style={{
+                    marginTop: 16,
+                    background: "#E5E7EB",
+                    color: "#9CA3AF",
+                    padding: "10px 20px",
+                    borderRadius: 999,
+                    border: "none",
+                    fontWeight: 600,
+                    fontSize: 14,
+                    cursor: "not-allowed",
+                  }}
+                >
+                  {plan.trialDays}日間無料で始める
+                </button>
+              ) : (
+                <Link
+                  href={ctaHref}
+                  style={{
+                    display: "inline-block",
+                    marginTop: 16,
+                    background: BLUE,
+                    color: "#fff",
+                    padding: "10px 20px",
+                    borderRadius: 999,
+                    textDecoration: "none",
+                    fontWeight: 600,
+                    fontSize: 14,
+                  }}
+                >
+                  {plan.trialDays}日間無料で始める
+                </Link>
+              )}
+            </section>
+          );
+        })}
+      </div>
+
+      <p style={{ fontSize: 12, color: MUTED, marginTop: 24 }}>
+        既にアカウントをお持ちの方は
+        <Link href={`/login`} style={{ color: BLUE, marginLeft: 4 }}>
+          ログイン
+        </Link>
+        してからプランを選択してください。
+      </p>
+    </main>
+  );
+}
