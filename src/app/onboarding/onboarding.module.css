@@ -1,0 +1,43 @@
+.page { min-height: 100vh; box-sizing: border-box; padding: 0 24px 64px; color: #0f1b2d; background: #f5f7fa; }
+.header { max-width: 920px; min-height: 72px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.logo { width: 182px; height: auto; display: block; }
+.headerLink { color: #2563eb; font-size: 13px; font-weight: 700; text-decoration: none; }
+.hero { max-width: 920px; box-sizing: border-box; margin: 18px auto 16px; padding: 30px; border-radius: 20px; color: #fff; background: linear-gradient(135deg,#1d4ed8,#2563eb 55%,#3b82f6); }
+.eyebrow { margin: 0 0 6px; color: #dbeafe; font-size: 12px; font-weight: 750; letter-spacing: .08em; }
+.hero h1 { margin: 0; font-size: clamp(24px,4vw,34px); letter-spacing: -.03em; }
+.hero > p:not(.eyebrow):not(.progressLabel) { margin: 10px 0 24px; color: #dbeafe; font-size: 14px; line-height: 1.7; }
+.progress { height: 9px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.28); }
+.progress span { display: block; height: 100%; border-radius: inherit; background: #fff; }
+.progressLabel { margin: 8px 0 0; color: #fff; font-size: 12px; font-weight: 750; text-align: right; }
+.successBanner { max-width: 920px; box-sizing: border-box; margin: 0 auto 16px; padding: 13px 16px; border: 1px solid #86efac; border-radius: 12px; color: #166534; background: #f0fdf4; font-size: 13px; line-height: 1.6; }
+.steps { max-width: 920px; margin: 0 auto; display: grid; gap: 12px; }
+.step { display: grid; grid-template-columns: 42px minmax(0,1fr); gap: 14px; padding: 20px; border: 1px solid #dbe4ef; border-radius: 16px; background: #fff; box-shadow: 0 1px 2px rgba(15,27,45,.04); }
+.stepNumber { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #2563eb; font-size: 14px; font-weight: 800; }
+.stepBody { min-width: 0; }
+.stepHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.stepHeading h2 { margin: 0; font-size: 16px; }
+.stepBody > p { margin: 7px 0 0; color: #64748b; font-size: 13px; line-height: 1.65; }
+.state { flex-shrink: 0; padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 750; }
+.complete { color: #047857; background: #ecfdf5; }
+.current { color: #1d4ed8; background: #eff6ff; }
+.pending { color: #475569; background: #f1f5f9; }
+.attention { color: #9a3412; background: #fff7ed; }
+.action, .secondaryAction { display: inline-flex; align-items: center; justify-content: center; min-height: 38px; box-sizing: border-box; margin-top: 12px; padding: 8px 14px; border-radius: 9px; font-size: 12px; font-weight: 750; text-decoration: none; }
+.action { color: #fff; background: #2563eb; }
+.optional { max-width: 920px; box-sizing: border-box; margin: 16px auto 0; padding: 20px; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 14px; border: 1px dashed #93c5fd; border-radius: 16px; background: #f8fbff; }
+.optionalBadge { padding: 4px 8px; border-radius: 999px; color: #1e40af; background: #dbeafe; font-size: 11px; font-weight: 750; }
+.optional h2 { margin: 0; font-size: 15px; }
+.optional p { margin: 5px 0 0; color: #64748b; font-size: 12px; line-height: 1.6; }
+.secondaryAction { margin-top: 0; color: #1d4ed8; border: 1px solid #93c5fd; background: #fff; white-space: nowrap; }
+
+@media (max-width:640px) {
+  .page { padding-inline: 14px; }
+  .header { min-height: 64px; }
+  .logo { width: 158px; }
+  .hero { margin-top: 10px; padding: 24px 20px; border-radius: 16px; }
+  .step { grid-template-columns: 34px minmax(0,1fr); padding: 16px; }
+  .stepNumber { width: 32px; height: 32px; }
+  .stepHeading { align-items: flex-start; }
+  .optional { grid-template-columns: auto 1fr; }
+  .optional .secondaryAction { grid-column: 1 / -1; width: 100%; }
+}

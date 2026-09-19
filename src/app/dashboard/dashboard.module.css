@@ -1,0 +1,136 @@
+.shell { min-height: 100vh; color: #0f1b2d; background: #f5f7fa; }
+.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 10; width: 236px; box-sizing: border-box; padding: 28px 18px 24px; background: #fff; border-right: 1px solid #e5e9f0; display: flex; flex-direction: column; }
+.logo { width: 180px; height: auto; display: block; margin: 0 auto 28px; }
+.nav { display: grid; gap: 6px; }
+.navLink, .navMuted { min-height: 42px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; color: #40506a; font-size: 14px; font-weight: 600; text-decoration: none; }
+.navLink:hover { background: #eff6ff; color: #1d4ed8; }
+.navActive, .navActive:hover { color: #fff; background: #2563eb; }
+.navMuted { color: #9aa4b2; }
+.navIcon { width: 22px; text-align: center; font-size: 16px; }
+.sideConsult { margin-top: auto; border: 1px solid #93c5fd; border-radius: 14px; padding: 14px; text-align: center; background: #f8fbff; }
+.sideConsultBadge { display: inline-block; margin-bottom: 8px; padding: 3px 8px; border-radius: 999px; color: #1e40af; background: #dbeafe; font-size: 11px; font-weight: 700; }
+.sideConsultTitle { margin: 0; font-size: 14px; font-weight: 700; }
+.sideConsultLink { display: block; margin-top: 10px; padding: 9px 10px; border-radius: 8px; color: #fff; background: #2563eb; font-size: 12px; font-weight: 700; text-decoration: none; }
+.sideConsultNote { margin: 8px 0 0; color: #6b7280; font-size: 10px; line-height: 1.5; }
+.main { min-width: 0; margin-left: 236px; }
+.topbar { min-height: 72px; box-sizing: border-box; padding: 16px 28px; display: flex; justify-content: space-between; align-items: center; gap: 18px; background: #fff; border-bottom: 1px solid #e5e9f0; }
+.clinicEyebrow { margin: 0 0 3px; color: #64748b; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+.clinicName { margin: 0; font-size: 18px; font-weight: 750; }
+.topActions { display: flex; align-items: center; gap: 12px; }
+.accountLabel { color: #64748b; font-size: 12px; }
+.content { max-width: 1240px; margin: 0 auto; padding: 28px; }
+.pageHeading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.pageTitle { margin: 0; font-size: 24px; letter-spacing: -.02em; }
+.pageDescription { margin: 5px 0 0; color: #64748b; font-size: 13px; }
+.newDiagnosisLink { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; min-height: 40px; box-sizing: border-box; padding: 9px 16px; border-radius: 10px; color: #fff; background: #2563eb; font-size: 13px; font-weight: 700; text-decoration: none; }
+.sampleBanner { margin-bottom: 16px; padding: 10px 14px; border: 1px solid #fcd34d; border-radius: 10px; color: #854d0e; background: #fffbeb; font-size: 12px; line-height: 1.55; }
+.subscriptionCard { margin-bottom: 16px; padding: 17px 20px; border: 1px solid #dbe4ef; border-radius: 14px; background: #fff; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.subscriptionCopy { min-width: 0; }
+.subscriptionEyebrow { margin: 0 0 4px; color: #64748b; font-size: 11px; font-weight: 700; }
+.subscriptionPlan { margin: 0; font-size: 18px; }
+.subscriptionDescription { margin: 5px 0 0; color: #64748b; font-size: 12px; line-height: 1.55; }
+.subscriptionActions { flex-shrink: 0; display: flex; align-items: center; gap: 12px; }
+.subscriptionStatus { display: inline-flex; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 750; white-space: nowrap; }
+.subscriptionPositive { color: #047857; background: #ecfdf5; }
+.subscriptionInfo { color: #1d4ed8; background: #eff6ff; }
+.subscriptionWarning { color: #9a3412; background: #fff7ed; }
+.subscriptionDanger { color: #b91c1c; background: #fef2f2; }
+.subscriptionNeutral { color: #475569; background: #f1f5f9; }
+.subscriptionLink { color: #2563eb; font-size: 12px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.subscriptionLinkButton { appearance: none; border: 0; padding: 0; background: transparent; color: #2563eb; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.subscriptionLinkButton:hover { text-decoration: underline; }
+.overviewGrid { display: grid; grid-template-columns: minmax(260px, 1.1fr) minmax(0, 2fr); gap: 16px; }
+.card { min-width: 0; box-sizing: border-box; padding: 20px; border: 1px solid #e5e9f0; border-radius: 16px; background: #fff; box-shadow: 0 1px 2px rgba(15,27,45,.04); }
+.scoreCard { display: flex; flex-direction: column; align-items: center; text-align: center; background: linear-gradient(145deg,#fff 10%,#eff6ff 100%); }
+.sectionLabel { margin: 0; color: #0f1b2d; font-size: 15px; font-weight: 750; }
+.gauge { position: relative; width: 156px; height: 156px; margin: 18px 0 12px; border-radius: 50%; }
+.gaugeInner { position: absolute; inset: 11px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; background: #fff; }
+.scoreNumber { font-size: 46px; font-weight: 800; line-height: .95; }
+.scoreMax { margin-top: 6px; color: #64748b; font-size: 12px; }
+.trend { display: inline-flex; padding: 4px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.trendPositive { color: #047857; background: #ecfdf5; }
+.trendNegative { color: #b91c1c; background: #fef2f2; }
+.trendNeutral { color: #64748b; background: #f1f5f9; }
+.scoreCaveat { margin: 12px 0 0; color: #6b7280; font-size: 11px; line-height: 1.55; }
+.domainsGrid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 14px; }
+.domainCard { min-width: 0; padding: 14px; border: 1px solid #e5e9f0; border-radius: 12px; background: #fff; }
+.domainHeader { min-height: 34px; display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; color: #40506a; font-size: 12px; font-weight: 700; }
+.domainPoints { margin: 4px 0 8px; font-size: 21px; font-weight: 800; }
+.bar { height: 6px; overflow: hidden; border-radius: 999px; background: #e5e9f0; }
+.barFill { height: 100%; border-radius: inherit; background: #2563eb; }
+.badge, .dataBadge { display: inline-block; padding: 3px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.badge { color: #92400e; background: #fef3c7; }
+.dataBadge { color: #475569; background: #f1f5f9; }
+.domainNote { margin: 7px 0 0; color: #64748b; font-size: 10px; line-height: 1.45; }
+.metricsGrid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin-top: 16px; }
+.metricCard { min-height: 98px; box-sizing: border-box; padding: 16px; border: 1px solid #e5e9f0; border-radius: 14px; background: #fff; }
+.metricLabel { margin: 0; color: #64748b; font-size: 12px; }
+.metricValue { margin: 9px 0 2px; color: #0f1b2d; font-size: 24px; font-weight: 800; }
+.metricNote { margin: 0; color: #94a3b8; font-size: 10px; }
+.twoColumn { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(300px,.75fr); gap: 16px; margin-top: 16px; }
+.stack { display: grid; gap: 16px; align-content: start; }
+.cardHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.cardSubtitle { margin: 3px 0 0; color: #64748b; font-size: 11px; }
+.textLink { color: #2563eb; font-size: 12px; font-weight: 700; text-decoration: none; }
+.improvementList, .questionList, .historyList, .competitorList { display: grid; gap: 9px; }
+.improvementItem { display: grid; grid-template-columns: 30px 1fr; gap: 10px; padding: 13px; border: 1px solid #e5e9f0; border-radius: 11px; }
+.rank { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: #fff; background: #2563eb; font-size: 12px; font-weight: 800; }
+.itemTitle { margin: 0; font-size: 13px; font-weight: 750; line-height: 1.45; }
+.itemDescription { margin: 4px 0 0; color: #64748b; font-size: 11px; line-height: 1.5; }
+.questionItem, .historyItem, .competitorItem { padding: 11px 12px; border: 1px solid #e5e9f0; border-radius: 10px; background: #fff; }
+.questionItem { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.questionText { margin: 0; font-size: 12px; line-height: 1.45; }
+.statusGood, .statusClose, .statusImprove, .statusMissing { flex-shrink: 0; padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.statusGood { color: #166534; background: #dcfce7; }
+.statusClose { color: #92400e; background: #fef3c7; }
+.statusImprove { color: #9f1239; background: #fff1f2; }
+.statusMissing { color: #475569; background: #f1f5f9; }
+.integrationFlow { display: grid; gap: 8px; }
+.flowRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 9px; background: #f8fafc; color: #40506a; font-size: 12px; }
+.flowState { color: #64748b; font-size: 10px; font-weight: 700; }
+.competitorItem, .historyItem { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.competitorName, .historyDate { margin: 0; font-size: 12px; font-weight: 650; }
+.competitorMeta, .historyScore { color: #64748b; font-size: 11px; }
+.historyItem { color: #0f1b2d; text-decoration: none; }
+.historyItem:hover { border-color: #93c5fd; background: #f8fbff; }
+.emptyCard { max-width: 720px; margin: 56px auto 0; padding: 42px 28px; border: 1px solid #dbe4ef; border-radius: 18px; background: #fff; text-align: center; }
+.emptyIcon { width: 58px; height: 58px; margin: 0 auto 16px; display: grid; place-items: center; border-radius: 16px; color: #2563eb; background: #eff6ff; font-size: 25px; }
+.emptyTitle { margin: 0; font-size: 20px; }
+.emptyText { max-width: 480px; margin: 10px auto 22px; color: #64748b; font-size: 13px; line-height: 1.7; }
+.mobileNav { display: none; }
+
+@media (max-width:1050px) {
+  .sidebar { width: 204px; }
+  .main { margin-left: 204px; }
+  .logo { width: 164px; }
+  .metricsGrid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .twoColumn { grid-template-columns: 1fr; }
+}
+
+@media (max-width:760px) {
+  .sidebar { display: none; }
+  .main { margin-left: 0; }
+  .topbar { min-height: 64px; padding: 11px 16px; }
+  .accountLabel { display: none; }
+  .content { padding: 20px 14px 90px; }
+  .pageHeading { align-items: flex-start; }
+  .pageTitle { font-size: 21px; }
+  .newDiagnosisLink { min-height: 36px; padding: 8px 12px; font-size: 11px; }
+  .overviewGrid, .twoColumn { grid-template-columns: 1fr; }
+  .domainsGrid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .metricsGrid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+  .metricCard { min-height: 90px; padding: 13px; }
+  .card { padding: 16px; border-radius: 14px; }
+  .mobileNav { position: fixed; inset: auto 0 0; z-index: 20; height: 66px; display: grid; grid-template-columns: repeat(5,1fr); background: #fff; border-top: 1px solid #e5e9f0; }
+  .mobileNav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #526176; font-size: 10px; font-weight: 650; text-decoration: none; }
+  .mobileNav a:first-child { color: #2563eb; }
+  .subscriptionCard { align-items: flex-start; flex-direction: column; padding: 15px 16px; }
+  .subscriptionActions { width: 100%; justify-content: space-between; }
+}
+
+@media (max-width:430px) {
+  .clinicName { max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+  .pageDescription { display: none; }
+  .domainsGrid { grid-template-columns: 1fr; }
+  .scoreCard { padding-block: 20px; }
+}
