@@ -516,6 +516,7 @@ P0では取得可能範囲から開始する。
 ---
 # 16. CRM
 DENT SHIFT CRMはSalesforce/HubSpot中心ではなく**自社開発**。
+> **2026-09-20更新(ユーザー承認済み方針変更)**: 「DENT SHIFT Claude実装指示書_認証・決済・Salesforce連携_2026-09-17」により、この方針は撤回された。DENT SHIFT DBを引き続きsource of truthとしたまま、Salesforceを顧客行動・リード・契約状態のCRM同期先として非同期・疎結合で利用する(`src/server/services/salesforceSync.ts`参照)。以下の自社開発CRM設計(16.1以降)はP1以降の検討事項として残すが、P0ではSalesforce同期を優先する。
 ## 16.1 二画面構成
 ### 医院向け
 院長 / スタッフ / 制作会社
@@ -978,7 +979,7 @@ Claude Codeは以下をしない。
 - 外部変更を無承認で実行
 - 料金をコード固定
 - 営業電話を前提にCRM設計
-- Salesforce/HubSpot依存へ勝手に変更
+- ~~Salesforce/HubSpot依存へ勝手に変更~~ (2026-09-20更新: ユーザー承認済みでSalesforce CRM同期を導入済み。16章参照)
 - 歯科特化を外して汎用SaaS化
 - AI人物を実在社員と表示
 - 競合コンテンツをコピー

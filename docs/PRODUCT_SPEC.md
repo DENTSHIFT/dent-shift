@@ -29,7 +29,8 @@ DENT SHIFTは「歯科医院専用AI集患OS」。単なるSEO/AIO・LLMO分析�
 7. 料金・プラン・AI provider/API仕様はハードコードせず設定化する。
 8. AI生成人物(担当者)は実在社員と誤認させない。必ず「AI生成モデル」と表示する。
 9. 広告代理店化しない。自然AI推薦とAI広告を混同しない。歯科特化を外して汎用SaaS化しない。
-10. CRMはSalesforce/HubSpot等の外部SaaSに依存せず自社開発する。
+10. ~~CRMはSalesforce/HubSpot等の外部SaaSに依存せず自社開発する。~~
+    **2026-09-20更新(ユーザー承認済み方針変更)**: 「DENT SHIFT Claude実装指示書_認証・決済・Salesforce連携_2026-09-17」により、この原則は撤回された。DENT SHIFT DBを引き続きサービス状態のsource of truthとしたまま、Salesforceを顧客行動・リード・契約状態のCRM同期先として利用する(疎結合の非同期同期。`src/server/services/salesforceSync.ts`参照)。Salesforceを認証・決済のsource of truthにはしない。
 
 ## 3. ブランド
 
