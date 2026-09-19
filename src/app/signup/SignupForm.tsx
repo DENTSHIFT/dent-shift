@@ -27,7 +27,7 @@ export function SignupForm({ clinicId }: { clinicId?: string }) {
         setError(data.error ?? "登録に失敗しました");
         return;
       }
-      router.push("/dashboard");
+      router.push("/verify-phone");
       router.refresh();
     } catch {
       setError("通信エラーが発生しました。時間をおいて再度お試しください。");
