@@ -44,9 +44,14 @@
 
 ### Step 9 — 相談予約(希望者のみ)
 - スペシャリスト相談への導線(必須化しない)
+- 進捗: 診断結果画面の任意CTA(`ConsultationCta`/`PhoneInquiryCta`)・クリック計測(`/api/events/track`)・
+  TimeRex予約状態の暫定Webhook(`/api/webhooks/timerex`)まで実装済み(Step7と合わせて対応)。
 
 ### Step 10 — 外部計測連携の下地
 - GA4 / Search Console等、P1本格実装の前段としての接続点だけ用意(P0では必須にしない)
+- 2026-09-20時点: 本項目はP0で必須ではないとの本文の位置づけどおり未着手。P0で使う画面が
+  存在しない段階での先行実装は「使われない足場」になるため、実際にP1着手する時点で
+  billingConfig.ts等と同型のconfigパターンを踏襲して実装する。
 
 ## 進め方の原則
 
