@@ -303,6 +303,7 @@ const depsWithMockOnlyEmptyArrays: RunFreeDiagnosisDeps = {
 function buildInput(clinicName: string): RunFreeDiagnosisInput {
   return {
     clinicName,
+    directorName: "テスト院長",
     clinicUrl: "https://example.com",
     contactEmail: "test@example.com",
     contactPhone: "03-1234-5678",
@@ -312,7 +313,7 @@ function buildInput(clinicName: string): RunFreeDiagnosisInput {
 describe("DiagnosisRepository: 保存/取得のラウンドトリップ(2026-09-05のユーザー指示⑤)", () => {
   it("adComplianceChecksのsourceType/provisional/severity/confidence/evidence/escalationEligibleが保存後も失われない", async () => {
     const result = await runFreeDiagnosis(buildInput("ラウンドトリップ歯科医院"), deps);
-    const saved = await repo.saveDiagnosisResult({ clinicUrl: "https://example.com", contactEmail: "test@example.com" }, result);
+    const saved = await repo.saveDiagnosisResult({ clinicUrl: "https://example.com", directorName: "テスト院長", contactEmail: "test@example.com" }, result);
     const fetched = await repo.getDiagnosisById(saved.diagnosisId);
 
     expect(fetched).not.toBeNull();
@@ -335,7 +336,7 @@ describe("DiagnosisRepository: 保存/取得のラウンドトリップ(2026-09-
   it("isSampleが保存され、取得時も一覧(getDiagnosesByClinicId)でも判別できる", async () => {
     const result = await runFreeDiagnosis(buildInput("isSample検証歯科医院"), deps);
     expect(result.isSample).toBe(true); // FakeScoreProviderがmock criteriaを返すため
-    const saved = await repo.saveDiagnosisResult({ clinicUrl: "https://example.com", contactEmail: "test@example.com" }, result);
+    const saved = await repo.saveDiagnosisResult({ clinicUrl: "https://example.com", directorName: "テスト院長", contactEmail: "test@example.com" }, result);
     const fetched = await repo.getDiagnosisById(saved.diagnosisId);
     expect(fetched!.isSample).toBe(true);
 
@@ -346,7 +347,7 @@ describe("DiagnosisRepository: 保存/取得のラウンドトリップ(2026-09-
 
   it("ai_observationsが診断単位・質問単位で保存され、citations/region/recommendationRank/competitorMentionsが行ごとに正しく区別される(2026-09-07のユーザー指示、Phase 2直前対応: live観測はもう保存できないためTwoMockAiProviderのmock2件で区別を検証する)", async () => {
     const result = await runFreeDiagnosis(buildInput("AI観測検証歯科医院"), deps);
-    const saved = await repo.saveDiagnosisResult({ clinicUrl: "https://example.com", contactEmail: "test@example.com" }, result);
+    const saved = await repo.saveDiagnosisResult({ clinicUrl: "https://example.com", directorName: "テスト院長", contactEmail: "test@example.com" }, result);
     const fetched = await repo.getDiagnosisById(saved.diagnosisId);
 
     expect(fetched!.aiObservations.length).toBe(result.aiObservations.length);
@@ -371,7 +372,7 @@ describe("DiagnosisRepository: 保存/取得のラウンドトリップ(2026-09-
   it("mock observationはsourceType/measurementStatus/unavailableReason/measurementMetaJson/provisionalが正しく保存され、citations=[]/competitors=[]がnullへ変換されずに保存・復元される(2026-09-07のユーザー指示、Phase 1書き込み側対応)", async () => {
     const result = await runFreeDiagnosis(buildInput("Phase1書き込み検証歯科医院"), depsWithMockOnlyEmptyArrays);
     const saved = await repo.saveDiagnosisResult(
-      { clinicUrl: "https://example.com", contactEmail: "test@example.com" },
+      { clinicUrl: "https://example.com", directorName: "テスト院長", contactEmail: "test@example.com" },
       result
     );
     const fetched = await repo.getDiagnosisById(saved.diagnosisId);
@@ -410,7 +411,7 @@ describe("DiagnosisRepository: 保存/取得のラウンドトリップ(2026-09-
   it("unavailableReason(criterion/questionResult/dataGap)が保存後も失われない(2026-09-06のユーザー指示④)", async () => {
     const result = await runFreeDiagnosis(buildInput("理由保持検証歯科医院"), depsWithUnavailableMeo);
     const saved = await repo.saveDiagnosisResult(
-      { clinicUrl: "https://example.com", contactEmail: "test@example.com" },
+      { clinicUrl: "https://example.com", directorName: "テスト院長", contactEmail: "test@example.com" },
       result
     );
     const fetched = await repo.getDiagnosisById(saved.diagnosisId);
@@ -459,7 +460,7 @@ describe("DiagnosisRepository: 保存/取得のラウンドトリップ(2026-09-
     expect(losing!.rootCauseKey).toBe("AIO:ai_search_presence");
 
     const saved = await repo.saveDiagnosisResult(
-      { clinicUrl: "https://example.com", contactEmail: "test@example.com" },
+      { clinicUrl: "https://example.com", directorName: "テスト院長", contactEmail: "test@example.com" },
       result
     );
     const fetched = await repo.getDiagnosisById(saved.diagnosisId);
@@ -506,6 +507,7 @@ describe("DiagnosisRepository: clinic_id テナント分離(SECURITY.md「テナ
     const first = await repo.saveDiagnosisResult(
       {
         clinicUrl: "https://repeat.example.com",
+        directorName: "テスト院長",
         contactEmail: "repeat@example.com",
         existingClinicId: clinic.id,
       },
@@ -514,6 +516,7 @@ describe("DiagnosisRepository: clinic_id テナント分離(SECURITY.md「テナ
     const second = await repo.saveDiagnosisResult(
       {
         clinicUrl: "https://repeat.example.com",
+        directorName: "テスト院長",
         contactEmail: "repeat@example.com",
         existingClinicId: clinic.id,
       },
@@ -540,6 +543,7 @@ describe("DiagnosisRepository: clinic_id テナント分離(SECURITY.md「テナ
     const saved = await repo.saveDiagnosisResult(
       {
         clinicUrl: "https://mail-save.example.com",
+        directorName: "テスト院長",
         contactEmail: "clinic@example.com",
         contactPhone: "03-1234-5678",
       },
@@ -556,6 +560,7 @@ describe("DiagnosisRepository: clinic_id テナント分離(SECURITY.md「テナ
     const saved = await repo.saveDiagnosisResult(
       {
         clinicUrl: "https://mail-status.example.com",
+        directorName: "テスト院長",
         contactEmail: "clinic@example.com",
         contactPhone: "03-1234-5678",
       },
@@ -582,6 +587,7 @@ describe("DiagnosisRepository: clinic_id テナント分離(SECURITY.md「テナ
       repo.saveDiagnosisResult(
         {
           clinicUrl: "https://missing.example.com",
+          directorName: "テスト院長",
           contactEmail: "missing@example.com",
           existingClinicId: "missing-clinic-id",
         },
@@ -597,8 +603,8 @@ describe("DiagnosisRepository: clinic_id テナント分離(SECURITY.md「テナ
   it("getDiagnosesByClinicIdは自院以外の診断を返さない", async () => {
     const resultA = await runFreeDiagnosis(buildInput("テナントA歯科医院"), deps);
     const resultB = await runFreeDiagnosis(buildInput("テナントB歯科医院"), deps);
-    const savedA = await repo.saveDiagnosisResult({ clinicUrl: "https://a.example.com", contactEmail: "a@example.com" }, resultA);
-    const savedB = await repo.saveDiagnosisResult({ clinicUrl: "https://b.example.com", contactEmail: "b@example.com" }, resultB);
+    const savedA = await repo.saveDiagnosisResult({ clinicUrl: "https://a.example.com", directorName: "テスト院長", contactEmail: "a@example.com" }, resultA);
+    const savedB = await repo.saveDiagnosisResult({ clinicUrl: "https://b.example.com", directorName: "テスト院長", contactEmail: "b@example.com" }, resultB);
 
     const listA = await repo.getDiagnosesByClinicId(savedA.clinicId);
     const listB = await repo.getDiagnosesByClinicId(savedB.clinicId);
@@ -612,8 +618,8 @@ describe("DiagnosisRepository: clinic_id テナント分離(SECURITY.md「テナ
   it("ai_observationsのclinicIdが正しく設定され、他院のclinicIdで検索しても混ざらない", async () => {
     const resultA = await runFreeDiagnosis(buildInput("AI観測テナントA歯科医院"), deps);
     const resultB = await runFreeDiagnosis(buildInput("AI観測テナントB歯科医院"), deps);
-    const savedA = await repo.saveDiagnosisResult({ clinicUrl: "https://a2.example.com", contactEmail: "a2@example.com" }, resultA);
-    const savedB = await repo.saveDiagnosisResult({ clinicUrl: "https://b2.example.com", contactEmail: "b2@example.com" }, resultB);
+    const savedA = await repo.saveDiagnosisResult({ clinicUrl: "https://a2.example.com", directorName: "テスト院長", contactEmail: "a2@example.com" }, resultA);
+    const savedB = await repo.saveDiagnosisResult({ clinicUrl: "https://b2.example.com", directorName: "テスト院長", contactEmail: "b2@example.com" }, resultB);
 
     const rowsA = await prisma.aiObservation.findMany({ where: { clinicId: savedA.clinicId } });
     const rowsB = await prisma.aiObservation.findMany({ where: { clinicId: savedB.clinicId } });
@@ -658,7 +664,7 @@ describe("DiagnosisRepository: Phase 2(measurementStatus NOT NULL化)直前の�
       depsWithMockOnlyEmptyArrays
     );
     const saved = await repo.saveDiagnosisResult(
-      { clinicUrl: "https://example.com", contactEmail: "test@example.com" },
+      { clinicUrl: "https://example.com", directorName: "テスト院長", contactEmail: "test@example.com" },
       result
     );
     const fetched = await repo.getDiagnosisById(saved.diagnosisId);
@@ -680,7 +686,7 @@ describe("DiagnosisRepository: Phase 2(measurementStatus NOT NULL化)直前の�
     let caughtError: unknown;
     try {
       await repo.saveDiagnosisResult(
-        { clinicUrl: "https://example.com", contactEmail: "test@example.com" },
+        { clinicUrl: "https://example.com", directorName: "テスト院長", contactEmail: "test@example.com" },
         result
       );
     } catch (err) {

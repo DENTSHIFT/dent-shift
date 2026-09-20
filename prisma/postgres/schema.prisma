@@ -13,6 +13,7 @@ datasource db {
 model Clinic {
   id             String          @id @default(cuid())
   name           String
+  directorName   String?
   url            String
   contactEmail   String?
   contactPhone   String?

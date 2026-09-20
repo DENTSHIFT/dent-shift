@@ -137,9 +137,9 @@ export default async function PlansPage({
             <thead>
               <tr>
                 <th>機能</th>
-                <th>ライト</th>
-                <th>スタンダード</th>
-                <th>プレミアム</th>
+                <th>ライトプラン</th>
+                <th>スタンダードプラン</th>
+                <th>プレミアムプラン</th>
               </tr>
             </thead>
             <tbody>

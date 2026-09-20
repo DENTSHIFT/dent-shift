@@ -81,7 +81,7 @@ export function buildSubscriptionViewModel(
     subscription.status
   );
   return {
-    planName: `${planName ?? subscription.plan}プラン`,
+    planName: planName ?? subscription.plan,
     ...status,
     actionLabel: canContinueOnboarding ? "初期設定を確認する" : "プラン内容を確認する",
     actionHref: canContinueOnboarding ? "/onboarding" : "/plans",

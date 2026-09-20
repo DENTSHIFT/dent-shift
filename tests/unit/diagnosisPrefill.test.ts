@@ -4,6 +4,7 @@ import { applyAuthenticatedDiagnosisProfile } from "@/app/diagnosis/diagnosisPre
 const profile = {
   authenticated: true as const,
   clinicName: "登録済み歯科医院",
+  directorName: "登録済み院長",
   clinicUrl: "https://registered.example.com",
   contactEmail: "registered@example.com",
   contactPhone: "03-1234-5678",
@@ -12,11 +13,12 @@ const profile = {
 };
 
 describe("applyAuthenticatedDiagnosisProfile", () => {
-  it("登録済みの医院名・公式URL・メールを正本として自動入力する", () => {
+  it("登録済みの医院名・院長名・公式URL・メールを正本として自動入力する", () => {
     expect(
       applyAuthenticatedDiagnosisProfile(
         {
           clinicName: "途中入力",
+          directorName: "途中入力院長",
           clinicUrl: "https://other.example.com",
           contactEmail: "other@example.com",
           contactPhone: "090-1111-2222",
@@ -27,6 +29,7 @@ describe("applyAuthenticatedDiagnosisProfile", () => {
       )
     ).toEqual({
       clinicName: "登録済み歯科医院",
+      directorName: "登録済み院長",
       clinicUrl: "https://registered.example.com",
       contactEmail: "registered@example.com",
       contactPhone: "03-1234-5678",
@@ -39,6 +42,7 @@ describe("applyAuthenticatedDiagnosisProfile", () => {
     const result = applyAuthenticatedDiagnosisProfile(
       {
         clinicName: "",
+        directorName: "",
         clinicUrl: "",
         contactEmail: "",
         contactPhone: "",
@@ -56,6 +60,7 @@ describe("applyAuthenticatedDiagnosisProfile", () => {
     const result = applyAuthenticatedDiagnosisProfile(
       {
         clinicName: "",
+        directorName: "",
         clinicUrl: "",
         contactEmail: "",
         contactPhone: "090-1111-2222",
@@ -66,5 +71,22 @@ describe("applyAuthenticatedDiagnosisProfile", () => {
     );
 
     expect(result.contactPhone).toBe("090-1111-2222");
+  });
+
+  it("登録済みの院長名がない場合は、利用者の入力値を保持する", () => {
+    const result = applyAuthenticatedDiagnosisProfile(
+      {
+        clinicName: "",
+        directorName: "途中入力院長",
+        clinicUrl: "",
+        contactEmail: "",
+        contactPhone: "",
+        gbpUrl: "",
+        bookingUrl: "",
+      },
+      { ...profile, directorName: null }
+    );
+
+    expect(result.directorName).toBe("途中入力院長");
   });
 });

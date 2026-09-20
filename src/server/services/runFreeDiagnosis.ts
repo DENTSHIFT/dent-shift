@@ -34,10 +34,12 @@ import { isValidClinicContactPhone } from "@/domain/clinic/contactPhone";
 
 export interface RunFreeDiagnosisInput {
   clinicName: string;
+  directorName: string;
   clinicUrl: string;
   contactEmail: string;
-  contactPhone: string;
-  // 任意項目。未入力の場合、対応するdomainは"unavailable"として扱う(0点にしない)
+  // Ver3.3仕様(2026-09-21)により任意項目化。未入力の場合、対応するdomainは
+  // "unavailable"として扱う(0点にしない)
+  contactPhone?: string;
   gbpUrl?: string;
   bookingUrl?: string;
 }
@@ -144,13 +146,17 @@ function validateInput(input: RunFreeDiagnosisInput) {
   if (!input.clinicName?.trim()) {
     throw new InvalidDiagnosisInputError("医院名は必須です");
   }
+  if (!input.directorName?.trim()) {
+    throw new InvalidDiagnosisInputError("院長名は必須です");
+  }
   if (!input.clinicUrl?.trim() || !/^https?:\/\//.test(input.clinicUrl.trim())) {
     throw new InvalidDiagnosisInputError("公式サイトURLは http(s):// から始まる形式で入力してください");
   }
   if (!input.contactEmail?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.contactEmail.trim())) {
     throw new InvalidDiagnosisInputError("メールアドレスの形式が正しくありません");
   }
-  if (!isValidClinicContactPhone(input.contactPhone ?? "")) {
+  // 電話番号は任意項目(Ver3.3仕様)。入力された場合のみ形式を検証する。
+  if (input.contactPhone?.trim() && !isValidClinicContactPhone(input.contactPhone)) {
     throw new InvalidDiagnosisInputError("電話番号は国内の10〜11桁で入力してください");
   }
 }

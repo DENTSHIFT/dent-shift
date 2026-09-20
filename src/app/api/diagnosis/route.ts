@@ -18,6 +18,7 @@ import { findClinicDuplicateCandidate } from "@/server/db/clinicDuplicateReposit
 import { duplicateCandidateMessage } from "@/domain/clinic/duplicateDetection";
 import { sendDiagnosisResultEmail } from "@/server/services/sendDiagnosisResultEmail";
 import type { ResultEmailDeliveryStatus } from "@/domain/email/resultEmailDeliveryStatus";
+import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
 
 // legacy mock providers(P0案Bの「既存mock/reference score用」経路。2026-09-08の
 // ユーザー指示: AI_MEASUREMENT_PROVIDER="openai"でもこのlegacy aiProviderは
@@ -38,6 +39,7 @@ export async function POST(request: NextRequest) {
 
   const {
     clinicName,
+    directorName,
     clinicUrl,
     contactEmail,
     contactPhone,
@@ -110,19 +112,22 @@ export async function POST(request: NextRequest) {
           // ログイン中は登録済みの医院情報を正本とし、bodyで別医院の情報へ
           // 差し替えることを許さない。任意URLだけは未登録時に今回の入力を利用する。
           clinicName: currentContact.clinic.name,
+          directorName:
+            currentContact.clinic.directorName ?? String(directorName ?? ""),
           clinicUrl: currentContact.clinic.url,
           contactEmail: currentContact.email,
           contactPhone:
-            currentContact.clinic.contactPhone ?? String(contactPhone ?? ""),
+            currentContact.clinic.contactPhone ?? (contactPhone ? String(contactPhone) : undefined),
           gbpUrl: currentContact.clinic.gbpUrl ?? (gbpUrl ? String(gbpUrl) : undefined),
           bookingUrl:
             currentContact.clinic.bookingUrl ?? (bookingUrl ? String(bookingUrl) : undefined),
         }
       : {
           clinicName: String(clinicName ?? ""),
+          directorName: String(directorName ?? ""),
           clinicUrl: String(clinicUrl ?? ""),
           contactEmail: String(contactEmail ?? ""),
-          contactPhone: String(contactPhone ?? ""),
+          contactPhone: contactPhone ? String(contactPhone) : undefined,
           gbpUrl: gbpUrl ? String(gbpUrl) : undefined,
           bookingUrl: bookingUrl ? String(bookingUrl) : undefined,
         };
@@ -135,6 +140,7 @@ export async function POST(request: NextRequest) {
     const saved = await saveDiagnosisResult(
       {
         clinicUrl: diagnosisInput.clinicUrl,
+        directorName: diagnosisInput.directorName,
         contactEmail: diagnosisInput.contactEmail,
         contactPhone: diagnosisInput.contactPhone,
         gbpUrl: diagnosisInput.gbpUrl,
@@ -143,6 +149,22 @@ export async function POST(request: NextRequest) {
       },
       result
     );
+
+    // Ver3.3仕様(2026-09-21): 無料診断フォーム送信時点からSalesforce Leadとして
+    // 管理できるようにする。Salesforce未接続(disabled)時やイベント送信失敗時も
+    // 診断結果自体は保存済みのため、診断処理を失敗扱いにしない。
+    await enqueueIntegrationEvent({
+      eventType: "diagnosis_completed",
+      clinicId: saved.clinicId,
+      payload: {
+        email: diagnosisInput.contactEmail,
+        clinic_name: diagnosisInput.clinicName,
+        website_url: diagnosisInput.clinicUrl,
+        phone: diagnosisInput.contactPhone ?? null,
+      },
+    }).catch((error) => {
+      console.error("[POST /api/diagnosis] Salesforce sync enqueue failed:", error);
+    });
 
     // 診断保存後に結果メールを送る。メール基盤が未設定(disabled)なら何もせず、
     // 設定不備・provider障害でも保存済みの診断結果は失敗扱いにしない。

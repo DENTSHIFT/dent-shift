@@ -14,6 +14,7 @@ export async function GET() {
   return NextResponse.json({
     authenticated: true,
     clinicName: contact.clinic.name,
+    directorName: contact.clinic.directorName,
     clinicUrl: contact.clinic.url,
     contactEmail: contact.email,
     contactPhone: contact.clinic.contactPhone,

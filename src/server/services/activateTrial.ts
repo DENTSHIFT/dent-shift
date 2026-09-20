@@ -21,6 +21,7 @@ export async function activateTrialIfEligible(contactId: string): Promise<void> 
   if (!subscription) return;
 
   const eligible = isEligibleForTrialActivation({
+    planId: subscription.plan,
     phoneVerifiedAt: contact.phoneVerifiedAt,
     emailVerifiedAt: contact.emailVerifiedAt,
     consentAcceptedAt: contact.consentAcceptedAt,

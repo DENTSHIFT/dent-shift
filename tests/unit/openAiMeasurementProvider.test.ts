@@ -463,6 +463,7 @@ function buildRunFreeDiagnosisDeps(overrides: Partial<RunFreeDiagnosisDeps> = {}
 const RUN_CLINIC_NAME = "openai runFreeDiagnosis接続検証歯科医院";
 const RUN_INPUT = {
   clinicName: RUN_CLINIC_NAME,
+  directorName: "テスト院長",
   clinicUrl: "https://example.com",
   contactEmail: "test@example.com",
   contactPhone: "03-1234-5678",

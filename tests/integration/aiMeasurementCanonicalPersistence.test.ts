@@ -344,6 +344,7 @@ function buildDeps(
 function buildInput(clinicName: string): RunFreeDiagnosisInput {
   return {
     clinicName,
+    directorName: "テスト院長",
     clinicUrl: "https://example.com",
     contactEmail: "test@example.com",
     contactPhone: "03-1234-5678",
@@ -358,7 +359,7 @@ describe("canonical persistence bridge: AiMeasurementObservationの保存(2026-0
     expect(result.aiMeasurementObservations?.length).toBe(OPENAI_TARGETED_QUESTIONS.length);
 
     const saved = await repo.saveDiagnosisResult(
-      { clinicUrl: "https://example.com", contactEmail: "test@example.com" },
+      { clinicUrl: "https://example.com", directorName: "テスト院長", contactEmail: "test@example.com" },
       result
     );
 
@@ -392,7 +393,7 @@ describe("canonical persistence bridge: AiMeasurementObservationの保存(2026-0
     const deps = buildDeps(new FixedCanonicalAiMeasurementProvider(buildReferenceObservation));
     const result = await runFreeDiagnosis(buildInput("canonical CASE2歯科医院"), deps);
     const saved = await repo.saveDiagnosisResult(
-      { clinicUrl: "https://example.com", contactEmail: "test@example.com" },
+      { clinicUrl: "https://example.com", directorName: "テスト院長", contactEmail: "test@example.com" },
       result
     );
 
@@ -412,7 +413,7 @@ describe("canonical persistence bridge: AiMeasurementObservationの保存(2026-0
     const deps = buildDeps(new FixedCanonicalAiMeasurementProvider(buildUnavailableObservation));
     const result = await runFreeDiagnosis(buildInput("canonical CASE3歯科医院"), deps);
     const saved = await repo.saveDiagnosisResult(
-      { clinicUrl: "https://example.com", contactEmail: "test@example.com" },
+      { clinicUrl: "https://example.com", directorName: "テスト院長", contactEmail: "test@example.com" },
       result
     );
 
@@ -443,7 +444,7 @@ describe("canonical persistence bridge: AiMeasurementObservationの保存(2026-0
     let caughtError: unknown;
     try {
       await repo.saveDiagnosisResult(
-        { clinicUrl: "https://example.com", contactEmail: "test@example.com" },
+        { clinicUrl: "https://example.com", directorName: "テスト院長", contactEmail: "test@example.com" },
         result
       );
     } catch (err) {

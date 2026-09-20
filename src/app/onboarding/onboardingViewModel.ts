@@ -60,7 +60,7 @@ function buildContractStep(
     return {
       key: "contract",
       title: "契約内容の確認",
-      description: `${planName ?? subscription.plan}プランが反映されています。`,
+      description: `${planName ?? subscription.plan}が反映されています。`,
       state: "complete",
       stateLabel: "完了",
       actionLabel: "プラン内容を見る",

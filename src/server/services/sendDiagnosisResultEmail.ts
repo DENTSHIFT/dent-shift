@@ -18,6 +18,11 @@ export async function sendDiagnosisResultEmail(input: {
     `/diagnosis/result/${encodeURIComponent(input.diagnosisId)}`,
     config.appBaseUrl
   ).toString();
+  // Ver3.3仕様(2026-09-21): 診断結果メールから無料トライアル開始・オンライン相談へ
+  // 直接導線を張る。相談URLは診断結果ページのConsultationCtaと同じ環境変数から
+  // 読み込み、未設定時はメール側のCTAも描画しない(壊れたリンクを作らない)。
+  const trialUrl = new URL("/plans", config.appBaseUrl).toString();
+  const consultationUrl = process.env.NEXT_PUBLIC_SPECIALIST_BOOKING_URL || undefined;
   const message = buildDiagnosisResultEmail({
     clinicName: input.result.clinicName,
     resultUrl,
@@ -29,6 +34,8 @@ export async function sendDiagnosisResultEmail(input: {
       title: improvement.title,
       recommendedAction: improvement.recommendedAction,
     })),
+    trialUrl,
+    consultationUrl,
   });
 
   await sendWithResend({

@@ -170,6 +170,7 @@ function buildDeps(overrides: Partial<RunFreeDiagnosisDeps> = {}): RunFreeDiagno
 
 const INPUT = {
   clinicName: "ブリッジ検証歯科医院",
+  directorName: "テスト院長",
   clinicUrl: "https://example.com",
   contactEmail: "test@example.com",
   contactPhone: "03-1234-5678",

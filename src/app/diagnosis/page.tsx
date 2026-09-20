@@ -49,6 +49,8 @@ function validateField(name: FieldName, value: string): string | null {
   switch (name) {
     case "clinicName":
       return trimmed ? null : "医院名を入力してください";
+    case "directorName":
+      return trimmed ? null : "院長名を入力してください";
     case "clinicUrl":
       if (!trimmed) return "公式サイトURLを入力してください";
       if (!/^https?:\/\/.+/.test(trimmed)) return "http(s)://から始まるURLを入力してください";
@@ -58,7 +60,8 @@ function validateField(name: FieldName, value: string): string | null {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return "正しいメールアドレスの形式で入力してください";
       return null;
     case "contactPhone":
-      if (!trimmed) return "電話番号を入力してください";
+      // Ver3.3仕様(2026-09-21)により任意項目。入力された場合のみ形式を検証する。
+      if (!trimmed) return null;
       if (!isValidClinicContactPhone(trimmed)) return "国内の電話番号を10〜11桁で入力してください";
       return null;
     case "gbpUrl":
@@ -81,6 +84,7 @@ export default function DiagnosisPage() {
   const router = useRouter();
   const [values, setValues] = useState<DiagnosisFormValues>({
     clinicName: "",
+    directorName: "",
     clinicUrl: "",
     contactEmail: "",
     contactPhone: "",
@@ -258,6 +262,7 @@ export default function DiagnosisPage() {
 
     const allFields: FieldName[] = [
       "clinicName",
+      "directorName",
       "clinicUrl",
       "contactEmail",
       "contactPhone",
@@ -456,6 +461,18 @@ export default function DiagnosisPage() {
                   readOnly={authenticatedProfile !== null}
                 />
                 <TextField
+                  id="directorName"
+                  label="院長名"
+                  required
+                  type="text"
+                  placeholder="例)山田 太郎"
+                  value={values.directorName}
+                  onChange={handleChange("directorName")}
+                  onBlur={handleBlur("directorName")}
+                  error={fieldError("directorName")}
+                  readOnly={authenticatedProfile !== null}
+                />
+                <TextField
                   id="clinicUrl"
                   label="公式サイトURL"
                   required
@@ -482,7 +499,7 @@ export default function DiagnosisPage() {
                 <TextField
                   id="contactPhone"
                   label="電話番号"
-                  required
+                  required={false}
                   type="tel"
                   placeholder="例)03-1234-5678"
                   value={values.contactPhone}
@@ -561,7 +578,7 @@ export default function DiagnosisPage() {
 
               {/* 8. CTA下 */}
               <p style={{ margin: "10px 0 0", fontSize: 12, color: MUTED, textAlign: "center" }}>
-                約60秒・無料・電話番号必須
+                約60秒・無料・クレジットカード不要
               </p>
             </form>
           </section>

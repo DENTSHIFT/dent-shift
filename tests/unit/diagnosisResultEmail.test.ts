@@ -62,4 +62,44 @@ describe("diagnosisResultEmail", () => {
     expect(message.subject).not.toMatch(/[\r\n]/);
     expect(message.subject).toContain("テスト歯科 Bcc: attacker@example.com");
   });
+
+  it("trialUrl/consultationUrl指定時、STEPコピーと2つのCTAを本文へ含める（Ver3.3仕様）", () => {
+    const message = buildDiagnosisResultEmail({
+      clinicName: "テスト歯科",
+      resultUrl: "https://dent-shift.example.com/diagnosis/result/diagnosis-1",
+      totalPoints: 72,
+      totalStatus: "partial",
+      maxPoints: 100,
+      isSample: false,
+      improvements: [],
+      trialUrl: "https://dent-shift.example.com/plans",
+      consultationUrl: "https://timerex.net/s/example/abc123",
+    });
+
+    expect(message.text).toContain("あと3STEP");
+    expect(message.text).toContain("7日間無料トライアルを開始する");
+    expect(message.text).toContain("https://dent-shift.example.com/plans");
+    expect(message.text).toContain("専門家にオンライン相談する");
+    expect(message.text).toContain("https://timerex.net/s/example/abc123");
+    expect(message.html).toContain("あと3STEP");
+    expect(message.html).toContain("7日間無料トライアルを開始する");
+    expect(message.html).toContain("専門家にオンライン相談する");
+  });
+
+  it("trialUrl/consultationUrl未指定時、CTAを描画しない", () => {
+    const message = buildDiagnosisResultEmail({
+      clinicName: "テスト歯科",
+      resultUrl: "https://dent-shift.example.com/diagnosis/result/diagnosis-1",
+      totalPoints: 72,
+      totalStatus: "partial",
+      maxPoints: 100,
+      isSample: false,
+      improvements: [],
+    });
+
+    expect(message.text).not.toContain("あと3STEP");
+    expect(message.text).not.toContain("7日間無料トライアルを開始する");
+    expect(message.text).not.toContain("専門家にオンライン相談する");
+    expect(message.html).not.toContain("あと3STEP");
+  });
 });

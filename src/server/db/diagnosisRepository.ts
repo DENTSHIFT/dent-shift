@@ -56,6 +56,7 @@ export function resolveMeasurementStatusForNewObservation(
 export async function saveDiagnosisResult(
   input: {
     clinicUrl: string;
+    directorName: string;
     contactEmail: string;
     contactPhone?: string;
     gbpUrl?: string;
@@ -135,6 +136,7 @@ export async function saveDiagnosisResult(
     : await prisma.clinic.create({
         data: {
           name: result.clinicName,
+          directorName: input.directorName.trim(),
           url: input.clinicUrl,
           // 無料診断フォームのメールアドレスは医院の代表連絡先であり、患者情報ではない。
           // DATA_MODEL.mdのclinics.contact_emailに対応する。
@@ -155,6 +157,13 @@ export async function saveDiagnosisResult(
     await prisma.clinic.update({
       where: { id: clinic.id },
       data: { contactPhone: input.contactPhone.trim() },
+    });
+  }
+  // 院長名必須化(Ver3.3)前に登録された医院も、同様に最初の再診断時に補完する。
+  if (input.existingClinicId && !clinic.directorName && input.directorName.trim()) {
+    await prisma.clinic.update({
+      where: { id: clinic.id },
+      data: { directorName: input.directorName.trim() },
     });
   }
 

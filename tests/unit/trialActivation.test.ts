@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { computeTrialEndsAt, isEligibleForTrialActivation } from "@/domain/billing/trialActivation";
 
 const ALL_COMPLETE = {
+  planId: "light",
   phoneVerifiedAt: new Date("2026-09-01T00:00:00Z"),
   emailVerifiedAt: new Date("2026-09-01T00:00:00Z"),
   consentAcceptedAt: new Date("2026-09-01T00:00:00Z"),
@@ -36,6 +37,14 @@ describe("isEligibleForTrialActivation", () => {
     expect(
       isEligibleForTrialActivation({ ...ALL_COMPLETE, trialStartedAt: new Date("2026-09-01T00:00:00Z") })
     ).toBe(false);
+  });
+
+  it("スタンダードプランもトライアル対象(Ver3.3仕様)", () => {
+    expect(isEligibleForTrialActivation({ ...ALL_COMPLETE, planId: "standard" })).toBe(true);
+  });
+
+  it("プレミアムプランはトライアル対象外(Ver3.3仕様)", () => {
+    expect(isEligibleForTrialActivation({ ...ALL_COMPLETE, planId: "premium" })).toBe(false);
   });
 });
 

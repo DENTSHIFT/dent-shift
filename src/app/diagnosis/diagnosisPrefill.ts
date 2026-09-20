@@ -1,5 +1,6 @@
 export interface DiagnosisFormValues {
   clinicName: string;
+  directorName: string;
   clinicUrl: string;
   contactEmail: string;
   contactPhone: string;
@@ -10,6 +11,7 @@ export interface DiagnosisFormValues {
 export interface AuthenticatedDiagnosisProfile {
   authenticated: true;
   clinicName: string;
+  directorName: string | null;
   clinicUrl: string;
   contactEmail: string;
   contactPhone: string | null;
@@ -27,6 +29,7 @@ export function applyAuthenticatedDiagnosisProfile(
 ): DiagnosisFormValues {
   return {
     clinicName: profile.clinicName,
+    directorName: profile.directorName?.trim() ? profile.directorName : current.directorName,
     clinicUrl: profile.clinicUrl,
     contactEmail: profile.contactEmail,
     contactPhone: profile.contactPhone?.trim() ? profile.contactPhone : current.contactPhone,

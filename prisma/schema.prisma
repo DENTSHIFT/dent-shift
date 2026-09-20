@@ -17,6 +17,9 @@ datasource db {
 model Clinic {
   id             String          @id @default(cuid())
   name           String
+  // 院長名。Ver3.3仕様(2026-09-21)で無料診断フォームの必須項目に追加。
+  // 既存行との互換性のためnullable。
+  directorName   String?
   url            String
   // 医院の代表連絡先。患者個人情報ではない。無料診断結果メールの送信先として保持する。
   // 既存行との互換性を保つためnullableとし、新規診断・新規会員登録から保存する。

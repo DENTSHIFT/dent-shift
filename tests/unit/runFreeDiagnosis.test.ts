@@ -243,6 +243,7 @@ class OneLosingQuestionAiProvider implements AiProvider {
 
 const VALID_INPUT = {
   clinicName: "テスト歯科医院",
+  directorName: "テスト院長",
   clinicUrl: "https://example.com",
   contactEmail: "test@example.com",
   contactPhone: "03-1234-5678",

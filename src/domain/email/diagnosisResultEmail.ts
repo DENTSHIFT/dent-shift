@@ -13,6 +13,11 @@ export interface BuildDiagnosisResultEmailInput {
   maxPoints: number;
   isSample: boolean;
   improvements: DiagnosisResultEmailImprovement[];
+  // Ver3.3仕様(2026-09-21): 無料トライアル開始への導線。未設定時はCTAを描画しない。
+  trialUrl?: string;
+  // オンライン相談(専門家への45分相談)への導線。未設定時はCTAを描画しない
+  // (診断結果ページのConsultationCtaと同じく、任意の相談であることを明示する)。
+  consultationUrl?: string;
 }
 
 export interface DiagnosisResultEmailMessage {
@@ -70,6 +75,12 @@ export function buildDiagnosisResultEmail(
         .join("\n")
     : "診断結果ページで詳細をご確認ください。";
 
+  // Ver3.3仕様(2026-09-21): 「あと○STEPで開始」の形で次の行動を明確化する。
+  // 会員登録→SMS/メール認証→カード登録の3ステップで7日間無料トライアルを開始できる。
+  const nextStepsNotice = input.trialUrl
+    ? "無料トライアル開始まであと3STEP: ①会員登録 ②SMS/メール認証 ③カード登録"
+    : null;
+
   const text = [
     `${input.clinicName} ご担当者様`,
     "",
@@ -83,6 +94,13 @@ export function buildDiagnosisResultEmail(
     "診断結果を見る",
     input.resultUrl,
     "",
+    nextStepsNotice,
+    input.trialUrl ? "7日間無料トライアルを開始する" : null,
+    input.trialUrl ?? null,
+    input.consultationUrl ? "" : null,
+    input.consultationUrl ? "専門家にオンライン相談する（無料・45分）" : null,
+    input.consultationUrl ?? null,
+    "",
     "このメールは診断時に入力された医院の代表メールアドレス宛に送信しています。",
   ]
     .filter((line): line is string => line !== null)
@@ -90,6 +108,8 @@ export function buildDiagnosisResultEmail(
 
   const escapedClinicName = escapeHtml(input.clinicName);
   const escapedResultUrl = escapeHtml(input.resultUrl);
+  const escapedTrialUrl = input.trialUrl ? escapeHtml(input.trialUrl) : null;
+  const escapedConsultationUrl = input.consultationUrl ? escapeHtml(input.consultationUrl) : null;
   const htmlImprovements = improvements.length
     ? `<ol>${improvements
         .map(
@@ -114,6 +134,21 @@ export function buildDiagnosisResultEmail(
         <p style="margin:28px 0">
           <a href="${escapedResultUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:10px">診断結果を見る</a>
         </p>
+        ${
+          escapedTrialUrl
+            ? `<div style="margin:28px 0;padding:16px;background:#f5f7fa;border-radius:12px">
+          <p style="margin:0 0 12px;font-weight:700">無料トライアル開始まであと3STEP: ①会員登録 ②SMS/メール認証 ③カード登録</p>
+          <a href="${escapedTrialUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:10px">7日間無料トライアルを開始する</a>
+        </div>`
+            : ""
+        }
+        ${
+          escapedConsultationUrl
+            ? `<p style="margin:16px 0">
+          <a href="${escapedConsultationUrl}" style="display:inline-block;background:#ffffff;color:#2563eb;border:1px solid #2563eb;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:10px">専門家にオンライン相談する（無料・45分）</a>
+        </p>`
+            : ""
+        }
         <p style="font-size:12px;color:#6b7280">このメールは診断時に入力された医院の代表メールアドレス宛に送信しています。</p>
       </div>
     </div>

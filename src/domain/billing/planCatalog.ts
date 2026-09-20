@@ -19,21 +19,21 @@ export interface PlanFeatureRow {
 export const PLAN_SUMMARIES: readonly PlanSummary[] = [
   {
     id: "light",
-    name: "ライト",
+    name: "ライトプラン",
     description: "まずは毎月の状態確認と、優先改善TOP3から始める医院向け",
     recommended: false,
     highlights: ["6領域スコア：月次", "対象AI：主要2種", "競合医院：3院", "改善タスク：TOP3"],
   },
   {
     id: "standard",
-    name: "スタンダード",
+    name: "スタンダードプラン",
     description: "週次で改善を進め、AI流入・予約まで継続的に確認したい医院向け",
     recommended: true,
     highlights: ["6領域スコア：週次", "対象AI：5種", "競合医院：10院", "改善タスク：無制限"],
   },
   {
     id: "premium",
-    name: "プレミアム",
+    name: "プレミアムプラン",
     description: "詳細分析と専門家レビューを含め、集患改善を加速したい医院向け",
     recommended: false,
     highlights: ["日次・週次サマリー", "競合医院：20院", "詳細ヒートマップ分析", "月1回の継続面談"],
