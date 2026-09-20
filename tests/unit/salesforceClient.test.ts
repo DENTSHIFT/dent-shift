@@ -95,4 +95,35 @@ describe("upsertSalesforceLeadByEmail", () => {
     expect(caught).toBeInstanceOf(SalesforceDeliveryError);
     expect((caught as Error).message).not.toContain(CONFIG.clientSecret);
   });
+
+  it("SOQLインジェクション対策: バックスラッシュ+クォートを含むemailで文字列リテラルを閉じられない", async () => {
+    // 素朴に「'」だけを「\'」へ置換する実装だと、値が既に「\」で終わる場合に
+    // エスケープ処理をすり抜けて文字列リテラルを閉じられてしまう
+    // (このプロジェクトのメール形式チェックはローカル部の「\」「'」を禁止していない)。
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ records: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "00Qnew" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const maliciousEmail = "a\\'or Id!=null limit 200--@example.com";
+    await upsertSalesforceLeadByEmail({
+      config: CONFIG,
+      fields: {
+        email: maliciousEmail,
+        clinic_name: null,
+        website_url: null,
+        phone: null,
+        lead_source: "DENT SHIFT 無料AI診断",
+      },
+    });
+
+    const [queryUrl] = fetchMock.mock.calls[1]!;
+    const query = decodeURIComponent(new URL(queryUrl as string).searchParams.get("q") ?? "");
+    // 埋め込んだ値の中の「'」がすべてSOQL上でエスケープされたままであり、
+    // 文字列リテラルが途中で閉じられていないことを確認する
+    // (閉じられていれば "Email = '...'" の外側に生の "or Id!=null" 等が出現するはず)。
+    expect(query).toBe("SELECT Id FROM Lead WHERE Email = 'a\\\\\\'or Id!=null limit 200--@example.com' LIMIT 1");
+  });
 });

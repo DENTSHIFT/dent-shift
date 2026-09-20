@@ -53,6 +53,17 @@ export interface SalesforceLeadFields {
 }
 
 /**
+ * SOQL文字列リテラルへ値を埋め込む前に安全化する。バックスラッシュを先にエスケープ
+ * してからシングルクォートをエスケープしないと、値の末尾がバックスラッシュの場合に
+ * (例: メールアドレスのローカル部に`\`と`'`を含む文字列)エスケープ処理をすり抜けて
+ * 文字列リテラルを閉じられ、SOQLインジェクションが成立してしまう
+ * (このプロジェクトのメール形式チェックはローカル部に`\`や`'`を禁止していない)。
+ */
+function escapeSoqlStringLiteral(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+/**
  * メールアドレスをキーにLeadを検索し、あれば更新・なければ新規作成する(指示書8章・9章)。
  * カスタム項目API名は推測せず、呼び出し側がfieldsとして渡した値のみを送信する。
  */
@@ -62,7 +73,7 @@ export async function upsertSalesforceLeadByEmail(input: {
 }): Promise<{ salesforceId: string }> {
   const token = await fetchAccessToken(input.config);
 
-  const query = `SELECT Id FROM Lead WHERE Email = '${input.fields.email.replace(/'/g, "\\'")}' LIMIT 1`;
+  const query = `SELECT Id FROM Lead WHERE Email = '${escapeSoqlStringLiteral(input.fields.email)}' LIMIT 1`;
   let searchResponse: Response;
   try {
     searchResponse = await fetch(
