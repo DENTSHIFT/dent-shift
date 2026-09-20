@@ -1,9 +1,8 @@
 import { requireOperator } from "@/server/auth/requireOperator";
 import { prisma } from "@/server/db/prismaClient";
 import { recordAuditLog } from "@/server/db/auditLogRepository";
-
-const NAVY = "#0F1B2D";
-const BORDER = "#E5E9F0";
+import { OpsLogoutButton } from "./OpsLogoutButton";
+import styles from "../ops.module.css";
 
 /**
  * 運営側ダッシュボード(最小構成)。クロステナントで医院一覧・最新契約状態を参照できる。
@@ -32,38 +31,67 @@ export default async function OpsDashboardPage() {
   });
 
   return (
-    <main style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
-      <h1 style={{ fontSize: 22, color: NAVY }}>管理者用ダッシュボード</h1>
-      <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
-        {operator.email}({operator.role})としてログイン中。医院一覧(最新50件)。
-      </p>
+    <div className={styles.shell}>
+      <header className={styles.header}>
+        <div className={styles.brand}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            className={styles.logo}
+            src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
+            alt="DENT SHIFT 歯科集患を、AIでシフトする。"
+          />
+          <span className={styles.adminBadge}>管理者用</span>
+        </div>
+        <div className={styles.operator}>
+          <div className={styles.operatorMeta}>
+            <p className={styles.operatorEmail}>{operator.email}</p>
+            <p className={styles.operatorRole}>権限: {operator.role}</p>
+          </div>
+          <OpsLogoutButton />
+        </div>
+      </header>
 
-      <table style={{ width: "100%", marginTop: 24, borderCollapse: "collapse", fontSize: 13 }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: `2px solid ${BORDER}` }}>
-            <th style={{ padding: "8px 4px" }}>医院名</th>
-            <th style={{ padding: "8px 4px" }}>URL</th>
-            <th style={{ padding: "8px 4px" }}>診断回数</th>
-            <th style={{ padding: "8px 4px" }}>会員数</th>
-            <th style={{ padding: "8px 4px" }}>契約状態</th>
-            <th style={{ padding: "8px 4px" }}>登録日</th>
-          </tr>
-        </thead>
-        <tbody>
-          {clinics.map((clinic) => (
-            <tr key={clinic.id} style={{ borderBottom: `1px solid ${BORDER}` }}>
-              <td style={{ padding: "8px 4px" }}>{clinic.name}</td>
-              <td style={{ padding: "8px 4px", color: "#6b7280" }}>{clinic.url}</td>
-              <td style={{ padding: "8px 4px" }}>{clinic._count.diagnoses}</td>
-              <td style={{ padding: "8px 4px" }}>{clinic._count.contacts}</td>
-              <td style={{ padding: "8px 4px" }}>{clinic.subscriptions[0]?.status ?? "未契約"}</td>
-              <td style={{ padding: "8px 4px", color: "#6b7280" }}>
-                {clinic.createdAt.toISOString().slice(0, 10)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </main>
+      <main className={styles.content}>
+        <div className={styles.pageHeader}>
+          <div>
+            <p className={styles.eyebrow}>社内オペレーター専用</p>
+            <h1 className={styles.title}>管理者用ダッシュボード</h1>
+            <p className={styles.description}>医院一覧と最新の契約状態を確認できます。</p>
+          </div>
+          <span className={styles.countBadge}>最新{clinics.length}件を表示</span>
+        </div>
+
+        <section className={styles.tableCard} aria-label="医院一覧">
+          <div className={styles.tableScroller}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>医院名</th>
+                  <th>URL</th>
+                  <th>診断回数</th>
+                  <th>会員数</th>
+                  <th>契約状態</th>
+                  <th>登録日</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clinics.map((clinic) => (
+                  <tr key={clinic.id}>
+                    <td className={styles.clinicName}>{clinic.name}</td>
+                    <td className={styles.clinicUrl} title={clinic.url}>{clinic.url}</td>
+                    <td className={styles.numeric}>{clinic._count.diagnoses}</td>
+                    <td className={styles.numeric}>{clinic._count.contacts}</td>
+                    <td><span className={styles.status}>{clinic.subscriptions[0]?.status ?? "未契約"}</span></td>
+                    <td className={`${styles.numeric} ${styles.clinicUrl}`}>
+                      {clinic.createdAt.toISOString().slice(0, 10)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }

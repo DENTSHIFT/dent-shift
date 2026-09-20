@@ -1,4 +1,5 @@
 import { OpsLoginForm } from "./OpsLoginForm";
+import styles from "../ops.module.css";
 
 /**
  * 運営側(社内オペレーター)ログイン。医院側/login とは別ドメインの認証
@@ -7,12 +8,23 @@ import { OpsLoginForm } from "./OpsLoginForm";
  */
 export default function OpsLoginPage() {
   return (
-    <main style={{ maxWidth: 480, margin: "0 auto", padding: "48px 24px" }}>
-      <h1 style={{ fontSize: 22 }}>管理者用ログイン</h1>
-      <p style={{ fontSize: 13, color: "#6b7280", marginTop: 8 }}>
-        社内オペレーター専用です。アカウントは個別発行されます。
-      </p>
-      <OpsLoginForm />
+    <main className={styles.loginShell}>
+      <section className={styles.loginCard}>
+        <div className={styles.loginBrand}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            className={styles.loginLogo}
+            src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
+            alt="DENT SHIFT 歯科集患を、AIでシフトする。"
+          />
+          <span className={styles.adminBadge}>管理者用</span>
+        </div>
+        <h1 className={styles.loginTitle}>管理者用ログイン</h1>
+        <p className={styles.loginDescription}>
+          社内オペレーター専用です。アカウントは個別発行されます。
+        </p>
+        <OpsLoginForm />
+      </section>
     </main>
   );
 }

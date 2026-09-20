@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import styles from "../ops.module.css";
 
 export function OpsLoginForm() {
   const router = useRouter();
@@ -35,29 +36,20 @@ export function OpsLoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>
+    <form onSubmit={handleSubmit} className={styles.loginForm}>
       <Field label="メールアドレス">
-        <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input className={styles.input} required type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       </Field>
       <Field label="パスワード">
-        <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <input className={styles.input} required type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
       </Field>
 
-      {error && <p style={{ color: "#dc2626", fontSize: 13 }}>{error}</p>}
+      {error && <p className={styles.error}>{error}</p>}
 
       <button
+        className={styles.loginButton}
         type="submit"
         disabled={submitting}
-        style={{
-          background: "#0F1B2D",
-          color: "#fff",
-          padding: "12px 24px",
-          borderRadius: 8,
-          border: "none",
-          fontWeight: 600,
-          cursor: submitting ? "not-allowed" : "pointer",
-          opacity: submitting ? 0.6 : 1,
-        }}
       >
         {submitting ? "確認中..." : "管理者としてログイン"}
       </button>
@@ -67,19 +59,9 @@ export function OpsLoginForm() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 14 }}>
-      <span style={{ color: "#333" }}>{label}</span>
-      <span style={{ display: "block" }}>{children}</span>
-      <style jsx>{`
-        input {
-          width: 100%;
-          box-sizing: border-box;
-          padding: 10px 12px;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-        }
-      `}</style>
+    <label className={styles.field}>
+      <span className={styles.fieldLabel}>{label}</span>
+      {children}
     </label>
   );
 }

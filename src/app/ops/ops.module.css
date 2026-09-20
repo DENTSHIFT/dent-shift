@@ -1,0 +1,54 @@
+.shell { min-height: 100vh; color: #0f1b2d; background: #f5f7fa; }
+.header { min-height: 72px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 28px; background: #fff; border-bottom: 1px solid #e5e9f0; }
+.brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.logo { width: 166px; height: auto; display: block; }
+.adminBadge { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 10px; border-radius: 999px; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; font-size: 11px; font-weight: 750; white-space: nowrap; }
+.operator { display: flex; align-items: center; gap: 12px; }
+.operatorMeta { text-align: right; }
+.operatorEmail { margin: 0; color: #0f1b2d; font-size: 12px; font-weight: 700; }
+.operatorRole { margin: 3px 0 0; color: #6b7280; font-size: 10px; }
+.logoutButton { appearance: none; padding: 7px 12px; border: 1px solid #e5e9f0; border-radius: 8px; color: #40506a; background: #fff; font-size: 12px; font-weight: 700; cursor: pointer; }
+.logoutButton:hover { color: #2563eb; border-color: #93c5fd; background: #f8fbff; }
+.content { max-width: 1240px; margin: 0 auto; padding: 26px 28px 40px; }
+.pageHeader { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+.eyebrow { margin: 0 0 4px; color: #2563eb; font-size: 11px; font-weight: 750; letter-spacing: .04em; }
+.title { margin: 0; color: #0f1b2d; font-size: 24px; letter-spacing: -.02em; }
+.description { margin: 6px 0 0; color: #6b7280; font-size: 12px; line-height: 1.6; }
+.countBadge { flex-shrink: 0; display: inline-flex; padding: 6px 10px; border-radius: 999px; color: #475569; background: #fff; border: 1px solid #e5e9f0; font-size: 11px; font-weight: 700; }
+.tableCard { overflow: hidden; border: 1px solid #e5e9f0; border-radius: 16px; background: #fff; box-shadow: 0 3px 12px rgba(15,27,45,.055); }
+.tableScroller { overflow-x: auto; }
+.table { width: 100%; min-width: 880px; border-collapse: collapse; font-size: 12px; }
+.table th { padding: 12px 14px; color: #526176; background: #f8fafc; border-bottom: 1px solid #e5e9f0; text-align: left; font-size: 11px; font-weight: 750; white-space: nowrap; }
+.table td { padding: 13px 14px; border-bottom: 1px solid #eef1f5; vertical-align: middle; }
+.table tbody tr:last-child td { border-bottom: 0; }
+.table tbody tr:hover { background: #f8fbff; }
+.clinicName { font-weight: 700; }
+.clinicUrl { max-width: 330px; color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.numeric { font-variant-numeric: tabular-nums; }
+.status { display: inline-flex; padding: 4px 8px; border-radius: 999px; color: #475569; background: #f1f5f9; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.loginShell { min-height: 100vh; display: grid; place-items: center; box-sizing: border-box; padding: 32px 20px; background: #f5f7fa; }
+.loginCard { width: min(100%, 440px); box-sizing: border-box; padding: 32px; border: 1px solid #e5e9f0; border-radius: 18px; background: #fff; box-shadow: 0 12px 32px rgba(15,27,45,.08); }
+.loginBrand { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 28px; }
+.loginLogo { width: 176px; height: auto; display: block; }
+.loginTitle { margin: 0; color: #0f1b2d; font-size: 23px; }
+.loginDescription { margin: 8px 0 0; color: #6b7280; font-size: 12px; line-height: 1.65; }
+.loginForm { display: flex; flex-direction: column; gap: 16px; margin-top: 24px; }
+.field { display: flex; flex-direction: column; gap: 7px; font-size: 13px; font-weight: 650; }
+.fieldLabel { color: #40506a; }
+.input { width: 100%; box-sizing: border-box; min-height: 42px; padding: 10px 12px; border: 1px solid #dbe4ef; border-radius: 9px; color: #0f1b2d; background: #fff; font-size: 14px; outline: none; }
+.input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px #eff6ff; }
+.loginButton { min-height: 44px; padding: 11px 18px; border: 0; border-radius: 9px; color: #fff; background: #0f1b2d; font-size: 13px; font-weight: 750; cursor: pointer; }
+.loginButton:hover { background: #2563eb; }
+.loginButton:disabled { cursor: not-allowed; opacity: .6; }
+.error { margin: 0; color: #dc2626; font-size: 12px; }
+
+@media (max-width: 700px) {
+  .header { min-height: 64px; padding: 11px 16px; }
+  .logo { width: 142px; }
+  .operatorMeta { display: none; }
+  .content { padding: 20px 14px 32px; }
+  .pageHeader { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .title { font-size: 21px; }
+  .loginCard { padding: 25px 20px; }
+  .loginBrand { align-items: flex-start; flex-direction: column; }
+}
