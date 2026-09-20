@@ -8,6 +8,7 @@ import {
   type BillingConfig,
 } from "@/server/config/billingConfig";
 import styles from "./plans.module.css";
+import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
 
 function safeBillingConfig(): { config: BillingConfig; configurationError: boolean } {
   try {
@@ -163,6 +164,7 @@ export default async function PlansPage({
           <p><strong>お支払い</strong><span>カード番号はDENT SHIFTでは保存しません</span></p>
         </div>
       </section>
+      <SupportPhoneFooter />
     </main>
   );
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
 
 export default function LandingPage() {
   return (
@@ -75,6 +76,7 @@ export default function LandingPage() {
           プランの機能を比較する
         </Link>
       </div>
+      <SupportPhoneFooter />
       </section>
     </main>
   );

@@ -4,6 +4,7 @@ import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
 import { getDiagnosesByClinicId } from "@/server/db/diagnosisRepository";
 import { buildOnboardingViewModel, type OnboardingStepState } from "./onboardingViewModel";
 import styles from "./onboarding.module.css";
+import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
 
 function stateClass(state: OnboardingStepState) {
   if (state === "complete") return `${styles.state} ${styles.complete}`;
@@ -92,6 +93,7 @@ export default async function OnboardingPage({
           </a>
         )}
       </section>
+      <SupportPhoneFooter />
     </main>
   );
 }

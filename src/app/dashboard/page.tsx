@@ -11,6 +11,7 @@ import { RegistrationProgressBanner } from "./RegistrationProgressBanner";
 import { buildDashboardViewModel } from "./dashboardViewModel";
 import { buildSubscriptionViewModel, type SubscriptionTone } from "./subscriptionViewModel";
 import styles from "./dashboard.module.css";
+import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
 
 const NAV_ITEMS = [
   { label: "経営サマリー", icon: "⌂", href: "/dashboard", active: true },
@@ -417,6 +418,7 @@ export default async function DashboardPage() {
               </section>
             </>
           )}
+          <SupportPhoneFooter />
         </main>
       </div>
 
