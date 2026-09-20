@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import styles from "../auth.module.css";
 
 export function LoginForm() {
   const router = useRouter();
@@ -35,33 +36,20 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>
+    <form onSubmit={handleSubmit} className={styles.form}>
       <Field label="メールアドレス">
-        <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input className={styles.input} required type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       </Field>
       <Field label="パスワード">
-        <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <input className={styles.input} required type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
       </Field>
 
-      {error && <p style={{ color: "#dc2626", fontSize: 13 }}>{error}</p>}
+      {error && <p className={styles.error}>{error}</p>}
 
-      <button
-        type="submit"
-        disabled={submitting}
-        style={{
-          background: "#2563eb",
-          color: "#fff",
-          padding: "12px 24px",
-          borderRadius: 8,
-          border: "none",
-          fontWeight: 600,
-          cursor: submitting ? "not-allowed" : "pointer",
-          opacity: submitting ? 0.6 : 1,
-        }}
-      >
+      <button className={styles.primaryButton} type="submit" disabled={submitting}>
         {submitting ? "ログイン中..." : "ログイン"}
       </button>
-      <p style={{ fontSize: 13, color: "#888" }}>
+      <p className={styles.switchLink}>
         アカウントをお持ちでない方は <a href="/signup">無料会員登録</a>
       </p>
     </form>
@@ -70,19 +58,9 @@ export function LoginForm() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 14 }}>
-      <span style={{ color: "#333" }}>{label}</span>
-      <span style={{ display: "block" }}>{children}</span>
-      <style jsx>{`
-        input {
-          width: 100%;
-          box-sizing: border-box;
-          padding: 10px 12px;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-        }
-      `}</style>
+    <label className={styles.field}>
+      <span>{label}</span>
+      {children}
     </label>
   );
 }

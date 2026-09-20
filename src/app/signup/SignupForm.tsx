@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import styles from "../auth.module.css";
 
 export function SignupForm({ clinicId }: { clinicId?: string }) {
   const router = useRouter();
@@ -37,13 +38,14 @@ export function SignupForm({ clinicId }: { clinicId?: string }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>
+    <form onSubmit={handleSubmit} className={styles.form}>
       <Field label="メールアドレス *">
-        <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input className={styles.input} required type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       </Field>
       <Field label="パスワード(8文字以上) *">
         <input
           required
+          className={styles.input}
           type="password"
           minLength={8}
           value={password}
@@ -54,11 +56,12 @@ export function SignupForm({ clinicId }: { clinicId?: string }) {
       {!clinicId && (
         <>
           <Field label="医院名 *">
-            <input required value={clinicName} onChange={(e) => setClinicName(e.target.value)} />
+            <input className={styles.input} required value={clinicName} onChange={(e) => setClinicName(e.target.value)} />
           </Field>
           <Field label="公式サイトURL *">
             <input
               required
+              className={styles.input}
               type="url"
               placeholder="https://example-clinic.jp"
               value={clinicUrl}
@@ -68,25 +71,12 @@ export function SignupForm({ clinicId }: { clinicId?: string }) {
         </>
       )}
 
-      {error && <p style={{ color: "#dc2626", fontSize: 13 }}>{error}</p>}
+      {error && <p className={styles.error}>{error}</p>}
 
-      <button
-        type="submit"
-        disabled={submitting}
-        style={{
-          background: "#2563eb",
-          color: "#fff",
-          padding: "12px 24px",
-          borderRadius: 8,
-          border: "none",
-          fontWeight: 600,
-          cursor: submitting ? "not-allowed" : "pointer",
-          opacity: submitting ? 0.6 : 1,
-        }}
-      >
+      <button className={styles.primaryButton} type="submit" disabled={submitting}>
         {submitting ? "登録中..." : "登録する"}
       </button>
-      <p style={{ fontSize: 13, color: "#888" }}>
+      <p className={styles.switchLink}>
         すでにアカウントをお持ちの方は <a href="/login">ログイン</a>
       </p>
     </form>
@@ -95,19 +85,9 @@ export function SignupForm({ clinicId }: { clinicId?: string }) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 14 }}>
-      <span style={{ color: "#333" }}>{label}</span>
-      <span style={{ display: "block" }}>{children}</span>
-      <style jsx>{`
-        input {
-          width: 100%;
-          box-sizing: border-box;
-          padding: 10px 12px;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-        }
-      `}</style>
+    <label className={styles.field}>
+      <span>{label}</span>
+      {children}
     </label>
   );
 }

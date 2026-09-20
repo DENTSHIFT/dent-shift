@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import styles from "../auth.module.css";
 
 type Step = "enter-phone" | "enter-code";
 
@@ -62,21 +63,22 @@ export function VerifyPhoneForm() {
 
   if (step === "enter-code") {
     return (
-      <form onSubmit={handleVerify} style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>
+      <form onSubmit={handleVerify} className={styles.form}>
         <Field label="確認コード *">
           <input
             required
+            className={styles.input}
             inputMode="numeric"
             placeholder="123456"
             value={code}
             onChange={(e) => setCode(e.target.value)}
           />
         </Field>
-        <p style={{ fontSize: 13, color: "#888" }}>{phoneNumber} 宛にSMSを送信しました。</p>
+        <p className={styles.sentNotice}>{phoneNumber} 宛にSMSを送信しました。</p>
 
-        {error && <p style={{ color: "#dc2626", fontSize: 13 }}>{error}</p>}
+        {error && <p className={styles.error}>{error}</p>}
 
-        <button type="submit" disabled={submitting} style={buttonStyle(submitting)}>
+        <button className={styles.primaryButton} type="submit" disabled={submitting}>
           {submitting ? "確認中..." : "確認する"}
         </button>
         <button
@@ -85,7 +87,7 @@ export function VerifyPhoneForm() {
             setStep("enter-phone");
             setError(null);
           }}
-          style={{ background: "none", border: "none", color: "#2563eb", fontSize: 13, cursor: "pointer" }}
+          className={styles.secondaryButton}
         >
           電話番号を変更する
         </button>
@@ -94,10 +96,11 @@ export function VerifyPhoneForm() {
   }
 
   return (
-    <form onSubmit={handleSend} style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>
+    <form onSubmit={handleSend} className={styles.form}>
       <Field label="携帯電話番号 *(営業電話は一切致しません)">
         <input
           required
+          className={styles.input}
           type="tel"
           inputMode="tel"
           placeholder="090-1234-5678"
@@ -105,48 +108,25 @@ export function VerifyPhoneForm() {
           onChange={(e) => setPhoneNumber(e.target.value)}
         />
       </Field>
-      <p style={{ fontSize: 12, color: "#6b7280", marginTop: -8 }}>
+      <p className={styles.helper}>
         携帯電話番号(070/080/090)のみご利用いただけます。固定電話番号は登録できません。
         SMS認証コードの送信のみに使用します。
       </p>
 
-      {error && <p style={{ color: "#dc2626", fontSize: 13 }}>{error}</p>}
+      {error && <p className={styles.error}>{error}</p>}
 
-      <button type="submit" disabled={submitting} style={buttonStyle(submitting)}>
+      <button className={styles.primaryButton} type="submit" disabled={submitting}>
         {submitting ? "送信中..." : "確認コードを送信する"}
       </button>
     </form>
   );
 }
 
-function buttonStyle(submitting: boolean): React.CSSProperties {
-  return {
-    background: "#2563eb",
-    color: "#fff",
-    padding: "12px 24px",
-    borderRadius: 8,
-    border: "none",
-    fontWeight: 600,
-    cursor: submitting ? "not-allowed" : "pointer",
-    opacity: submitting ? 0.6 : 1,
-  };
-}
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 14 }}>
-      <span style={{ color: "#333" }}>{label}</span>
-      <span style={{ display: "block" }}>{children}</span>
-      <style jsx>{`
-        input {
-          width: 100%;
-          box-sizing: border-box;
-          padding: 10px 12px;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-        }
-      `}</style>
+    <label className={styles.field}>
+      <span>{label}</span>
+      {children}
     </label>
   );
 }

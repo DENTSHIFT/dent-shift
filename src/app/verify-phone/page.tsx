@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireContact } from "@/server/auth/requireContact";
 import { VerifyPhoneForm } from "./VerifyPhoneForm";
+import styles from "../auth.module.css";
 
 /**
  * SMS OTP認証ステップ(registrationStep==="sms")。携帯電話番号を必須にし、
@@ -15,12 +16,18 @@ export default async function VerifyPhonePage() {
   }
 
   return (
-    <main style={{ maxWidth: 480, margin: "0 auto", padding: "48px 24px" }}>
-      <h1 style={{ fontSize: 22 }}>携帯電話番号の確認</h1>
-      <p style={{ fontSize: 13, color: "#6b7280", marginTop: 8 }}>
-        なりすまし登録を防ぐため、携帯電話番号のSMS認証をお願いしています。
-      </p>
-      <VerifyPhoneForm />
+    <main className={styles.shell}>
+      <section className={styles.card}>
+        <div className={styles.brand}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className={styles.logo} src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png" alt="DENT SHIFT 歯科集患を、AIでシフトする。" />
+        </div>
+        <h1 className={styles.title}>携帯電話番号の確認</h1>
+        <p className={styles.description}>
+          なりすまし登録を防ぐため、携帯電話番号のSMS認証をお願いしています。
+        </p>
+        <VerifyPhoneForm />
+      </section>
     </main>
   );
 }
