@@ -8,7 +8,7 @@ import { OpsLoginForm } from "./OpsLoginForm";
 export default function OpsLoginPage() {
   return (
     <main style={{ maxWidth: 480, margin: "0 auto", padding: "48px 24px" }}>
-      <h1 style={{ fontSize: 22 }}>運営側ログイン</h1>
+      <h1 style={{ fontSize: 22 }}>管理者用ログイン</h1>
       <p style={{ fontSize: 13, color: "#6b7280", marginTop: 8 }}>
         社内オペレーター専用です。アカウントは個別発行されます。
       </p>

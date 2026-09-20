@@ -59,7 +59,7 @@ export function OpsLoginForm() {
           opacity: submitting ? 0.6 : 1,
         }}
       >
-        {submitting ? "確認中..." : "運営側としてログイン"}
+        {submitting ? "確認中..." : "管理者としてログイン"}
       </button>
     </form>
   );

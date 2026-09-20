@@ -33,7 +33,7 @@ export default async function OpsDashboardPage() {
 
   return (
     <main style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
-      <h1 style={{ fontSize: 22, color: NAVY }}>運営ダッシュボード</h1>
+      <h1 style={{ fontSize: 22, color: NAVY }}>管理者用ダッシュボード</h1>
       <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
         {operator.email}({operator.role})としてログイン中。医院一覧(最新50件)。
       </p>
