@@ -5,7 +5,7 @@ import { upsertSalesforceLeadByEmail, type SalesforceLeadFields } from "@/server
 
 const MAX_RETRY_COUNT = 8;
 
-function toLeadFields(payload: Record<string, unknown>): SalesforceLeadFields | null {
+function toLeadFields(eventType: string, payload: Record<string, unknown>): SalesforceLeadFields | null {
   const email = payload.email;
   if (typeof email !== "string" || !email) return null;
   return {
@@ -14,6 +14,9 @@ function toLeadFields(payload: Record<string, unknown>): SalesforceLeadFields | 
     website_url: typeof payload.website_url === "string" ? payload.website_url : null,
     phone: typeof payload.phone === "string" ? payload.phone : null,
     lead_source: "DENT SHIFT 無料AI診断",
+    event_type: eventType,
+    registration_step: typeof payload.registration_step === "string" ? payload.registration_step : null,
+    trial_ends_at: typeof payload.trial_ends_at === "string" ? payload.trial_ends_at : null,
   };
 }
 
@@ -29,7 +32,7 @@ export async function syncIntegrationEvent(eventId: string): Promise<void> {
   if (!event || event.status === "synced") return;
 
   const payload = JSON.parse(event.payloadJson) as Record<string, unknown>;
-  const leadFields = toLeadFields(payload);
+  const leadFields = toLeadFields(event.eventType, payload);
   if (!leadFields) {
     // メールアドレスを含まないイベント(例: online_consultation_booked)は現時点では
     // Lead upsertの対象にできないため、同期不要として処理済み扱いにする。

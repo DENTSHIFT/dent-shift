@@ -49,6 +49,9 @@ export interface SalesforceLeadFields {
   website_url: string | null;
   phone: string | null;
   lead_source: string;
+  event_type: string | null;
+  registration_step: string | null;
+  trial_ends_at: string | null;
   [key: string]: string | number | boolean | null;
 }
 
@@ -99,6 +102,9 @@ export async function upsertSalesforceLeadByEmail(input: {
     Website: input.fields.website_url ?? undefined,
     Phone: input.fields.phone ?? undefined,
     LeadSource: input.fields.lead_source,
+    Event_Type__c: input.fields.event_type ?? undefined,
+    Registration_Step__c: input.fields.registration_step ?? undefined,
+    Trial_Ends_At__c: input.fields.trial_ends_at ?? undefined,
   };
 
   if (existingId) {

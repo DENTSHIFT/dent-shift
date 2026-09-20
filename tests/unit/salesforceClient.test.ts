@@ -41,6 +41,9 @@ describe("upsertSalesforceLeadByEmail", () => {
         website_url: "https://clinic.example.com",
         phone: null,
         lead_source: "DENT SHIFT 無料AI診断",
+        event_type: "trial_signup_started",
+        registration_step: "sms",
+        trial_ends_at: null,
       },
     });
 
@@ -67,6 +70,9 @@ describe("upsertSalesforceLeadByEmail", () => {
         website_url: null,
         phone: null,
         lead_source: "DENT SHIFT 無料AI診断",
+        event_type: null,
+        registration_step: null,
+        trial_ends_at: null,
       },
     });
 
@@ -86,6 +92,9 @@ describe("upsertSalesforceLeadByEmail", () => {
           website_url: null,
           phone: null,
           lead_source: "DENT SHIFT 無料AI診断",
+          event_type: null,
+          registration_step: null,
+          trial_ends_at: null,
         },
       });
     } catch (error) {
@@ -116,6 +125,9 @@ describe("upsertSalesforceLeadByEmail", () => {
         website_url: null,
         phone: null,
         lead_source: "DENT SHIFT 無料AI診断",
+        event_type: null,
+        registration_step: null,
+        trial_ends_at: null,
       },
     });
 
