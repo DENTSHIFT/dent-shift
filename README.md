@@ -23,7 +23,10 @@ APIを使わず参考データだけで動かす場合は、`.env`で
 `AI_MEASUREMENT_PROVIDER=mock`を明示してください。OpenAI検索API計測を使う場合は
 `AI_MEASUREMENT_PROVIDER=openai`とし、APIキーとモデルをサーバー側の環境変数へ設定します。
 SMS認証・Salesforce連携・TimeRex Webhookは`.env.example`で`disabled`が既定値です。設定項目の
-詳細は`.env.example`のコメントと本READMEの「Step7」節を参照してください。
+詳細は`.env.example`のコメントと本READMEの「Step7」節を参照してください。運営側ポータル
+(`/ops/login`)のアカウントは自己サインアップが無いため、
+`OPERATOR_PASSWORD=xxxx npx tsx --conditions=react-server scripts/create-operator.ts --email=you@example.com --role=admin`
+で個別発行してください(`role`は`admin`|`cs`|`analyst`|`finance`)。
 
 `http://localhost:3000` を開き、「無料でAI集患診断する」から医院名・URL・メールアドレス・医院代表電話番号を入力すると、
 診断結果画面(`/diagnosis/result/[id]`)まで到達できます。
@@ -110,14 +113,37 @@ DBに保存する不透明トークン+httpOnly cookie方式(`ds_session`)。認
 以前は「CRMはSalesforce/HubSpot等に依存せず自社開発する」という事業ルールでしたが、上記指示書に
 基づきユーザー承認のうえで撤回しています(`docs/PRODUCT_SPEC.md`参照)。
 
+## Step8: アンバサダー(紹介)機能・運営側ポータル・AI推薦シェア
+
+- アンバサダー(仮仕様、`docs/IMPLEMENTATION_PLAN.md` Step8): 紹介コード(`Ambassador`)を発行し、
+  紹介経由の新規登録を`Attribution`テーブルへpending記録します。成果(`confirmed`)は**有料契約+
+  初回入金確定時点**でのみ確定し、クリックや登録だけでは成果化しません
+  (`src/server/db/ambassadorRepository.ts`)。報酬率・支払い条件は未確定のため未実装です。
+- 運営側ポータル(`/ops/login`、`/ops/dashboard`): 医院側の認証(`Contact`/`ds_session`)とは完全に
+  別の認証ドメイン(`Operator`/`ds_ops_session`)です。自己サインアップは提供せず、
+  `npm run ops:create-operator`で個別発行します。クロステナントでの医院一覧参照は毎回
+  `AuditLog`へ記録します(`docs/SECURITY.md`「運営側は監査ログを伴う専用経路を経由する」)。
+- AI推薦シェア(Share of Voice): 患者質問のうちAIに優位推薦されている割合を、既存の判定結果
+  (win/close/lose)から都度算出して診断結果画面に表示します(`src/domain/competitor/shareOfVoice.ts`)。
+  測定対象の質問が0件の場合は0%ではなく「算出できませんでした」と表示します。
+
+## UI調整について
+
+診断結果画面・ダッシュボード・運営側ポータル・認証3画面(`/login`・`/signup`・`/verify-phone`)・
+トップページの見た目は、別セッション(GPT/Codex)へ`docs/DESIGN_HANDOFF_*.md`の指示書で個別に
+作業委託し、レビュー後に反映したものです。表示ロジック・料金・免責文言・APIエンドポイントは
+committer側(Claude)がレビュー時に変更が無いことを確認しています。
+
 ## このsliceでやっていないこと(意図的にスコープ外)
 
 - Gemini / GA4 / Search Console / GBPへの実接続
 - 消費者向けChatGPT画面そのものの計測(OpenAI Web Search API計測とは別物)
-- Stripe決済の本番有効化、アンバサダー、スタッフ複数人招待等
+- Stripe決済の本番有効化、スタッフ複数人招待等
+- アンバサダーの報酬率・支払い条件の確定(紹介コード発行・成果追跡の仕組みのみ実装済み)
 - Postgresへの切り替え(開発中はSQLite。ARCHITECTURE.md参照)
 - IVRyの着信・通話結果連携(電話問い合わせのクリック計測まで。API/Webhook仕様確定後に追加)
 - TimeRex予約ページとのAPI連携(単なる外部リンク+暫定Webhookのみ。正式な署名検証は契約確定後)
+- トップページのLP全面刷新(2026-09-06にスコープ外と決定済み。ロゴ差し替え・軽微な見た目調整のみ)
 
 ## 事業ルールの実装上のポイント
 
