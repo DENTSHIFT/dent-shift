@@ -23,6 +23,15 @@ const NAV_ITEMS = [
   { label: "プラン比較", icon: "▦", href: "/plans", active: false },
 ] as const;
 
+const DOMAIN_ICONS: Record<string, string> = {
+  AIO: "✦",
+  MEO: "⌖",
+  SEO: "⌕",
+  LLMO: "◎",
+  WEB_BOOKING: "▣",
+  REVIEWS: "◌",
+};
+
 function formatDate(value: Date | string) {
   return new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
@@ -82,6 +91,11 @@ function DashboardNav({ bookingUrl }: { bookingUrl: string | undefined }) {
           設定・連携（準備中）
         </span>
       </nav>
+
+      <div className={styles.sideTrust}>
+        <span className={styles.sideTrustIcon} aria-hidden="true">✓</span>
+        <span>営業電話なし<br />オンライン完結</span>
+      </div>
 
       {bookingUrl && (
         <section className={styles.sideConsult}>
@@ -239,7 +253,12 @@ export default async function DashboardPage() {
                     {vm.result.domains.map((domain) => (
                       <div className={styles.domainCard} key={domain.domain}>
                         <div className={styles.domainHeader}>
-                          <span>{domain.label}</span>
+                          <span className={styles.domainIdentity}>
+                            <span className={styles.domainIcon} aria-hidden="true">
+                              {DOMAIN_ICONS[domain.domain] ?? "✦"}
+                            </span>
+                            <span>{domain.label}</span>
+                          </span>
                           {domain.showEstimatedBadge && <span className={styles.badge}>推定</span>}
                         </div>
                         <p className={styles.domainPoints}>{domain.pointsLabel}</p>
@@ -387,7 +406,7 @@ export default async function DashboardPage() {
                   </article>
 
                   {bookingUrl && (
-                    <article className={styles.card}>
+                    <article className={`${styles.card} ${styles.mobileConsultCard}`}>
                       <span className={styles.sideConsultBadge}>無料・45分</span>
                       <h2 className={styles.sectionLabel}>スペシャリストに相談する</h2>
                       <p className={styles.itemDescription}>診断結果や改善の進め方を相談できます。予約は任意です。</p>

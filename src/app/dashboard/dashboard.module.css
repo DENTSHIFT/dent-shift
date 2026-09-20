@@ -1,13 +1,16 @@
 .shell { min-height: 100vh; color: #0f1b2d; background: #f5f7fa; }
-.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 10; width: 236px; box-sizing: border-box; padding: 28px 18px 24px; background: #fff; border-right: 1px solid #e5e9f0; display: flex; flex-direction: column; }
-.logo { width: 180px; height: auto; display: block; margin: 0 auto 28px; }
-.nav { display: grid; gap: 6px; }
+.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 10; width: 236px; box-sizing: border-box; padding: 24px 18px 20px; background: #fff; border-right: 1px solid #e5e9f0; display: flex; flex-direction: column; }
+.logo { width: 180px; height: auto; display: block; margin: 0 auto 24px; }
+.nav { display: grid; gap: 4px; }
 .navLink, .navMuted { min-height: 42px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; color: #40506a; font-size: 14px; font-weight: 600; text-decoration: none; }
 .navLink:hover { background: #eff6ff; color: #1d4ed8; }
 .navActive, .navActive:hover { color: #fff; background: #2563eb; }
 .navMuted { color: #9aa4b2; }
-.navIcon { width: 22px; text-align: center; font-size: 16px; }
-.sideConsult { margin-top: auto; border: 1px solid #93c5fd; border-radius: 14px; padding: 14px; text-align: center; background: #f8fbff; }
+.navIcon { width: 28px; height: 28px; flex-shrink: 0; display: grid; place-items: center; border-radius: 9px; color: #2563eb; background: #eff6ff; text-align: center; font-size: 15px; }
+.navActive .navIcon { color: #2563eb; background: #fff; }
+.sideTrust { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 9px; padding: 11px 10px; border: 1px solid #e5e9f0; border-radius: 12px; color: #40506a; background: #f8fafc; font-size: 11px; font-weight: 700; line-height: 1.45; }
+.sideTrustIcon { width: 24px; height: 24px; flex-shrink: 0; display: grid; place-items: center; border: 1px solid #2563eb; border-radius: 50%; color: #2563eb; background: #fff; }
+.sideConsult { margin-top: 10px; border: 1px solid #93c5fd; border-radius: 14px; padding: 13px; text-align: center; background: #f8fbff; }
 .sideConsultBadge { display: inline-block; margin-bottom: 8px; padding: 3px 8px; border-radius: 999px; color: #1e40af; background: #dbeafe; font-size: 11px; font-weight: 700; }
 .sideConsultTitle { margin: 0; font-size: 14px; font-weight: 700; }
 .sideConsultLink { display: block; margin-top: 10px; padding: 9px 10px; border-radius: 8px; color: #fff; background: #2563eb; font-size: 12px; font-weight: 700; text-decoration: none; }
@@ -18,7 +21,7 @@
 .clinicName { margin: 0; font-size: 18px; font-weight: 750; }
 .topActions { display: flex; align-items: center; gap: 12px; }
 .accountLabel { color: #64748b; font-size: 12px; }
-.content { max-width: 1240px; margin: 0 auto; padding: 28px; }
+.content { max-width: 1240px; margin: 0 auto; padding: 24px 28px 32px; }
 .pageHeading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .pageTitle { margin: 0; font-size: 24px; letter-spacing: -.02em; }
 .pageDescription { margin: 5px 0 0; color: #64748b; font-size: 13px; }
@@ -39,8 +42,8 @@
 .subscriptionLink { color: #2563eb; font-size: 12px; font-weight: 700; text-decoration: none; white-space: nowrap; }
 .subscriptionLinkButton { appearance: none; border: 0; padding: 0; background: transparent; color: #2563eb; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .subscriptionLinkButton:hover { text-decoration: underline; }
-.overviewGrid { display: grid; grid-template-columns: minmax(260px, 1.1fr) minmax(0, 2fr); gap: 16px; }
-.card { min-width: 0; box-sizing: border-box; padding: 20px; border: 1px solid #e5e9f0; border-radius: 16px; background: #fff; box-shadow: 0 1px 2px rgba(15,27,45,.04); }
+.overviewGrid { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2.15fr); gap: 14px; }
+.card { min-width: 0; box-sizing: border-box; padding: 18px; border: 1px solid #e5e9f0; border-radius: 16px; background: #fff; box-shadow: 0 3px 12px rgba(15,27,45,.055); }
 .scoreCard { display: flex; flex-direction: column; align-items: center; text-align: center; background: linear-gradient(145deg,#fff 10%,#eff6ff 100%); }
 .sectionLabel { margin: 0; color: #0f1b2d; font-size: 15px; font-weight: 750; }
 .gauge { position: relative; width: 156px; height: 156px; margin: 18px 0 12px; border-radius: 50%; }
@@ -52,9 +55,11 @@
 .trendNegative { color: #b91c1c; background: #fef2f2; }
 .trendNeutral { color: #64748b; background: #f1f5f9; }
 .scoreCaveat { margin: 12px 0 0; color: #6b7280; font-size: 11px; line-height: 1.55; }
-.domainsGrid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 14px; }
-.domainCard { min-width: 0; padding: 14px; border: 1px solid #e5e9f0; border-radius: 12px; background: #fff; }
+.domainsGrid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 9px; margin-top: 13px; }
+.domainCard { min-width: 0; padding: 12px; border: 1px solid #e5e9f0; border-radius: 12px; background: #fff; }
 .domainHeader { min-height: 34px; display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; color: #40506a; font-size: 12px; font-weight: 700; }
+.domainIdentity { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.domainIcon { width: 30px; height: 30px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; color: #2563eb; background: #eff6ff; font-size: 15px; }
 .domainPoints { margin: 4px 0 8px; font-size: 21px; font-weight: 800; }
 .bar { height: 6px; overflow: hidden; border-radius: 999px; background: #e5e9f0; }
 .barFill { height: 100%; border-radius: inherit; background: #2563eb; }
@@ -62,13 +67,13 @@
 .badge { color: #92400e; background: #fef3c7; }
 .dataBadge { color: #475569; background: #f1f5f9; }
 .domainNote { margin: 7px 0 0; color: #64748b; font-size: 10px; line-height: 1.45; }
-.metricsGrid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin-top: 16px; }
-.metricCard { min-height: 98px; box-sizing: border-box; padding: 16px; border: 1px solid #e5e9f0; border-radius: 14px; background: #fff; }
+.metricsGrid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; margin-top: 14px; }
+.metricCard { min-height: 94px; box-sizing: border-box; padding: 14px; border: 1px solid #e5e9f0; border-radius: 14px; background: #fff; box-shadow: 0 2px 8px rgba(15,27,45,.04); }
 .metricLabel { margin: 0; color: #64748b; font-size: 12px; }
 .metricValue { margin: 9px 0 2px; color: #0f1b2d; font-size: 24px; font-weight: 800; }
 .metricNote { margin: 0; color: #94a3b8; font-size: 10px; }
-.twoColumn { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(300px,.75fr); gap: 16px; margin-top: 16px; }
-.stack { display: grid; gap: 16px; align-content: start; }
+.twoColumn { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(300px,.75fr); gap: 14px; margin-top: 14px; }
+.stack { display: grid; gap: 14px; align-content: start; }
 .cardHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .cardSubtitle { margin: 3px 0 0; color: #64748b; font-size: 11px; }
 .textLink { color: #2563eb; font-size: 12px; font-weight: 700; text-decoration: none; }
@@ -97,6 +102,7 @@
 .emptyIcon { width: 58px; height: 58px; margin: 0 auto 16px; display: grid; place-items: center; border-radius: 16px; color: #2563eb; background: #eff6ff; font-size: 25px; }
 .emptyTitle { margin: 0; font-size: 20px; }
 .emptyText { max-width: 480px; margin: 10px auto 22px; color: #64748b; font-size: 13px; line-height: 1.7; }
+.mobileConsultCard { display: none; }
 .mobileNav { display: none; }
 
 @media (max-width:1050px) {
@@ -121,6 +127,7 @@
   .metricsGrid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
   .metricCard { min-height: 90px; padding: 13px; }
   .card { padding: 16px; border-radius: 14px; }
+  .mobileConsultCard { display: block; }
   .mobileNav { position: fixed; inset: auto 0 0; z-index: 20; height: 66px; display: grid; grid-template-columns: repeat(5,1fr); background: #fff; border-top: 1px solid #e5e9f0; }
   .mobileNav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #526176; font-size: 10px; font-weight: 650; text-decoration: none; }
   .mobileNav a:first-child { color: #2563eb; }
