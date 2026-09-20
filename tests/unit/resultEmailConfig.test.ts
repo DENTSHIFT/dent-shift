@@ -42,7 +42,7 @@ describe("resultEmailConfig", () => {
       },
       "base URL",
     ],
-  ])("不完全・不正な設定は明示エラーにする: %s", (env) => {
+  ])("不完全・不正な設定は明示エラーにする: %s (%s)", (env, _reason) => {
     expect(() => resolveResultEmailConfig({ env })).toThrow(ResultEmailConfigError);
   });
 

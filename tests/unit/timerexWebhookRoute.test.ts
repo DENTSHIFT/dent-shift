@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
   resolveConfig: vi.fn(),
@@ -21,7 +22,7 @@ import { POST } from "@/app/api/webhooks/timerex/route";
 function request(body: unknown, secretHeader?: string) {
   const headers = new Headers({ "content-type": "application/json" });
   if (secretHeader !== undefined) headers.set("x-timerex-webhook-secret", secretHeader);
-  return new Request("https://dent-shift.example.com/api/webhooks/timerex", {
+  return new NextRequest("https://dent-shift.example.com/api/webhooks/timerex", {
     method: "POST",
     headers,
     body: JSON.stringify(body),

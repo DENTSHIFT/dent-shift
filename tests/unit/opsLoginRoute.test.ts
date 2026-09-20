@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
@@ -21,7 +22,7 @@ vi.mock("@/server/db/auditLogRepository", () => ({ recordAuditLog: mocks.recordA
 import { POST } from "@/app/api/ops/auth/login/route";
 
 function request(body: unknown) {
-  return new Request("https://dent-shift.example.com/api/ops/auth/login", {
+  return new NextRequest("https://dent-shift.example.com/api/ops/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),

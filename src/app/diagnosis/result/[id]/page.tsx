@@ -116,10 +116,11 @@ export default async function DiagnosisResultPage({
         .ds-order-competitors { order: 7; }
         .ds-order-adcompliance { order: 8; }
         .ds-order-status { order: 9; }
+        .ds-order-consultation { order: 10; }
         @media (min-width: 960px) {
           .ds-result-grid {
-            grid-template-columns: minmax(0, 7fr) minmax(280px, 3fr);
-            gap: 24px;
+            grid-template-columns: minmax(0, 2.2fr) minmax(300px, 1fr);
+            gap: 20px;
           }
           .ds-result-main,
           .ds-result-sidebar {
@@ -142,17 +143,31 @@ export default async function DiagnosisResultPage({
         .ds-details summary::-webkit-details-marker {
           display: none;
         }
+        @media (max-width: 599px) {
+          .ds-score-gauge {
+            width: 144px !important;
+            height: 144px !important;
+          }
+        }
       `}</style>
 
-      <div style={{ maxWidth: 1360, margin: "0 auto", padding: "28px 20px 0" }}>
-        <header
+      <header
+        style={{
+          background: "#fff",
+          borderBottom: `1px solid ${BORDER}`,
+        }}
+      >
+        <div
           style={{
+            maxWidth: 1280,
+            minHeight: 72,
+            margin: "0 auto",
+            padding: "0 24px",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             flexWrap: "wrap",
             gap: 12,
-            marginBottom: 20,
           }}
         >
           {/* ロゴは正本(public/brand/logo)をそのまま使用。変形・再配色はしない
@@ -161,7 +176,7 @@ export default async function DiagnosisResultPage({
           <img
             src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
             alt="DENT SHIFT 歯科集患を、AIでシフトする。"
-            style={{ height: 40 }}
+            style={{ width: 172, height: "auto", display: "block" }}
           />
           {showDashboardReturn && (
             <Link
@@ -183,7 +198,10 @@ export default async function DiagnosisResultPage({
               ダッシュボードに戻る
             </Link>
           )}
-        </header>
+        </div>
+      </header>
+
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "24px 24px 0" }}>
 
         <div style={{ display: "grid", gap: 8 }}>
           {vm.sampleBanner.show && (
@@ -222,10 +240,11 @@ export default async function DiagnosisResultPage({
               <SectionTitle title="AI集患総合スコア" />
               <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
                 <div
+                  className="ds-score-gauge"
                   style={{
                     position: "relative",
-                    width: 152,
-                    height: 152,
+                    width: 168,
+                    height: 168,
                     borderRadius: "50%",
                     background: `conic-gradient(${BLUE} ${gaugePercent}%, ${BORDER} 0)`,
                     flexShrink: 0,
@@ -243,7 +262,7 @@ export default async function DiagnosisResultPage({
                       justifyContent: "center",
                     }}
                   >
-                    <span style={{ fontSize: 40, fontWeight: 800, color: NAVY, lineHeight: 1 }}>
+                    <span style={{ fontSize: 44, fontWeight: 800, color: NAVY, lineHeight: 1 }}>
                       {vm.overall.points}
                     </span>
                     <span style={{ fontSize: 12, color: MUTED }}>/ {vm.overall.maxPoints}点</span>
@@ -396,6 +415,8 @@ export default async function DiagnosisResultPage({
                 </p>
               </details>
             </Card>
+
+            <ConsultationCta diagnosisId={id} className="ds-order-consultation" compact />
           </div>
         </div>
 
@@ -438,7 +459,6 @@ export default async function DiagnosisResultPage({
           </Link>
         </section>
 
-        <ConsultationCta diagnosisId={id} />
         <PhoneInquiryCta diagnosisId={id} />
 
         <p style={{ fontSize: 12, color: "#9CA3AF", marginTop: 24, textAlign: "center" }}>
@@ -842,43 +862,41 @@ function AdComplianceFindingCard({ f }: { f: AdComplianceFindingViewModel }) {
  * AI生成モデルの人物表示を追加する場合は、実在人物との誤認を避けるため「AI生成モデル」の
  * 明示を必須にすること(ユーザー指示)。
  */
-function ConsultationCta({ diagnosisId }: { diagnosisId: string }) {
+function ConsultationCta({
+  diagnosisId,
+  className,
+  compact = false,
+}: {
+  diagnosisId: string;
+  className?: string;
+  compact?: boolean;
+}) {
   const bookingUrl = process.env.NEXT_PUBLIC_SPECIALIST_BOOKING_URL;
   if (!bookingUrl) return null;
 
   return (
     <div
+      className={className}
       style={{
-        marginTop: 24,
-        background: "#EFF6FF",
-        border: "1px solid #BFDBFE",
+        marginTop: compact ? 0 : 24,
+        background: "#fff",
+        border: `1px solid ${BORDER}`,
         borderRadius: 16,
-        padding: 24,
+        padding: compact ? 22 : 24,
         boxShadow: "0 1px 2px rgba(15,27,45,0.04)",
       }}
     >
-      <p
-        style={{
-          display: "inline-block",
-          margin: 0,
-          padding: "4px 10px",
-          borderRadius: 999,
-          background: "#DBEAFE",
-          color: "#1E40AF",
-          fontSize: 12,
-          fontWeight: 700,
-        }}
-      >
-        無料・45分
+      <p style={{ margin: 0, fontSize: 11, color: MUTED }}>
+        相談は任意です。診断結果の閲覧・ご利用の条件ではありません。
       </p>
-      <h2 style={{ margin: "10px 0 0", fontSize: 20, color: NAVY, fontWeight: 700 }}>
-        スペシャリストに相談する
+      <h2 style={{ margin: "8px 0 0", fontSize: compact ? 16 : 20, color: NAVY, fontWeight: 700 }}>
+        この診断結果について相談する
       </h2>
-      <p style={{ margin: "8px 0 0", fontSize: 13, color: "#374151", lineHeight: 1.7 }}>
-        診断結果を見ながら、優先して改善すべき点を一緒に整理します。
+      <p style={{ margin: "8px 0 0", fontSize: 12, color: "#374151", lineHeight: 1.65 }}>
+        診断結果を見ながら、優先して改善すべき点をAI集患スペシャリストと一緒に整理します。
       </p>
       <p style={{ margin: "8px 0 0", fontSize: 12, color: "#1E3A8A", fontWeight: 600 }}>
-        ご予約には、医院担当者の電話番号が必要です。
+        無料・45分。ご予約には医院担当者の電話番号が必要です。
       </p>
       <TrackedCtaLink
         diagnosisId={diagnosisId}
@@ -888,22 +906,22 @@ function ConsultationCta({ diagnosisId }: { diagnosisId: string }) {
         rel="noreferrer"
         aria-label="スペシャリストとの45分相談の空き日時を確認する"
         style={{
-          display: "inline-block",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
           marginTop: 16,
           background: BLUE,
           color: "#fff",
-          padding: "11px 20px",
+          width: compact ? "100%" : "auto",
+          padding: "11px 18px",
           borderRadius: 999,
           textDecoration: "none",
           fontWeight: 700,
           fontSize: 14,
         }}
       >
-        空いている日時を確認する
+        AI集患スペシャリストに無料相談
       </TrackedCtaLink>
-      <p style={{ margin: "12px 0 0", fontSize: 11, color: MUTED }}>
-        相談は任意です。診断結果の閲覧・ご利用の条件ではありません。
-      </p>
     </div>
   );
 }
