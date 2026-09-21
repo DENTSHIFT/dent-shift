@@ -37,6 +37,12 @@ model Clinic {
   // テナント分離して参照できるようにする(SECURITY.md「テナント分離の実装方針」)
   aiObservations AiObservation[]
   attribution    Attribution?
+
+  // 2026-09-21: AI改善実行・オプション販売(仕様Ver1)。
+  optionOrders        OptionOrder[]
+  generatedArtifacts   GeneratedArtifact[]
+  entitlementUsages    PlanEntitlementUsage[]
+  clinicAuditLogs      ClinicAuditLog[]
 }
 
 model Diagnosis {
@@ -75,6 +81,11 @@ model Diagnosis {
   // どう表示されたか」を後から説明・再現するため)。診断のJSON列に埋め込むのではなく、
   // 独立したテーブルとして保存する(ユーザー指示)。
   aiObservations AiObservation[]
+
+  // 2026-09-21: この診断(report)を対象にしたオプション購入(制作会社向け修正指示書等)。
+  // 改善タスク自体は永続化された行を持たない(Diagnosis.improvementTasksJson内のJSON)ため、
+  // OptionOrder側はimprovementActionKeyを文字列として保持し、reportId=Diagnosis.idで紐付ける。
+  optionOrders OptionOrder[]
 }
 
 // 2026-09-05: AI別・質問別の生観測結果(無料診断結果への正式統合、ユーザー指示①)。
@@ -179,6 +190,10 @@ model Contact {
   // "profile" | "sms" | "email" | "payment" | "consent" | "completed"
   registrationStep   String    @default("profile")
   consentAcceptedAt  DateTime?
+
+  // 2026-09-21: AI改善実行・オプション販売(仕様Ver1)。
+  optionOrders    OptionOrder[]
+  clinicAuditLogs ClinicAuditLog[]
 
   @@index([phoneNumber])
 }
@@ -334,6 +349,170 @@ model AuditLog {
   createdAt    DateTime @default(now())
 
   @@index([operatorId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// 2026-09-21: DENT SHIFT AI改善実行・オプション販売仕様 Ver1
+// 「診断・提案だけで終わるSaaS」から「AI改善実行→医院承認→対応→再診断」まで
+// 回すプロダクトへの拡張。まず確定商品「制作会社向け修正指示書」(3,300円/1件)のみ対象。
+// 指示書以外のオプション商品名・価格は未確定のため、それらを前提にした列は追加しない。
+// ============================================================================
+
+// 販売可能なAIオプション商品のマスター。価格・Stripe参照をコードへハードコードしない
+// (billingConfig.tsと同じ方針)。keyはコード側から安定して参照するための識別子。
+model OptionProduct {
+  id           String   @id @default(cuid())
+  key          String   @unique // 例: "instruction_pdf"
+  name         String
+  description  String?
+  active       Boolean  @default(true)
+  // 成果物の種別。現時点では"pdf"のみ。将来の他成果物追加を見込んで文字列にする。
+  deliveryType String
+  priceJpy     Int
+  currency     String   @default("jpy")
+  // Stripe側のProduct/Price ID。作成前(未確定商品)はnullを許容する。
+  stripeProductId String?
+  stripePriceId   String?
+  requiresPayment                 Boolean @default(true)
+  requiresHumanReview             Boolean @default(false)
+  requiresExplicitPublishApproval Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders OptionOrder[]
+}
+
+// オプション商品の注文(購入)。無料枠内の場合もincluded=trueのレコードを必ず作り、
+// 監査可能にする(仕様書■6「無料枠も利用レコードを作り...」)。
+// reportId×version×productKeyの組で一意にし、再試行(生成失敗からの再生成)は
+// 新しい注文を作らずこの行の状態を進める(二重課金・二重生成の防止)。
+model OptionOrder {
+  id       String @id @default(cuid())
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id])
+
+  productId  String
+  product    OptionProduct @relation(fields: [productId], references: [id])
+  // 監査・冪等性チェックをJOINなしで行うための非正規化コピー。
+  productKey String
+
+  // 改善タスクは永続化された行を持たないため、識別子(ImprovementCandidate.key)を
+  // 文字列として保持する(FKなし)。
+  improvementActionKey String?
+
+  reportId String
+  report   Diagnosis @relation(fields: [reportId], references: [id])
+  version  Int       @default(1)
+
+  // draft→preview_ready→payment_required/included→checkout_created→payment_pending
+  // →paid→generation_queued→generating→generated→available→downloaded→completed
+  // →remeasurement_pending→remeasured
+  // 例外: payment_failed / generation_failed / refunded / cancelled / expired
+  status String @default("draft")
+
+  // プラン無料枠を消費した注文かどうか。trueの場合amountJpyは0。
+  includedByPlan Boolean @default(false)
+  amountJpy      Int     @default(0)
+  currency       String  @default("jpy")
+
+  // 注文時点のプラン・価格のスナップショット(後日プラン変更・値上げがあっても
+  // 過去注文の表示が変わらないようにする)。
+  planSnapshot  String?
+  priceSnapshot Int?
+
+  stripeCheckoutSessionId String? @unique
+  stripePaymentIntentId   String?
+
+  createdAt   DateTime  @default(now())
+  paidAt      DateTime?
+  refundedAt  DateTime?
+
+  artifact GeneratedArtifact?
+
+  @@unique([reportId, version, productKey])
+  @@index([clinicId])
+  @@index([status])
+}
+
+// 生成された成果物(制作会社向け修正指示書PDF等)。
+// パスワードは平文保存禁止。passwordHashは照合用(ログイン等と同じ一方向ハッシュ)、
+// passwordEncryptedはダッシュボード再表示用(アプリ側の暗号鍵で可逆暗号化)に役割を分離する。
+// 暗号鍵自体はこのテーブル・DBに一切保存しない(環境変数で管理)。
+model GeneratedArtifact {
+  id      String      @id @default(cuid())
+  orderId String      @unique
+  order   OptionOrder @relation(fields: [orderId], references: [id])
+  clinicId String
+  clinic   Clinic     @relation(fields: [clinicId], references: [id])
+
+  type     String // 例: "instruction_pdf"
+  reportId String
+  version  Int
+
+  // "pending" | "generating" | "generated" | "failed"
+  generationStatus String @default("pending")
+  // ファイル本体の保存先参照(ローカル/オブジェクトストレージのキー等)。恒久公開URLではない。
+  storageRef String?
+
+  // 照合用(パスワード入力時の検証にのみ使う。復元不可能な一方向ハッシュ)。
+  passwordHash String?
+  // 再表示用(アプリ側の暗号鍵で暗号化した値。ダッシュボードの「パスワードを表示」で復号する)。
+  passwordEncrypted String?
+
+  generatedAt   DateTime?
+  expiresAt     DateTime?
+  downloadedAt  DateTime?
+  lastError     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([clinicId])
+}
+
+// プラン別の月次無料枠(Entitlement)の消費状況。Stripeに0円商品を作らず、
+// ここで無料枠判定・消費を行う(仕様書■方針)。同時リクエストでの二重消費を防ぐため、
+// 消費はDBトランザクション内で「usedQuantity < includedQuantity」を条件にした
+// 条件付きUPDATEで行う(アプリ側ロジック、entitlementRepository.ts参照)。
+model PlanEntitlementUsage {
+  id       String @id @default(cuid())
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+
+  // 例: "instruction_pdf_monthly"
+  entitlementKey   String
+  // 月次枠のキー(例: "2026-09")。
+  period           String
+  includedQuantity Int
+  usedQuantity     Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clinicId, entitlementKey, period])
+}
+
+// 医院側(Contact)が行った、オプション購入・生成・ダウンロードの監査ログ。
+// 既存のAuditLog(運営者Operator専用、クロステナント操作向け)とは責務が異なるため分離する。
+model ClinicAuditLog {
+  id        String   @id @default(cuid())
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id])
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id])
+
+  // 例: "option_order_created" | "option_paid" | "artifact_generated" |
+  //     "artifact_generation_failed" | "artifact_downloaded"
+  action       String
+  targetType   String // "OptionOrder" | "GeneratedArtifact"
+  targetId     String?
+  metadataJson String?
+  createdAt    DateTime @default(now())
+
+  @@index([clinicId])
   @@index([targetType, targetId])
   @@index([createdAt])
 }

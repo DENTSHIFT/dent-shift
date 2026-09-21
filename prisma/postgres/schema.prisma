@@ -26,6 +26,11 @@ model Clinic {
   billingWebhookEvents BillingWebhookEvent[]
   aiObservations AiObservation[]
   attribution    Attribution?
+
+  optionOrders        OptionOrder[]
+  generatedArtifacts   GeneratedArtifact[]
+  entitlementUsages    PlanEntitlementUsage[]
+  clinicAuditLogs      ClinicAuditLog[]
 }
 
 model Diagnosis {
@@ -45,6 +50,7 @@ model Diagnosis {
   adComplianceChecksJson String          @default("{\"findings\":[],\"disclaimer\":\"\",\"checkedAt\":\"\"}")
   isSample               Boolean         @default(true)
   aiObservations         AiObservation[]
+  optionOrders           OptionOrder[]
 }
 
 model AiObservation {
@@ -98,6 +104,9 @@ model Contact {
 
   registrationStep   String    @default("profile")
   consentAcceptedAt  DateTime?
+
+  optionOrders    OptionOrder[]
+  clinicAuditLogs ClinicAuditLog[]
 
   @@index([phoneNumber])
 }
@@ -225,6 +234,131 @@ model AuditLog {
   createdAt    DateTime @default(now())
 
   @@index([operatorId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// 2026-09-21: DENT SHIFT AI改善実行・オプション販売仕様 Ver1(SQLite版schema.prismaと同型)
+// ============================================================================
+
+model OptionProduct {
+  id           String   @id @default(cuid())
+  key          String   @unique
+  name         String
+  description  String?
+  active       Boolean  @default(true)
+  deliveryType String
+  priceJpy     Int
+  currency     String   @default("jpy")
+  stripeProductId String?
+  stripePriceId   String?
+  requiresPayment                 Boolean @default(true)
+  requiresHumanReview             Boolean @default(false)
+  requiresExplicitPublishApproval Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders OptionOrder[]
+}
+
+model OptionOrder {
+  id       String @id @default(cuid())
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id])
+
+  productId  String
+  product    OptionProduct @relation(fields: [productId], references: [id])
+  productKey String
+
+  improvementActionKey String?
+
+  reportId String
+  report   Diagnosis @relation(fields: [reportId], references: [id])
+  version  Int       @default(1)
+
+  status String @default("draft")
+
+  includedByPlan Boolean @default(false)
+  amountJpy      Int     @default(0)
+  currency       String  @default("jpy")
+
+  planSnapshot  String?
+  priceSnapshot Int?
+
+  stripeCheckoutSessionId String? @unique
+  stripePaymentIntentId   String?
+
+  createdAt   DateTime  @default(now())
+  paidAt      DateTime?
+  refundedAt  DateTime?
+
+  artifact GeneratedArtifact?
+
+  @@unique([reportId, version, productKey])
+  @@index([clinicId])
+  @@index([status])
+}
+
+model GeneratedArtifact {
+  id      String      @id @default(cuid())
+  orderId String      @unique
+  order   OptionOrder @relation(fields: [orderId], references: [id])
+  clinicId String
+  clinic   Clinic     @relation(fields: [clinicId], references: [id])
+
+  type     String
+  reportId String
+  version  Int
+
+  generationStatus String @default("pending")
+  storageRef String?
+
+  passwordHash String?
+  passwordEncrypted String?
+
+  generatedAt   DateTime?
+  expiresAt     DateTime?
+  downloadedAt  DateTime?
+  lastError     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([clinicId])
+}
+
+model PlanEntitlementUsage {
+  id       String @id @default(cuid())
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+
+  entitlementKey   String
+  period           String
+  includedQuantity Int
+  usedQuantity     Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clinicId, entitlementKey, period])
+}
+
+model ClinicAuditLog {
+  id        String   @id @default(cuid())
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id])
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id])
+
+  action       String
+  targetType   String
+  targetId     String?
+  metadataJson String?
+  createdAt    DateTime @default(now())
+
+  @@index([clinicId])
   @@index([targetType, targetId])
   @@index([createdAt])
 }
