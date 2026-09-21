@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
           clinicUrl: currentContact.clinic.url,
           contactEmail: currentContact.email,
           contactPhone:
-            currentContact.clinic.contactPhone ?? (contactPhone ? String(contactPhone) : undefined),
+            currentContact.clinic.contactPhone ?? (contactPhone ? String(contactPhone) : ""),
           gbpUrl: currentContact.clinic.gbpUrl ?? (gbpUrl ? String(gbpUrl) : undefined),
           bookingUrl:
             currentContact.clinic.bookingUrl ?? (bookingUrl ? String(bookingUrl) : undefined),
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
           directorName: String(directorName ?? ""),
           clinicUrl: String(clinicUrl ?? ""),
           contactEmail: String(contactEmail ?? ""),
-          contactPhone: contactPhone ? String(contactPhone) : undefined,
+          contactPhone: contactPhone ? String(contactPhone) : "",
           gbpUrl: gbpUrl ? String(gbpUrl) : undefined,
           bookingUrl: bookingUrl ? String(bookingUrl) : undefined,
         };

@@ -60,8 +60,8 @@ function validateField(name: FieldName, value: string): string | null {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return "正しいメールアドレスの形式で入力してください";
       return null;
     case "contactPhone":
-      // Ver3.3仕様(2026-09-21)により任意項目。入力された場合のみ形式を検証する。
-      if (!trimmed) return null;
+      // 2026-09-21のユーザー指示: SMS認証に使うため電話番号(携帯番号)は必須のまま維持する。
+      if (!trimmed) return "電話番号(携帯番号)を入力してください";
       if (!isValidClinicContactPhone(trimmed)) return "国内の電話番号を10〜11桁で入力してください";
       return null;
     case "gbpUrl":
@@ -498,16 +498,19 @@ export default function DiagnosisPage() {
                 />
                 <TextField
                   id="contactPhone"
-                  label="電話番号"
-                  required={false}
+                  label="電話番号(携帯番号)"
+                  required
                   type="tel"
-                  placeholder="例)03-1234-5678"
+                  placeholder="例)090-1234-5678"
                   value={values.contactPhone}
                   onChange={handleChange("contactPhone")}
                   onBlur={handleBlur("contactPhone")}
                   error={fieldError("contactPhone")}
                   readOnly={Boolean(authenticatedProfile?.contactPhone)}
                 />
+                <p style={{ margin: "-8px 0 0", fontSize: 12, color: MUTED }}>
+                  SMS認証に使用します。こちらからの営業電話は一切行いません。
+                </p>
               </div>
 
               {/* 6. 任意入力(必須項目より視覚的に弱くする。2026-09-06のユーザー指示:
@@ -578,7 +581,7 @@ export default function DiagnosisPage() {
 
               {/* 8. CTA下 */}
               <p style={{ margin: "10px 0 0", fontSize: 12, color: MUTED, textAlign: "center" }}>
-                約60秒・無料・クレジットカード不要
+                約60秒・無料・営業電話は一切行いません
               </p>
             </form>
           </section>

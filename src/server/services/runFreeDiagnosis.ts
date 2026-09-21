@@ -37,9 +37,9 @@ export interface RunFreeDiagnosisInput {
   directorName: string;
   clinicUrl: string;
   contactEmail: string;
-  // Ver3.3仕様(2026-09-21)により任意項目化。未入力の場合、対応するdomainは
-  // "unavailable"として扱う(0点にしない)
-  contactPhone?: string;
+  // 2026-09-21のユーザー指示: SMS認証に使うため必須のまま維持する
+  // (「営業電話は一切行わない」旨をUI側で明示することを条件とする)。
+  contactPhone: string;
   gbpUrl?: string;
   bookingUrl?: string;
 }
@@ -155,8 +155,8 @@ function validateInput(input: RunFreeDiagnosisInput) {
   if (!input.contactEmail?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.contactEmail.trim())) {
     throw new InvalidDiagnosisInputError("メールアドレスの形式が正しくありません");
   }
-  // 電話番号は任意項目(Ver3.3仕様)。入力された場合のみ形式を検証する。
-  if (input.contactPhone?.trim() && !isValidClinicContactPhone(input.contactPhone)) {
+  // SMS認証に使うため電話番号は必須(2026-09-21のユーザー指示)。
+  if (!isValidClinicContactPhone(input.contactPhone ?? "")) {
     throw new InvalidDiagnosisInputError("電話番号は国内の10〜11桁で入力してください");
   }
 }
