@@ -315,6 +315,7 @@ model GeneratedArtifact {
 
   generationStatus String @default("pending")
   storageRef String?
+  fileData Bytes?
 
   passwordHash String?
   passwordEncrypted String?

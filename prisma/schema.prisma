@@ -455,8 +455,11 @@ model GeneratedArtifact {
 
   // "pending" | "generating" | "generated" | "failed"
   generationStatus String @default("pending")
-  // ファイル本体の保存先参照(ローカル/オブジェクトストレージのキー等)。恒久公開URLではない。
+  // ファイル本体の保存先参照(将来オブジェクトストレージへ切り出す場合のキー等)。恒久公開URLではない。
   storageRef String?
+  // Phase4時点ではオブジェクトストレージを新設せず、パスワード保護済みPDFの
+  // バイト列をDBへ直接保存する(認可付きAPI経由でのみ読み出し、公開URLは発行しない)。
+  fileData Bytes?
 
   // 照合用(パスワード入力時の検証にのみ使う。復元不可能な一方向ハッシュ)。
   passwordHash String?

@@ -13,6 +13,7 @@ import {
 import { applyOptionOrderWebhookEvent } from "@/server/db/optionOrderRepository";
 import { prisma } from "@/server/db/prismaClient";
 import { activateTrialIfEligible } from "@/server/services/activateTrial";
+import { generateInstructionPdfArtifact } from "@/server/services/optionOrders/generateInstructionPdfArtifact";
 
 export const runtime = "nodejs";
 
@@ -70,6 +71,26 @@ export async function POST(request: Request) {
     if (isOneTimeCheckoutCompleted(event)) {
       const command = normalizeStripeOneTimePurchaseEvent(event);
       const result = await applyOptionOrderWebhookEvent(command);
+
+      // 決済確認(generation_queuedへの遷移)の直後に生成まで進める。生成失敗は
+      // ここで握りつぶし、決済自体は成功として200を返す(Stripe側の再送・二重課金を防ぐ)。
+      // 失敗した生成はClinicAuditLog/GeneratedArtifact.lastErrorに記録済みで、
+      // ダッシュボード側の再生成導線(Phase6)から再試行できる。
+      if (result === "processed" && command.action.kind === "one_time_paid") {
+        const order = await prisma.optionOrder.findUnique({
+          where: { stripeCheckoutSessionId: command.action.identity.stripeCheckoutSessionId },
+          select: { id: true },
+        });
+        if (order) {
+          await generateInstructionPdfArtifact(order.id).catch((generationError) => {
+            console.error(
+              "[POST /api/billing/webhook] generateInstructionPdfArtifact failed:",
+              generationError instanceof Error ? generationError.message : "UnknownError"
+            );
+          });
+        }
+      }
+
       return NextResponse.json({ received: true, result });
     }
 

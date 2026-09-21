@@ -7,12 +7,22 @@ import {
 } from "@/server/services/optionOrders/requestInstructionPdfOrder";
 import { OptionProductConfigError } from "@/server/config/optionProductConfig";
 import { BillingConfigError } from "@/server/config/billingConfig";
+import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
+import { isEntitledSubscriptionStatus } from "@/domain/options/planEntitlements";
+import type { PlanId } from "@/domain/billing/planCatalog";
 
 /**
  * 「現在の制作会社へ依頼する」導線: 制作会社向け修正指示書の注文を作成する。
- * Phase2時点ではプラン無料枠判定(PlanEntitlementUsage)をまだ接続していないため、
- * includedByPlanは常にfalse(都度課金)で呼び出す(Phase3で無料枠判定を追加する)。
+ * 無料枠(月1件/月3件)を消費できるのは、契約が無料枠を消費可能な状態
+ * (trial/active/past_due/cancel_scheduled)にある場合のみ。判定・消費自体は
+ * requestInstructionPdfOrder内でトランザクションとして行う(Phase3)。
  */
+async function resolveEntitledPlanId(clinicId: string): Promise<PlanId | null> {
+  const subscription = await getLatestSubscriptionByClinicId(clinicId);
+  if (!subscription) return null;
+  if (!isEntitledSubscriptionStatus(subscription.status)) return null;
+  return subscription.plan;
+}
 export async function POST(request: NextRequest) {
   const currentContact = await getCurrentContact();
   if (!currentContact) {
@@ -46,6 +56,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const planId = await resolveEntitledPlanId(currentContact.clinicId);
     const result = await requestInstructionPdfOrder({
       clinicId: currentContact.clinicId,
       contactId: currentContact.id,
@@ -53,8 +64,7 @@ export async function POST(request: NextRequest) {
       reportId,
       improvementActionKey:
         typeof improvementActionKey === "string" ? improvementActionKey : undefined,
-      // Phase3で無料枠判定に置き換える。
-      includedByPlan: false,
+      planId,
     });
     return NextResponse.json(result, { status: 200 });
   } catch (error) {
