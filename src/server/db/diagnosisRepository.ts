@@ -280,12 +280,19 @@ function mapAiObservationRow(row: {
 export async function getDiagnosisById(diagnosisId: string) {
   const diagnosis = await prisma.diagnosis.findUnique({
     where: { id: diagnosisId },
-    include: { clinic: true, aiObservations: true },
+    include: {
+      clinic: { include: { _count: { select: { contacts: true } } } },
+      aiObservations: true,
+    },
   });
   if (!diagnosis) return null;
 
   return {
     clinicId: diagnosis.clinicId,
+    // 2026-09-21のユーザー指示: 会員登録(Contact)済みの医院は「契約後データ」として
+    // 扱い、resultAccess.tsで所有者以外の閲覧を遮断する。未登録(匿名)の医院は
+    // 従来どおりURLを知っていれば誰でも閲覧できる(意図的な公開範囲)。
+    clinicHasAccount: diagnosis.clinic._count.contacts > 0,
     clinicName: diagnosis.clinic.name,
     clinicUrl: diagnosis.clinic.url,
     totalPoints: diagnosis.totalPoints,

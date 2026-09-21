@@ -538,6 +538,36 @@ describe("DiagnosisRepository: clinic_id テナント分離(SECURITY.md「テナ
     expect(observations.every((observation) => observation.clinicId === clinic.id)).toBe(true);
   });
 
+  it("getDiagnosisByIdはContact登録済みの医院でclinicHasAccount=trueを返す(2026-09-21のユーザー指示)", async () => {
+    const clinic = await prisma.clinic.create({
+      data: { name: "会員登録済み歯科医院", url: "https://has-account.example.com" },
+    });
+    const result = await runFreeDiagnosis(buildInput("会員登録済み歯科医院診断"), deps);
+    const saved = await repo.saveDiagnosisResult(
+      {
+        clinicUrl: "https://has-account.example.com",
+        directorName: "テスト院長",
+        contactEmail: "has-account@example.com",
+        existingClinicId: clinic.id,
+      },
+      result
+    );
+
+    const beforeSignup = await repo.getDiagnosisById(saved.diagnosisId);
+    expect(beforeSignup?.clinicHasAccount).toBe(false);
+
+    await prisma.contact.create({
+      data: {
+        clinicId: clinic.id,
+        email: "owner-has-account@example.com",
+        passwordHash: "dummy-hash",
+      },
+    });
+
+    const afterSignup = await repo.getDiagnosisById(saved.diagnosisId);
+    expect(afterSignup?.clinicHasAccount).toBe(true);
+  });
+
   it("匿名診断の代表メールアドレスと電話番号をClinicへ保存する", async () => {
     const result = await runFreeDiagnosis(buildInput("メール保存確認歯科医院"), deps);
     const saved = await repo.saveDiagnosisResult(

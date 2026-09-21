@@ -17,6 +17,7 @@ import {
 } from "./resultViewModel";
 import type { ShareOfVoiceResult } from "@/domain/competitor/shareOfVoice";
 import { shouldShowDashboardReturnLink } from "./resultNavigation";
+import { isDiagnosisResultAccessible } from "./resultAccess";
 import { formatMeasuredAtInJapan } from "@/domain/diagnosis/formatMeasuredAt";
 import { buildResultEmailDeliveryNotice } from "@/domain/email/resultEmailDeliveryStatus";
 import { TrackedCtaLink } from "./TrackedCtaLink";
@@ -47,6 +48,18 @@ export default async function DiagnosisResultPage({
     getCurrentContact(),
   ]);
   if (!diagnosis) notFound();
+  // 会員登録済み医院の診断結果は「契約後データ」として所有者以外に見せない
+  // (2026-09-21のユーザー指示)。未登録医院の診断は従来どおり匿名閲覧可能。
+  // 存在有無を漏らさないため、通常の未検出と同じnotFound()で返す。
+  if (
+    !isDiagnosisResultAccessible({
+      clinicHasAccount: diagnosis.clinicHasAccount,
+      contactClinicId: currentContact?.clinicId,
+      diagnosisClinicId: diagnosis.clinicId,
+    })
+  ) {
+    notFound();
+  }
   const showDashboardReturn = shouldShowDashboardReturnLink(
     currentContact?.clinicId,
     diagnosis.clinicId
