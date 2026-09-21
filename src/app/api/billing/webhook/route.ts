@@ -6,13 +6,28 @@ import {
 import { applyBillingWebhookEvent } from "@/server/db/billingRepository";
 import {
   normalizeStripeBillingEvent,
+  normalizeStripeOneTimePurchaseEvent,
   StripeWebhookVerificationError,
   verifyStripeWebhookEvent,
 } from "@/server/providers/billing/stripeWebhookProvider";
+import { applyOptionOrderWebhookEvent } from "@/server/db/optionOrderRepository";
 import { prisma } from "@/server/db/prismaClient";
 import { activateTrialIfEligible } from "@/server/services/activateTrial";
 
 export const runtime = "nodejs";
+
+/**
+ * checkout.session.completedがサブスク用(プラン契約)か単発商品購入
+ * (制作会社向け修正指示書等)かを、object.subscriptionの有無で判定する。
+ * 同じイベントを両方のapply*WebhookEvent()へ渡すと、billingWebhookEvent行の
+ * 早い者勝ちの一意制約により後発側が誤ってduplicate扱いになるため、
+ * どちらか一方だけに振り分ける(二重処理防止の要)。
+ */
+function isOneTimeCheckoutCompleted(event: { type: string; data: { object: unknown } }): boolean {
+  if (event.type !== "checkout.session.completed") return false;
+  const object = event.data.object as Record<string, unknown> | null;
+  return !object?.subscription;
+}
 
 export async function POST(request: Request) {
   let config;
@@ -52,6 +67,12 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (isOneTimeCheckoutCompleted(event)) {
+      const command = normalizeStripeOneTimePurchaseEvent(event);
+      const result = await applyOptionOrderWebhookEvent(command);
+      return NextResponse.json({ received: true, result });
+    }
+
     const command = normalizeStripeBillingEvent(event);
     const result = await applyBillingWebhookEvent(command);
 

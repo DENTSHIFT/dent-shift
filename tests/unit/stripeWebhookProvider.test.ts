@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import Stripe from "stripe";
 import {
   normalizeStripeBillingEvent,
+  normalizeStripeOneTimePurchaseEvent,
   StripeWebhookVerificationError,
   verifyStripeWebhookEvent,
 } from "@/server/providers/billing/stripeWebhookProvider";
@@ -136,6 +137,83 @@ describe("Stripe billing event normalization", () => {
       ).action
     ).toEqual({ kind: "ignored" });
     expect(normalizeStripeBillingEvent(event("charge.succeeded", { id: "ch_1" })).action).toEqual({
+      kind: "ignored",
+    });
+  });
+
+  it("subscriptionを持つcheckout.session.completedは単発購入として扱わない(相互排他)", () => {
+    const oneTime = normalizeStripeOneTimePurchaseEvent(
+      event("checkout.session.completed", {
+        id: "cs_test_1",
+        client_reference_id: "clinic-1",
+        subscription: "sub_1",
+        payment_status: "paid",
+        metadata: { clinic_id: "clinic-1", report_id: "report-1", version: "1", option_product_key: "instruction_pdf" },
+      })
+    );
+    expect(oneTime.action).toEqual({ kind: "ignored" });
+  });
+});
+
+describe("Stripe one-time purchase event normalization(制作会社向け修正指示書等)", () => {
+  it("mode=payment(subscriptionなし)のcheckout.session.completedをOptionOrder購入として正規化する", () => {
+    const command = normalizeStripeOneTimePurchaseEvent(
+      event("checkout.session.completed", {
+        id: "cs_test_onetime",
+        client_reference_id: "clinic-1",
+        payment_status: "paid",
+        payment_intent: { id: "pi_test_1" },
+        amount_total: 3300,
+        metadata: {
+          clinic_id: "clinic-1",
+          report_id: "report-1",
+          version: "1",
+          option_product_key: "instruction_pdf",
+          improvement_action_id: "improvement-1",
+        },
+      })
+    );
+    expect(command.action).toEqual({
+      kind: "one_time_paid",
+      identity: {
+        stripeCheckoutSessionId: "cs_test_onetime",
+        clinicId: "clinic-1",
+        reportId: "report-1",
+        version: 1,
+        optionProductKey: "instruction_pdf",
+        improvementActionKey: "improvement-1",
+      },
+      stripePaymentIntentId: "pi_test_1",
+      amountTotalJpy: 3300,
+    });
+  });
+
+  it("未決済(payment_status!=paid)は無視する", () => {
+    const command = normalizeStripeOneTimePurchaseEvent(
+      event("checkout.session.completed", {
+        id: "cs_test_unpaid",
+        client_reference_id: "clinic-1",
+        payment_status: "unpaid",
+        metadata: { clinic_id: "clinic-1", report_id: "report-1", version: "1", option_product_key: "instruction_pdf" },
+      })
+    );
+    expect(command.action).toEqual({ kind: "ignored" });
+  });
+
+  it("client_reference_idとmetadata.clinic_idが一致しない場合は無視する(なりすまし対策)", () => {
+    const command = normalizeStripeOneTimePurchaseEvent(
+      event("checkout.session.completed", {
+        id: "cs_test_mismatch",
+        client_reference_id: "clinic-other",
+        payment_status: "paid",
+        metadata: { clinic_id: "clinic-1", report_id: "report-1", version: "1", option_product_key: "instruction_pdf" },
+      })
+    );
+    expect(command.action).toEqual({ kind: "ignored" });
+  });
+
+  it("checkout.session.completed以外のイベントは無視する", () => {
+    expect(normalizeStripeOneTimePurchaseEvent(event("charge.succeeded", { id: "ch_1" })).action).toEqual({
       kind: "ignored",
     });
   });

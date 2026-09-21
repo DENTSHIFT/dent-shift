@@ -9,7 +9,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("Stripe Checkout provider", () => {
   it("APIキーをAuthorizationだけに設定し、医院とプランを照合可能にする", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      Response.json({ url: "https://checkout.stripe.com/c/pay/test-session" })
+      Response.json({ url: "https://checkout.stripe.com/c/pay/test-session", id: "cs_test_123" })
     );
     vi.stubGlobal("fetch", fetchMock);
 
