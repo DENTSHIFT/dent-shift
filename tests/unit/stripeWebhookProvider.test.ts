@@ -58,14 +58,15 @@ describe("Stripe webhook signature verification", () => {
 });
 
 describe("Stripe billing event normalization", () => {
-  it("完了したCheckoutを医院・プラン・契約IDへ結び付ける", () => {
+  it("完了したCheckoutを医院・プラン・契約IDへ結び付ける(即時課金=amount_total>0はactive、プレミアム相当)", () => {
     const command = normalizeStripeBillingEvent(
       event("checkout.session.completed", {
         id: "cs_test_1",
         client_reference_id: "clinic-1",
         subscription: "sub_1",
         payment_status: "paid",
-        metadata: { clinic_id: "clinic-1", plan: "standard" },
+        amount_total: 79800,
+        metadata: { clinic_id: "clinic-1", plan: "premium" },
       })
     );
     expect(command.action).toEqual({
@@ -73,10 +74,47 @@ describe("Stripe billing event normalization", () => {
       identity: {
         externalSubscriptionId: "sub_1",
         clinicId: "clinic-1",
-        plan: "standard",
+        plan: "premium",
       },
       initialStatus: "active",
     });
+  });
+
+  it("trial_period_days付きのCheckout(amount_total=0)はtrialにする。ライト/スタンダード相当。2026-09-22の手動E2Eで発見したバグの修正: Stripeはtrial中の$0請求でもpayment_status='paid'を返すため、payment_statusだけで判定すると初日からactive扱いになってしまう", () => {
+    const command = normalizeStripeBillingEvent(
+      event("checkout.session.completed", {
+        id: "cs_test_trial",
+        client_reference_id: "clinic-1",
+        subscription: "sub_1",
+        payment_status: "paid",
+        amount_total: 0,
+        metadata: { clinic_id: "clinic-1", plan: "light" },
+      })
+    );
+    expect(command.action).toEqual({
+      kind: "checkout_completed",
+      identity: {
+        externalSubscriptionId: "sub_1",
+        clinicId: "clinic-1",
+        plan: "light",
+      },
+      initialStatus: "trial",
+    });
+  });
+
+  it("amount_totalが無い(想定外の応答形)場合は安全側のtrialにする", () => {
+    const command = normalizeStripeBillingEvent(
+      event("checkout.session.completed", {
+        id: "cs_test_no_amount",
+        client_reference_id: "clinic-1",
+        subscription: "sub_1",
+        payment_status: "paid",
+        metadata: { clinic_id: "clinic-1", plan: "standard" },
+      })
+    );
+    expect(command.action).toEqual(
+      expect.objectContaining({ initialStatus: "trial" })
+    );
   });
 
   it("現行Invoiceのsubscription_detailsから支払い成功を取り出す", () => {

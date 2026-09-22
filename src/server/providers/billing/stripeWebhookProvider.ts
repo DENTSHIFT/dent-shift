@@ -117,12 +117,21 @@ export function normalizeStripeBillingEvent(event: Stripe.Event): BillingWebhook
     ) {
       return ignored(event);
     }
+    // 2026-09-22の手動E2Eで発見: payment_status(付随した支払い方法の"paid"/"unpaid")は、
+    // trial_period_days付き($0請求)のCheckout Sessionでも実測で常に"paid"を返す
+    // (Stripeが支払い方法の登録成功を以て"paid"と扱うため)。checkout.session.completed
+    // イベント自体、決済が成功した場合にしか発火しない(失敗時はこのイベントが来ない)ため、
+    // payment_statusだけでは実質ほぼ常に"active"側になってしまい、7日間トライアル
+    // (ライト/スタンダード)が初日からactive扱いになるバグがあった。
+    // amount_total(今回の請求額)が0かどうかで判定する方が、trial_period_daysの有無と
+    // 直接対応し確実(プレミアムは即時課金のためamount_total>0)。
+    const amountTotal = typeof object.amount_total === "number" ? object.amount_total : null;
     return {
       ...base,
       action: {
         kind: "checkout_completed",
         identity: checkoutIdentity,
-        initialStatus: object.payment_status === "paid" ? "active" : "trial",
+        initialStatus: amountTotal !== null && amountTotal > 0 ? "active" : "trial",
       },
     };
   }

@@ -12,19 +12,28 @@ export function SignupForm({ clinicId }: { clinicId?: string }) {
   const [clinicUrl, setClinicUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 診断フォーム(src/app/diagnosis/page.tsx)と同じ「重複候補を確認済みなら
+  // 別データとして続行する」パターン。以前は確認手段が無く、エラー文言が
+  // 存在しない導線を示す形になり登録が行き詰まっていた(2026-09-22の手動E2Eで発見)。
+  const [duplicateConfirmPending, setDuplicateConfirmPending] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit(allowDuplicateClinic: boolean) {
     setSubmitting(true);
     setError(null);
     try {
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, clinicId, clinicName, clinicUrl }),
+        body: JSON.stringify({ email, password, clinicId, clinicName, clinicUrl, allowDuplicateClinic }),
       });
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 409 && data.code === "clinic_duplicate_candidate") {
+          setDuplicateConfirmPending(true);
+          setError(data.error ?? "登録に失敗しました");
+          return;
+        }
+        setDuplicateConfirmPending(false);
         setError(data.error ?? "登録に失敗しました");
         return;
       }
@@ -35,6 +44,11 @@ export function SignupForm({ clinicId }: { clinicId?: string }) {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    void submit(false);
   }
 
   return (
@@ -56,7 +70,15 @@ export function SignupForm({ clinicId }: { clinicId?: string }) {
       {!clinicId && (
         <>
           <Field label="医院名 *">
-            <input className={styles.input} required value={clinicName} onChange={(e) => setClinicName(e.target.value)} />
+            <input
+              className={styles.input}
+              required
+              value={clinicName}
+              onChange={(e) => {
+                setClinicName(e.target.value);
+                setDuplicateConfirmPending(false);
+              }}
+            />
           </Field>
           <Field label="公式サイトURL *">
             <input
@@ -65,7 +87,10 @@ export function SignupForm({ clinicId }: { clinicId?: string }) {
               type="url"
               placeholder="https://example-clinic.jp"
               value={clinicUrl}
-              onChange={(e) => setClinicUrl(e.target.value)}
+              onChange={(e) => {
+                setClinicUrl(e.target.value);
+                setDuplicateConfirmPending(false);
+              }}
             />
           </Field>
         </>
@@ -73,9 +98,20 @@ export function SignupForm({ clinicId }: { clinicId?: string }) {
 
       {error && <p className={styles.error}>{error}</p>}
 
-      <button className={styles.primaryButton} type="submit" disabled={submitting}>
-        {submitting ? "登録中..." : "登録する"}
-      </button>
+      {duplicateConfirmPending ? (
+        <button
+          className={styles.primaryButton}
+          type="button"
+          disabled={submitting}
+          onClick={() => void submit(true)}
+        >
+          {submitting ? "登録中..." : "別データとして登録を続ける"}
+        </button>
+      ) : (
+        <button className={styles.primaryButton} type="submit" disabled={submitting}>
+          {submitting ? "登録中..." : "登録する"}
+        </button>
+      )}
       <p className={styles.switchLink}>
         すでにアカウントをお持ちの方は <a href="/login">ログイン</a>
       </p>

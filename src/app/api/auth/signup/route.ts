@@ -25,10 +25,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "リクエストボディがJSONとして解釈できません" }, { status: 400 });
   }
 
-  const { email, password, clinicId, clinicName, clinicUrl, referralCode } = (body ?? {}) as Record<
-    string,
-    unknown
-  >;
+  const { email, password, clinicId, clinicName, clinicUrl, referralCode, allowDuplicateClinic } =
+    (body ?? {}) as Record<string, unknown>;
 
   if (typeof email !== "string" || !EMAIL_RE.test(email.trim())) {
     return NextResponse.json({ error: "メールアドレスの形式が正しくありません" }, { status: 400 });
@@ -38,6 +36,9 @@ export async function POST(request: NextRequest) {
   }
   if (clinicId !== undefined && (typeof clinicId !== "string" || !clinicId)) {
     return NextResponse.json({ error: "clinicIdの形式が不正です" }, { status: 400 });
+  }
+  if (allowDuplicateClinic !== undefined && typeof allowDuplicateClinic !== "boolean") {
+    return NextResponse.json({ error: "重複確認の値が不正です" }, { status: 400 });
   }
 
   // 紹介コードは任意入力。不正な形式でも登録自体は失敗させず、単に紐付けをスキップする
@@ -75,19 +76,26 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const duplicateCandidate = await findClinicDuplicateCandidate({
-      clinicName: clinicName.trim(),
-      clinicUrl: clinicUrl.trim(),
-    });
-    if (duplicateCandidate) {
-      return NextResponse.json(
-        {
-          error: duplicateCandidateMessage(duplicateCandidate.matchType),
-          code: "clinic_duplicate_candidate",
-          matchType: duplicateCandidate.matchType,
-        },
-        { status: 409 }
-      );
+    // 診断フォーム(src/app/diagnosis/page.tsx)と同じ「重複候補を確認済みなら
+    // 別データとして続行する」パターン。以前はこの確認手段が無く、
+    // duplicateCandidateMessage()の文言(「確認後に診断を続けられます」)が
+    // 実際には存在しない導線を示す形になり、新規登録が行き詰まっていた
+    // (2026-09-22の手動E2Eで発見)。
+    if (allowDuplicateClinic !== true) {
+      const duplicateCandidate = await findClinicDuplicateCandidate({
+        clinicName: clinicName.trim(),
+        clinicUrl: clinicUrl.trim(),
+      });
+      if (duplicateCandidate) {
+        return NextResponse.json(
+          {
+            error: duplicateCandidateMessage(duplicateCandidate.matchType),
+            code: "clinic_duplicate_candidate",
+            matchType: duplicateCandidate.matchType,
+          },
+          { status: 409 }
+        );
+      }
     }
     const clinic = await prisma.clinic.create({
       data: {
