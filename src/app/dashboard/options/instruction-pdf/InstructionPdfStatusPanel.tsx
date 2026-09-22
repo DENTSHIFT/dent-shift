@@ -48,6 +48,10 @@ export function InstructionPdfStatusPanel({ orderId }: { orderId: string }) {
   const [password, setPassword] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [revealing, setRevealing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  // pollGenerationRequestedはretry()がポーリングを再開させるためのトリガー(useEffectの依存に含める)。
+  const [pollGeneration, setPollGeneration] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,7 +82,26 @@ export function InstructionPdfStatusPanel({ orderId }: { orderId: string }) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [orderId]);
+  }, [orderId, pollGeneration]);
+
+  async function retryGeneration() {
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      const res = await fetch(`/api/options/instruction-pdf/${orderId}/retry`, { method: "POST" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setRetryError(data?.error ?? "再試行に失敗しました。");
+        return;
+      }
+      // 状態が変わったはずなので、ポーリングを再開する。
+      setPollGeneration((n) => n + 1);
+    } catch {
+      setRetryError("再試行に失敗しました。時間をおいて再度お試しください。");
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   async function revealPassword() {
     setRevealing(true);
@@ -126,8 +149,30 @@ export function InstructionPdfStatusPanel({ orderId }: { orderId: string }) {
         />
       )}
 
-      {status.orderStatus === "generation_failed" && status.lastError && (
-        <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>詳細: {status.lastError}</p>
+      {status.orderStatus === "generation_failed" && (
+        <div>
+          {status.lastError && (
+            <p style={{ fontSize: 12, color: MUTED, margin: "0 0 8px" }}>詳細: {status.lastError}</p>
+          )}
+          <button
+            type="button"
+            onClick={retryGeneration}
+            disabled={retrying}
+            style={{
+              background: BLUE,
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              padding: "10px 16px",
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: retrying ? "default" : "pointer",
+            }}
+          >
+            {retrying ? "再試行中…" : "もう一度生成する"}
+          </button>
+          {retryError && <p style={{ fontSize: 12, color: "#B91C1C", margin: "6px 0 0" }}>{retryError}</p>}
+        </div>
       )}
 
       {status.downloadable && (

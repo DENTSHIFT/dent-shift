@@ -55,7 +55,13 @@ async function transitionOrderStatus(orderId: string, to: OptionOrderStatus) {
 export async function generateInstructionPdfArtifact(orderId: string): Promise<void> {
   const order = await getOptionOrderById(orderId);
   if (!order) throw new InstructionPdfArtifactError("Option order not found.");
-  if (order.status !== "generation_queued") {
+  if (order.status === "generation_failed") {
+    // 障害系E2E(2026-09-22のユーザー指示)で発見: 生成失敗後、ユーザー側に再試行手段が
+    // 存在しなかった(決済済みなのにcheckout再作成しか導線が無く行き止まりになる)。
+    // generation_failed→generation_queuedは状態機械上もともと許可されている遷移
+    // (optionOrderStatus.ts)なので、ここで進めてから通常の生成処理へ合流させる。
+    await transitionOrderStatus(order.id, "generation_queued");
+  } else if (order.status !== "generation_queued") {
     // 既に生成済み・生成中の再送、または不正な状態からの呼び出しは何もしない(冪等)。
     return;
   }

@@ -214,4 +214,29 @@ describe("generateInstructionPdfArtifact", () => {
     });
     expect(auditLogs).toHaveLength(1);
   });
+
+  it("generation_failed状態からの再呼び出しは、Checkoutを再作成せず生成をやり直しavailableへ進む(障害系E2Eで発見した行き止まりの修正)", async () => {
+    const { order } = await createPaidOrder("-retry-from-failed");
+    await prisma.optionOrder.update({ where: { id: order.id }, data: { status: "generating" } });
+    await prisma.generatedArtifact.create({
+      data: {
+        orderId: order.id,
+        clinicId: order.clinicId,
+        type: "instruction_pdf",
+        reportId: order.reportId,
+        version: order.version,
+        generationStatus: "failed",
+        lastError: "simulated failure",
+      },
+    });
+    await prisma.optionOrder.update({ where: { id: order.id }, data: { status: "generation_failed" } });
+
+    await generateInstructionPdfArtifact(order.id);
+
+    const updatedOrder = await prisma.optionOrder.findUnique({ where: { id: order.id } });
+    expect(updatedOrder?.status).toBe("available");
+    const artifact = await prisma.generatedArtifact.findUnique({ where: { orderId: order.id } });
+    expect(artifact?.generationStatus).toBe("generated");
+    expect(artifact?.storageRef).not.toBeNull();
+  });
 });
