@@ -66,7 +66,7 @@ export function PilotActivateButton({
           cursor: loading ? "default" : "pointer",
         }}
       >
-        {loading ? "準備中…" : "パイロット利用をはじめる"}
+        {loading ? "準備中…" : "限定プランでDENT SHIFTを試す"}
       </button>
       {error && <p style={{ fontSize: 12, color: "#B91C1C", margin: "8px 0 0" }}>{error}</p>}
     </div>

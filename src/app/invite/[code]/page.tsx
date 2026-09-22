@@ -59,12 +59,14 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
             {isPilotInvite ? (
               <>
                 <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#2563EB" }}>
-                  DENT SHIFT パイロット利用
+                  木村正人からの特別オファー
                 </p>
                 <h1 className={styles.title} style={{ marginTop: 6 }}>
-                  {invite.clinicName} 様
+                  {invite.clinicName}先生だけが利用できる限定プランです。
                 </h1>
-                <p className={styles.description}>知り合い院長向け先行利用</p>
+                <p className={styles.description}>
+                  このオファーは、DENT SHIFT開発者 木村正人 から直接ご案内した医院様限定の特別プランです。
+                </p>
 
                 <div
                   style={{
@@ -83,7 +85,10 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
                 </div>
 
                 <p className={styles.helper} style={{ marginTop: 16 }}>
-                  これはテスト環境(test.dentshift.jp)限定の先行利用です。実際の請求は発生しません。
+                  一般公開されている通常プランとは異なり、DENT
+                  SHIFTの開発・改善にご協力いただく医院様向けにご用意しています。
+                  <br />
+                  この招待URLをお持ちの医院様のみ利用できます。
                 </p>
               </>
             ) : (
