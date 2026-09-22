@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/server/db/prismaClient";
 import { getOptionOrderById } from "@/server/db/optionOrderRepository";
+import { getDiagnosisById } from "@/server/db/diagnosisRepository";
 import {
   ensureArtifactForOrder,
   markArtifactFailed,
@@ -15,8 +16,17 @@ import { generateInstructionPdfPassword } from "@/domain/options/pdfPassword";
 import { hashPassword } from "@/server/auth/password";
 import { encryptPasswordForStorage } from "@/server/crypto/artifactPasswordCipher";
 import { resolveArtifactEncryptionConfigFromProcessEnv } from "@/server/config/artifactEncryptionConfig";
+import { getArtifactStorageAdapter } from "@/server/storage/dbBlobArtifactStorage";
+import { NOT_AVAILABLE_LABEL } from "@/domain/options/instructionPdfContent";
+import { mapImprovementCandidateToInstructionPdfItem } from "@/domain/options/instructionPdfContentMapper";
+import type { ImprovementCandidate } from "@/domain/improvement-task/types";
 
 export class InstructionPdfArtifactError extends Error {}
+
+// テキストのみのA4文書であり通常は数十〜百数十KB程度に収まる。埋め込みフォント込みでも
+// 十分な余裕を持たせつつ、異常に巨大なPDFがDB(Postgres Bytes列)へ保存されることを防ぐ
+// (2026-09-22のユーザー指示)。
+const MAX_PDF_BYTES = 8 * 1024 * 1024; // 8MB
 
 async function transitionOrderStatus(orderId: string, to: OptionOrderStatus) {
   const order = await prisma.optionOrder.findUnique({ where: { id: orderId } });
@@ -32,11 +42,12 @@ async function transitionOrderStatus(orderId: string, to: OptionOrderStatus) {
 
 /**
  * 決済(または無料枠消費)済みの注文から、制作会社向け修正指示書PDFを生成する。
- * Phase4前半はモック内容で固定し(実データ差し込みは後続)、以下を必ず行う:
- * - パスワードはランダム生成し、PDF自体をパスワード保護(pdfPasswordProtection.ts)
- * - passwordHash(照合用/一方向)とpasswordEncrypted(再表示用/可逆)を分離して保存
- * - 暗号鍵自体はDBへ保存しない(ARTIFACT_PASSWORD_ENC_KEY環境変数)
- * - 生成成功・失敗をClinicAuditLogへ記録
+ * 実データ差し込み(2026-09-22): order.improvementActionKeyでDiagnosis.topImprovementsから
+ * 対象のImprovementCandidateを特定し、instructionPdfContentMapper.tsで14項目へ変換する。
+ * 元データに存在しない項目(推奨文案/実装条件/完了条件/再診断条件)はAIで補完せず、
+ * NOT_AVAILABLE_LABELをそのまま表示する。患者個人情報はDiagnosis/ImprovementCandidateの
+ * どちらにも含まれないため(ドキュメント済みの前提)、ホワイトリスト方式のマッパーを
+ * 経由する限り混入しない。
  *
  * 決済前(draft/checkout_created等)の注文は呼び出し元(Webhook適用後のみ起動)で
  * 弾かれる前提だが、二重の安全策としてここでも状態遷移の妥当性チェックで弾く。
@@ -49,7 +60,10 @@ export async function generateInstructionPdfArtifact(orderId: string): Promise<v
     return;
   }
 
-  const clinic = await prisma.clinic.findUnique({ where: { id: order.clinicId } });
+  const [clinic, diagnosis] = await Promise.all([
+    prisma.clinic.findUnique({ where: { id: order.clinicId } }),
+    getDiagnosisById(order.reportId),
+  ]);
   if (!clinic) throw new InstructionPdfArtifactError("Clinic not found for option order.");
 
   await ensureArtifactForOrder(prisma, {
@@ -65,32 +79,56 @@ export async function generateInstructionPdfArtifact(orderId: string): Promise<v
   try {
     const encryptionConfig = resolveArtifactEncryptionConfigFromProcessEnv();
 
-    // Phase4前半: モック内容(実データ差し込みは後続フェーズ)。患者個人情報は
-    // このホワイトリスト構造に一切含めない。
+    const topImprovements = (diagnosis?.topImprovements ?? []) as ImprovementCandidate[];
+    const targetTask = order.improvementActionKey
+      ? topImprovements.find((task) => task.key === order.improvementActionKey)
+      : undefined;
+
+    const item = targetTask
+      ? mapImprovementCandidateToInstructionPdfItem(targetTask)
+      : {
+          title: order.improvementActionKey
+            ? NOT_AVAILABLE_LABEL // 指定されたキーが診断結果内に見つからない(不整合)
+            : "改善項目未指定",
+          currentProblem: NOT_AVAILABLE_LABEL,
+          whyItMatters: NOT_AVAILABLE_LABEL,
+          patientImpact: NOT_AVAILABLE_LABEL,
+          fixSteps: NOT_AVAILABLE_LABEL,
+          recommendedCopy: NOT_AVAILABLE_LABEL,
+          implementationConditions: NOT_AVAILABLE_LABEL,
+          recommendedAssignee: NOT_AVAILABLE_LABEL,
+          priorityLabel: NOT_AVAILABLE_LABEL,
+          completionCriteria: NOT_AVAILABLE_LABEL,
+          remeasurementCriteria: NOT_AVAILABLE_LABEL,
+        };
+
     const pdfBytes = await buildInstructionPdfDocument({
       clinicName: clinic.name,
-      reportVersion: order.version,
+      clinicUrl: diagnosis?.clinicUrl || NOT_AVAILABLE_LABEL,
+      reportId: order.reportId,
+      version: order.version,
       generatedAt: new Date(),
-      improvementItems: [
-        {
-          title: "予約導線の改善(モック項目1)",
-          detail: "トップページの予約ボタン配置を見直し、離脱率を低減する。",
-        },
-        {
-          title: "AI Overviews対応(モック項目2)",
-          detail: "主要施術ページの構造化データを追加し、AI検索での露出を改善する。",
-        },
-      ],
+      item,
     });
 
     const password = generateInstructionPdfPassword();
-    const protectedPdf = await protectPdfWithPassword(pdfBytes, password);
+    const protectedPdf = Buffer.from(await protectPdfWithPassword(pdfBytes, password));
+
+    if (protectedPdf.byteLength > MAX_PDF_BYTES) {
+      throw new InstructionPdfArtifactError(
+        `Generated PDF exceeds the maximum allowed size (${protectedPdf.byteLength} > ${MAX_PDF_BYTES} bytes).`
+      );
+    }
+
+    const storage = getArtifactStorageAdapter();
+    const storageRef = await storage.save({ key: order.id, data: protectedPdf });
+
     const passwordHash = await hashPassword(password);
     const passwordEncrypted = encryptPasswordForStorage(password, encryptionConfig);
 
     await markArtifactGenerated({
       orderId: order.id,
-      fileData: protectedPdf,
+      storageRef,
       passwordHash,
       passwordEncrypted,
     });

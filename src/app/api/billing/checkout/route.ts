@@ -6,6 +6,7 @@ import {
   resolveBillingConfigFromProcessEnv,
 } from "@/server/config/billingConfig";
 import { createStripeCheckoutSession } from "@/server/providers/billing/stripeCheckoutProvider";
+import { isTrialEligiblePlan, TRIAL_PERIOD_DAYS } from "@/domain/billing/trialActivation";
 
 export async function POST(request: NextRequest) {
   const currentContact = await getCurrentContact();
@@ -58,6 +59,7 @@ export async function POST(request: NextRequest) {
       clinicId: currentContact.clinicId,
       contactEmail: currentContact.email,
       appBaseUrl: config.appBaseUrl,
+      trialPeriodDays: isTrialEligiblePlan(plan) ? TRIAL_PERIOD_DAYS : undefined,
     });
     return NextResponse.redirect(checkout.url, 303);
   } catch (error) {

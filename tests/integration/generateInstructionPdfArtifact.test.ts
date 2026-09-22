@@ -40,7 +40,32 @@ afterAll(async () => {
   if (testDbDir) rmSync(testDbDir, { recursive: true, force: true });
 });
 
-async function createPaidOrder(suffix: string) {
+const SAMPLE_TASK = {
+  title: "予約ページのAI Overviews対応",
+  domain: "AIO",
+  detectedFact: "予約ページに構造化データが存在しない",
+  patientImpact: "AI検索経由の新規患者が予約導線を見つけにくい",
+  recommendedAction: "予約ページにLocalBusiness構造化データを追加する",
+  impact: "high",
+  confidence: "high",
+  urgency: "medium",
+  evidence: ["予約ページのHTMLにJSON-LDが検出されなかった"],
+  key: "aio-booking-structured-data",
+  kind: "standard",
+  recommendedAssignee: "制作会社",
+  ruleKey: "aio-booking-structured-data",
+  rootCauseKey: "AIO:booking_structured_data",
+  evidenceDomain: "AIO",
+  provisional: false,
+  sourceCriteria: [{ domain: "AIO", criterionKey: "booking_structured_data" }],
+  structuredEvidence: [],
+  priority: { axes: { catchmentImpact: 4, urgency: 3, easeOfExecution: 4, rippleEffect: 3 }, total: 14, tier: "priority" },
+};
+
+async function createPaidOrder(
+  suffix: string,
+  options: { improvementActionKey?: string | null; topImprovements?: unknown[] } = {}
+) {
   const clinic = await prisma.clinic.create({
     data: { name: `テスト歯科${suffix}`, url: `https://example${suffix}.com` },
   });
@@ -52,7 +77,7 @@ async function createPaidOrder(suffix: string) {
       scoreBreakdownJson: "{}",
       competitorsJson: "[]",
       questionResultsJson: "[]",
-      improvementTasksJson: "[]",
+      improvementTasksJson: JSON.stringify(options.topImprovements ?? []),
       dataDisclaimer: "",
     },
   });
@@ -74,6 +99,7 @@ async function createPaidOrder(suffix: string) {
     productKey: "instruction_pdf",
     reportId: diagnosis.id,
     version: 1,
+    improvementActionKey: options.improvementActionKey,
   });
   await prisma.optionOrder.update({
     where: { id: order.id },
@@ -83,8 +109,11 @@ async function createPaidOrder(suffix: string) {
 }
 
 describe("generateInstructionPdfArtifact", () => {
-  it("生成後、注文はavailableへ進み、PDFはパスワード保護され、平文パスワードはどこにも保存されない", async () => {
-    const { order } = await createPaidOrder("-happy");
+  it("生成後、注文はavailableへ進み、PDFはパスワード保護され、平文パスワードはどこにも保存されない(実データ差し込み)", async () => {
+    const { order } = await createPaidOrder("-happy", {
+      improvementActionKey: SAMPLE_TASK.key,
+      topImprovements: [SAMPLE_TASK],
+    });
 
     await generateInstructionPdfArtifact(order.id);
 
@@ -93,6 +122,7 @@ describe("generateInstructionPdfArtifact", () => {
 
     const artifact = await prisma.generatedArtifact.findUnique({ where: { orderId: order.id } });
     expect(artifact?.generationStatus).toBe("generated");
+    expect(artifact?.storageRef).toBe(order.id);
     expect(artifact?.fileData).not.toBeNull();
     expect(artifact?.passwordHash).not.toBeNull();
     expect(artifact?.passwordEncrypted).not.toBeNull();
@@ -154,6 +184,20 @@ describe("generateInstructionPdfArtifact", () => {
     expect(artifact).toBeNull();
     const unchangedOrder = await prisma.optionOrder.findUnique({ where: { id: order.id } });
     expect(unchangedOrder?.status).toBe("draft");
+  });
+
+  it("improvementActionKeyが診断結果のtopImprovementsに見つからない場合でも、架空データを生成せず要確認表記で完了する", async () => {
+    const { order } = await createPaidOrder("-key-mismatch", {
+      improvementActionKey: "does-not-exist-in-diagnosis",
+      topImprovements: [SAMPLE_TASK],
+    });
+
+    await generateInstructionPdfArtifact(order.id);
+
+    const updatedOrder = await prisma.optionOrder.findUnique({ where: { id: order.id } });
+    expect(updatedOrder?.status).toBe("available");
+    const artifact = await prisma.generatedArtifact.findUnique({ where: { orderId: order.id } });
+    expect(artifact?.generationStatus).toBe("generated");
   });
 
   it("同じ注文への再呼び出し(Webhook再送等)は二重生成しない(available状態のまま)", async () => {

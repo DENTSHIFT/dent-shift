@@ -33,9 +33,13 @@ export async function markArtifactGenerating(orderId: string) {
   });
 }
 
+/**
+ * バイナリ本体(fileData)自体はArtifactStorageAdapter経由で別途保存済みの前提。
+ * ここではstorageRef(アダプタが返した不透明な参照)とメタデータのみを書き込む。
+ */
 export async function markArtifactGenerated(input: {
   orderId: string;
-  fileData: Buffer;
+  storageRef: string;
   passwordHash: string;
   passwordEncrypted: string;
 }) {
@@ -43,7 +47,7 @@ export async function markArtifactGenerated(input: {
     where: { orderId: input.orderId },
     data: {
       generationStatus: "generated",
-      fileData: input.fileData,
+      storageRef: input.storageRef,
       passwordHash: input.passwordHash,
       passwordEncrypted: input.passwordEncrypted,
       generatedAt: new Date(),

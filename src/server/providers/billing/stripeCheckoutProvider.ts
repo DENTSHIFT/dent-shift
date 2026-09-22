@@ -66,6 +66,10 @@ export async function createStripeCheckoutSession(input: {
   clinicId: string;
   contactEmail: string;
   appBaseUrl: string;
+  // ライト・スタンダードのみ7(Ver3.3仕様)。プレミアムはundefinedで即時課金。
+  // 呼び出し側(billing/checkout/route.ts)がtrialActivation.tsのisTrialEligiblePlan()
+  // で判定した値を渡す(対象プラン一覧をここで再定義しない)。
+  trialPeriodDays?: number;
 }): Promise<{ url: string; id: string }> {
   const params = new URLSearchParams();
   params.set("mode", "subscription");
@@ -80,6 +84,12 @@ export async function createStripeCheckoutSession(input: {
   params.set("metadata[plan]", input.plan);
   params.set("subscription_data[metadata][clinic_id]", input.clinicId);
   params.set("subscription_data[metadata][plan]", input.plan);
+  if (input.trialPeriodDays) {
+    params.set("subscription_data[trial_period_days]", String(input.trialPeriodDays));
+    // トライアル中でもカード登録を必須にする(仕様: 8日目に自動課金するため)。
+    // これを付けない場合、Stripeはtrial付きCheckoutで支払い方法の入力を省略できてしまう。
+    params.set("payment_method_collection", "always");
+  }
 
   return postCheckoutSession(input.apiKey, params);
 }

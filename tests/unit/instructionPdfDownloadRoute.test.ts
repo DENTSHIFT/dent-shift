@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getArtifactByOrderId: vi.fn(),
   markArtifactDownloaded: vi.fn(),
   recordClinicAuditLog: vi.fn(),
+  storageRead: vi.fn(),
 }));
 
 vi.mock("@/server/auth/session", () => ({ getCurrentContact: mocks.currentContact }));
@@ -21,6 +22,9 @@ vi.mock("@/server/db/clinicAuditLogRepository", () => ({
   recordClinicAuditLog: mocks.recordClinicAuditLog,
 }));
 vi.mock("@/server/db/prismaClient", () => ({ prisma: {} }));
+vi.mock("@/server/storage/dbBlobArtifactStorage", () => ({
+  getArtifactStorageAdapter: () => ({ read: mocks.storageRead }),
+}));
 
 import { GET } from "@/app/api/options/instruction-pdf/[orderId]/download/route";
 
@@ -44,8 +48,9 @@ beforeEach(() => {
   });
   mocks.getArtifactByOrderId.mockResolvedValue({
     generationStatus: "generated",
-    fileData: Buffer.from("%PDF-mock"),
+    storageRef: "order-1",
   });
+  mocks.storageRead.mockResolvedValue(Buffer.from("%PDF-mock"));
 });
 
 describe("GET /api/options/instruction-pdf/[orderId]/download", () => {
@@ -93,8 +98,8 @@ describe("GET /api/options/instruction-pdf/[orderId]/download", () => {
     expect(response.status).toBe(409);
   });
 
-  it("生成未完了(fileDataなし)は409", async () => {
-    mocks.getArtifactByOrderId.mockResolvedValue({ generationStatus: "generating", fileData: null });
+  it("生成未完了(storageRefなし)は409", async () => {
+    mocks.getArtifactByOrderId.mockResolvedValue({ generationStatus: "generating", storageRef: null });
     const response = await GET(request(), params());
     expect(response.status).toBe(409);
   });

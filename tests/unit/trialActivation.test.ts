@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { computeTrialEndsAt, isEligibleForTrialActivation } from "@/domain/billing/trialActivation";
+import {
+  computeTrialEndsAt,
+  isEligibleForTrialActivation,
+  isTrialEligiblePlan,
+  TRIAL_PERIOD_DAYS,
+} from "@/domain/billing/trialActivation";
+
+describe("isTrialEligiblePlan", () => {
+  it("ライト・スタンダードはtrue、プレミアムはfalse", () => {
+    expect(isTrialEligiblePlan("light")).toBe(true);
+    expect(isTrialEligiblePlan("standard")).toBe(true);
+    expect(isTrialEligiblePlan("premium")).toBe(false);
+  });
+
+  it("TRIAL_PERIOD_DAYSは7", () => {
+    expect(TRIAL_PERIOD_DAYS).toBe(7);
+  });
+});
 
 const ALL_COMPLETE = {
   planId: "light",

@@ -21,6 +21,7 @@ import { isDiagnosisResultAccessible } from "./resultAccess";
 import { formatMeasuredAtInJapan } from "@/domain/diagnosis/formatMeasuredAt";
 import { buildResultEmailDeliveryNotice } from "@/domain/email/resultEmailDeliveryStatus";
 import { TrackedCtaLink } from "./TrackedCtaLink";
+import { InstructionPdfOrderButton } from "./InstructionPdfOrderButton";
 
 // DENT SHIFT正式カラー(public/brand/logo/README_使用ガイド.md「正式カラー」節が正本)。
 // Claudeが独自に配色を作らず、ここでもこのブランドガイドの値のみを使用する。
@@ -407,7 +408,13 @@ export default async function DiagnosisResultPage({
               />
               <div style={{ display: "grid", gap: 12 }}>
                 {vm.topImprovements.map((task, i) => (
-                  <ImprovementCard key={task.key} rank={i + 1} task={task} />
+                  <ImprovementCard
+                    key={task.key}
+                    rank={i + 1}
+                    task={task}
+                    reportId={id}
+                    isOwner={showDashboardReturn}
+                  />
                 ))}
                 {vm.topImprovements.length === 0 && (
                   <EmptyNote text="現時点で表示できる改善アクションはありません。" tone="positive" />
@@ -783,7 +790,17 @@ function LossRootCauseCard({ rc }: { rc: LossRootCauseViewModel }) {
  * 「高/中/低」へ変換済みのラベル(ImprovementViewModel)を使い、high/medium/lowの
  * ような内部コードをそのまま表示しない。
  */
-function ImprovementCard({ rank, task }: { rank: number; task: ImprovementViewModel }) {
+function ImprovementCard({
+  rank,
+  task,
+  reportId,
+  isOwner,
+}: {
+  rank: number;
+  task: ImprovementViewModel;
+  reportId: string;
+  isOwner: boolean;
+}) {
   return (
     <div style={{ border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14 }}>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
@@ -825,6 +842,9 @@ function ImprovementCard({ rank, task }: { rank: number; task: ImprovementViewMo
               <p style={{ fontSize: 11, color: MUTED, margin: 0 }}>
                 インパクト: {task.impactLabel} / 確度: {task.confidenceLabel} / 緊急性: {task.urgencyLabel}
               </p>
+              {isOwner && (
+                <InstructionPdfOrderButton reportId={reportId} improvementActionKey={task.key} />
+              )}
             </div>
           </details>
         </div>

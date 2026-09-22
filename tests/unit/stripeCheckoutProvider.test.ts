@@ -38,6 +38,51 @@ describe("Stripe Checkout provider", () => {
     );
   });
 
+  it("trialPeriodDaysを指定すると、trial_period_daysとpayment_method_collection=alwaysを付与する(ライト/スタンダード用)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({ url: "https://checkout.stripe.com/c/pay/test-session", id: "cs_test_trial" })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createStripeCheckoutSession({
+      apiKey: "sk_test_secret",
+      priceId: "price_light",
+      taxRateId: "txr_japan_10_percent",
+      plan: "light",
+      clinicId: "clinic-1",
+      contactEmail: "owner@example.com",
+      appBaseUrl: "https://dent-shift.example.com",
+      trialPeriodDays: 7,
+    });
+
+    const [, options] = fetchMock.mock.calls[0]!;
+    const params = new URLSearchParams(options.body);
+    expect(params.get("subscription_data[trial_period_days]")).toBe("7");
+    expect(params.get("payment_method_collection")).toBe("always");
+  });
+
+  it("trialPeriodDaysを省略すると、trial関連パラメータを一切付与しない(プレミアム用=即時課金)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({ url: "https://checkout.stripe.com/c/pay/test-session", id: "cs_test_premium" })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createStripeCheckoutSession({
+      apiKey: "sk_test_secret",
+      priceId: "price_premium",
+      taxRateId: "txr_japan_10_percent",
+      plan: "premium",
+      clinicId: "clinic-1",
+      contactEmail: "owner@example.com",
+      appBaseUrl: "https://dent-shift.example.com",
+    });
+
+    const [, options] = fetchMock.mock.calls[0]!;
+    const params = new URLSearchParams(options.body);
+    expect(params.has("subscription_data[trial_period_days]")).toBe(false);
+    expect(params.has("payment_method_collection")).toBe(false);
+  });
+
   it("Stripe以外のリダイレクトURLを拒否する", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ url: "https://evil.example.com" })));
 

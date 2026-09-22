@@ -83,6 +83,32 @@ describe("POST /api/billing/checkout", () => {
       clinicId: "clinic-1",
       contactEmail: "owner@example.com",
       appBaseUrl: "https://dent-shift.example.com",
+      trialPeriodDays: 7,
+    });
+  });
+
+  it("プレミアムプランはtrialPeriodDaysを渡さない(トライアル対象外)", async () => {
+    mocks.resolveConfig.mockReturnValue({
+      provider: "stripe",
+      apiKey: "sk_test_secret",
+      webhookSecret: "whsec_test_secret",
+      taxRateId: "txr_japan_10_percent",
+      appBaseUrl: "https://dent-shift.example.com",
+      priceLabels: { light: "L", standard: "S", premium: "P" },
+      stripePriceIds: { light: "price_l", standard: "price_s", premium: "price_p" },
+    });
+
+    const response = await POST(request("premium"));
+    expect(response.status).toBe(303);
+    expect(mocks.createCheckout).toHaveBeenCalledWith({
+      apiKey: "sk_test_secret",
+      priceId: "price_p",
+      taxRateId: "txr_japan_10_percent",
+      plan: "premium",
+      clinicId: "clinic-1",
+      contactEmail: "owner@example.com",
+      appBaseUrl: "https://dent-shift.example.com",
+      trialPeriodDays: undefined,
     });
   });
 

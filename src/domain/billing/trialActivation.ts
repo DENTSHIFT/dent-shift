@@ -1,8 +1,15 @@
-const TRIAL_PERIOD_MS = 1000 * 60 * 60 * 24 * 7; // 7日間
+export const TRIAL_PERIOD_DAYS = 7;
+const TRIAL_PERIOD_MS = 1000 * 60 * 60 * 24 * TRIAL_PERIOD_DAYS;
 
 // Ver3.3仕様(2026-09-21): 7日間無料トライアルはライトプラン・スタンダードプランのみ
 // 対象。プレミアムプランはトライアル対象外(即時課金)。
+// Stripe Checkout側(stripeCheckoutProvider.ts)のtrial_period_days付与判定にも
+// この一覧を再利用し、対象プランの定義を1箇所に保つ。
 const TRIAL_ELIGIBLE_PLAN_IDS = ["light", "standard"] as const;
+
+export function isTrialEligiblePlan(planId: string): boolean {
+  return TRIAL_ELIGIBLE_PLAN_IDS.includes(planId as (typeof TRIAL_ELIGIBLE_PLAN_IDS)[number]);
+}
 
 export interface TrialActivationGateInput {
   planId: string;
@@ -20,7 +27,7 @@ export interface TrialActivationGateInput {
  */
 export function isEligibleForTrialActivation(input: TrialActivationGateInput): boolean {
   if (input.trialStartedAt) return false;
-  if (!TRIAL_ELIGIBLE_PLAN_IDS.includes(input.planId as (typeof TRIAL_ELIGIBLE_PLAN_IDS)[number])) {
+  if (!isTrialEligiblePlan(input.planId)) {
     return false;
   }
   return Boolean(

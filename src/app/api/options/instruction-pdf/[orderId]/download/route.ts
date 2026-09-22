@@ -4,6 +4,7 @@ import { getOptionOrderById } from "@/server/db/optionOrderRepository";
 import { getArtifactByOrderId, markArtifactDownloaded } from "@/server/db/generatedArtifactRepository";
 import { recordClinicAuditLog } from "@/server/db/clinicAuditLogRepository";
 import { prisma } from "@/server/db/prismaClient";
+import { getArtifactStorageAdapter } from "@/server/storage/dbBlobArtifactStorage";
 
 /**
  * 制作会社向け修正指示書PDFの認可付きダウンロード。
@@ -33,8 +34,19 @@ export async function GET(
   }
 
   const artifact = await getArtifactByOrderId(order.id);
-  if (!artifact || artifact.generationStatus !== "generated" || !artifact.fileData) {
+  if (!artifact || artifact.generationStatus !== "generated" || !artifact.storageRef) {
     return NextResponse.json({ error: "この指示書はまだダウンロードできません" }, { status: 409 });
+  }
+
+  let fileData: Buffer;
+  try {
+    fileData = await getArtifactStorageAdapter().read(artifact.storageRef);
+  } catch (error) {
+    console.error(
+      "[GET /api/options/instruction-pdf/[orderId]/download] storage read failed:",
+      error instanceof Error ? error.name : "UnknownError"
+    );
+    return NextResponse.json({ error: "PDFを取得できませんでした。" }, { status: 500 });
   }
 
   await markArtifactDownloaded(order.id);
@@ -46,7 +58,7 @@ export async function GET(
     targetId: order.id,
   });
 
-  return new NextResponse(new Uint8Array(artifact.fileData), {
+  return new NextResponse(new Uint8Array(fileData), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
