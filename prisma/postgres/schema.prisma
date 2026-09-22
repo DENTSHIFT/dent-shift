@@ -31,6 +31,7 @@ model Clinic {
   generatedArtifacts   GeneratedArtifact[]
   entitlementUsages    PlanEntitlementUsage[]
   clinicAuditLogs      ClinicAuditLog[]
+  selfServeMarks       ImprovementActionSelfServeMark[]
 }
 
 model Diagnosis {
@@ -51,6 +52,7 @@ model Diagnosis {
   isSample               Boolean         @default(true)
   aiObservations         AiObservation[]
   optionOrders           OptionOrder[]
+  selfServeMarks         ImprovementActionSelfServeMark[]
 }
 
 model AiObservation {
@@ -107,6 +109,7 @@ model Contact {
 
   optionOrders    OptionOrder[]
   clinicAuditLogs ClinicAuditLog[]
+  selfServeMarks  ImprovementActionSelfServeMark[]
 
   @@index([phoneNumber])
 }
@@ -327,6 +330,24 @@ model GeneratedArtifact {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  @@index([clinicId])
+}
+
+model ImprovementActionSelfServeMark {
+  id       String @id @default(cuid())
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id])
+
+  reportId String
+  report   Diagnosis @relation(fields: [reportId], references: [id])
+  version  Int       @default(1)
+  improvementActionKey String
+
+  markedAt DateTime @default(now())
+
+  @@unique([reportId, version, improvementActionKey])
   @@index([clinicId])
 }
 

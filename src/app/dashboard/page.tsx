@@ -12,6 +12,13 @@ import { buildDashboardViewModel } from "./dashboardViewModel";
 import { buildSubscriptionViewModel, type SubscriptionTone } from "./subscriptionViewModel";
 import styles from "./dashboard.module.css";
 import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
+import { COMPETITOR_DISPLAY_LIMIT } from "@/domain/billing/planCatalog";
+import {
+  INSTRUCTION_PDF_ENTITLEMENT_KEY,
+  INSTRUCTION_PDF_MONTHLY_QUOTA,
+  currentEntitlementPeriod,
+} from "@/domain/options/planEntitlements";
+import { getEntitlementUsage } from "@/server/db/planEntitlementUsageRepository";
 
 const NAV_ITEMS = [
   { label: "経営サマリー", icon: "⌂", href: "/dashboard", active: true },
@@ -155,6 +162,28 @@ export default async function DashboardPage() {
   }
   const subscriptionVm = buildSubscriptionViewModel(subscription, checkoutReady);
 
+  // プラン別表示制御(2026-09-22のユーザー指示): 競合医院の表示件数(診断エンジン側の
+  // 探索件数ではなく、既に取得済みの候補から画面へ出す件数のみを絞る)。未契約はlight相当。
+  const competitorDisplayLimit = subscription
+    ? COMPETITOR_DISPLAY_LIMIT[subscription.plan]
+    : COMPETITOR_DISPLAY_LIMIT.light;
+
+  // 指示書(制作会社向け修正指示書)の月次無料枠残数。ライトは元々0件(都度課金のみ)
+  // のため表示しない。Stripeに0円商品を作らずPlanEntitlementUsageのみで判定する
+  // 既存方針(Phase3)をそのまま画面へ出すだけで、新しいロジックは追加しない。
+  let instructionPdfQuota: { remaining: number; total: number } | null = null;
+  if (subscription) {
+    const total = INSTRUCTION_PDF_MONTHLY_QUOTA[subscription.plan];
+    if (total > 0) {
+      const usage = await getEntitlementUsage({
+        clinicId: contact.clinicId,
+        entitlementKey: INSTRUCTION_PDF_ENTITLEMENT_KEY,
+        period: currentEntitlementPeriod(),
+      });
+      instructionPdfQuota = { remaining: Math.max(0, total - (usage?.usedQuantity ?? 0)), total };
+    }
+  }
+
   return (
     <div className={styles.shell}>
       <DashboardNav bookingUrl={bookingUrl} />
@@ -188,6 +217,12 @@ export default async function DashboardPage() {
               <p className={styles.subscriptionEyebrow}>契約状況</p>
               <h2 className={styles.subscriptionPlan}>{subscriptionVm.planName}</h2>
               <p className={styles.subscriptionDescription}>{subscriptionVm.description}</p>
+              {instructionPdfQuota && (
+                <p className={styles.subscriptionDescription}>
+                  制作会社向け修正指示書の無料枠: 今月あと{instructionPdfQuota.remaining}/
+                  {instructionPdfQuota.total}件
+                </p>
+              )}
             </div>
             <div className={styles.subscriptionActions}>
               <span className={subscriptionStatusClass(subscriptionVm.tone)}>
@@ -375,7 +410,7 @@ export default async function DashboardPage() {
                       {vm.result.competitors.length === 0 ? (
                         <p className={styles.itemDescription}>競合候補のデータがありません。</p>
                       ) : (
-                        vm.result.competitors.slice(0, 5).map((competitor) => (
+                        vm.result.competitors.slice(0, competitorDisplayLimit).map((competitor) => (
                           <div className={styles.competitorItem} key={`${competitor.name}-${competitor.url ?? ""}`}>
                             <p className={styles.competitorName}>{competitor.name}</p>
                             <span className={styles.competitorMeta}>{competitor.distanceLabel ?? "候補"}</span>

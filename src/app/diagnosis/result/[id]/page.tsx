@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { getDiagnosisById } from "@/server/db/diagnosisRepository";
+import { getSelfServeMarksForReport } from "@/server/db/improvementActionSelfServeRepository";
 import { getCurrentContact } from "@/server/auth/session";
 import type { DomainScore, OverallScoreStatus } from "@/domain/diagnosis/types";
 import type { CompetitorClinic, PatientQuestionResult } from "@/domain/competitor/types";
@@ -22,6 +23,7 @@ import { formatMeasuredAtInJapan } from "@/domain/diagnosis/formatMeasuredAt";
 import { buildResultEmailDeliveryNotice } from "@/domain/email/resultEmailDeliveryStatus";
 import { TrackedCtaLink } from "./TrackedCtaLink";
 import { InstructionPdfOrderButton } from "./InstructionPdfOrderButton";
+import { SelfServeToggleButton } from "./SelfServeToggleButton";
 
 // DENT SHIFT正式カラー(public/brand/logo/README_使用ガイド.md「正式カラー」節が正本)。
 // Claudeが独自に配色を作らず、ここでもこのブランドガイドの値のみを使用する。
@@ -65,6 +67,10 @@ export default async function DiagnosisResultPage({
     currentContact?.clinicId,
     diagnosis.clinicId
   );
+  // ①自院で対応マークは所有者にのみ意味を持つため、所有者以外では問い合わせない。
+  const selfServeMarks = showDashboardReturn
+    ? await getSelfServeMarksForReport({ reportId: id, version: 1 })
+    : new Map<string, Date>();
 
   const vm = buildFreeDiagnosisResultViewModel({
     clinicId: diagnosis.clinicId,
@@ -414,6 +420,7 @@ export default async function DiagnosisResultPage({
                     task={task}
                     reportId={id}
                     isOwner={showDashboardReturn}
+                    selfServeMarkedAt={selfServeMarks.get(task.key) ?? null}
                   />
                 ))}
                 {vm.topImprovements.length === 0 && (
@@ -529,11 +536,12 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle?: string })
   );
 }
 
-function Tag({ children, tone }: { children: ReactNode; tone: "warn" | "info" | "muted" }) {
+function Tag({ children, tone }: { children: ReactNode; tone: "warn" | "info" | "muted" | "danger" }) {
   const colors = {
     warn: { bg: "#FEF3C7", fg: "#92400E" },
     info: { bg: "#EFF6FF", fg: "#1E3A8A" },
     muted: { bg: "#F1F5F9", fg: MUTED },
+    danger: { bg: "#FEF2F2", fg: "#991B1B" },
   }[tone];
   return (
     <span
@@ -795,14 +803,23 @@ function ImprovementCard({
   task,
   reportId,
   isOwner,
+  selfServeMarkedAt,
 }: {
   rank: number;
   task: ImprovementViewModel;
   reportId: string;
   isOwner: boolean;
+  selfServeMarkedAt: Date | null;
 }) {
   return (
-    <div style={{ border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14 }}>
+    <div
+      style={{
+        border: `1px solid ${task.isCriticalRisk ? "#FECACA" : BORDER}`,
+        background: task.isCriticalRisk ? "#FFFBFB" : undefined,
+        borderRadius: 10,
+        padding: 14,
+      }}
+    >
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
         <span
           style={{
@@ -810,7 +827,7 @@ function ImprovementCard({
             width: 22,
             height: 22,
             borderRadius: "50%",
-            background: BLUE,
+            background: task.isCriticalRisk ? "#DC2626" : BLUE,
             color: "#fff",
             fontSize: 12,
             fontWeight: 700,
@@ -822,10 +839,20 @@ function ImprovementCard({
           {rank}
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
+          {task.isCriticalRisk && (
+            <div style={{ marginBottom: 6 }}>
+              <Tag tone="danger">重大リスク</Tag>
+            </div>
+          )}
           <p style={{ margin: 0, fontWeight: 700, color: NAVY, fontSize: 14 }}>{task.title}</p>
           <p style={{ fontSize: 12, color: "#374151", margin: "4px 0 0" }}>
             まずやること: {task.firstAction}
           </p>
+          {task.isCriticalRisk && task.criticalRiskReason && (
+            <p style={{ fontSize: 12, color: "#991B1B", margin: "4px 0 0" }}>
+              重大リスクの理由: {task.criticalRiskReason}
+            </p>
+          )}
 
           <details className="ds-details" style={{ marginTop: 8 }}>
             <summary>詳細を見る</summary>
@@ -843,7 +870,14 @@ function ImprovementCard({
                 インパクト: {task.impactLabel} / 確度: {task.confidenceLabel} / 緊急性: {task.urgencyLabel}
               </p>
               {isOwner && (
-                <InstructionPdfOrderButton reportId={reportId} improvementActionKey={task.key} />
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+                  <SelfServeToggleButton
+                    reportId={reportId}
+                    improvementActionKey={task.key}
+                    initiallyMarked={Boolean(selfServeMarkedAt)}
+                  />
+                  <InstructionPdfOrderButton reportId={reportId} improvementActionKey={task.key} />
+                </div>
               )}
             </div>
           </details>

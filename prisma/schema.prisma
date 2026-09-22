@@ -43,6 +43,8 @@ model Clinic {
   generatedArtifacts   GeneratedArtifact[]
   entitlementUsages    PlanEntitlementUsage[]
   clinicAuditLogs      ClinicAuditLog[]
+  // 2026-09-22: 改善アクション4ルートの①自院で対応マーク。
+  selfServeMarks       ImprovementActionSelfServeMark[]
 }
 
 model Diagnosis {
@@ -86,6 +88,7 @@ model Diagnosis {
   // 改善タスク自体は永続化された行を持たない(Diagnosis.improvementTasksJson内のJSON)ため、
   // OptionOrder側はimprovementActionKeyを文字列として保持し、reportId=Diagnosis.idで紐付ける。
   optionOrders OptionOrder[]
+  selfServeMarks ImprovementActionSelfServeMark[]
 }
 
 // 2026-09-05: AI別・質問別の生観測結果(無料診断結果への正式統合、ユーザー指示①)。
@@ -194,6 +197,7 @@ model Contact {
   // 2026-09-21: AI改善実行・オプション販売(仕様Ver1)。
   optionOrders    OptionOrder[]
   clinicAuditLogs ClinicAuditLog[]
+  selfServeMarks  ImprovementActionSelfServeMark[]
 
   @@index([phoneNumber])
 }
@@ -473,6 +477,29 @@ model GeneratedArtifact {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  @@index([clinicId])
+}
+
+// 改善アクション4ルート(①自院で対応/②制作会社/③アップグレード/④DENT SHIFT相談)のうち、
+// ①のみ決済・生成を伴わない「医院自身が対応することにした」という単純な意思表示のため、
+// OptionOrder等とは別の軽量なマークとして持つ(2026-09-22)。取り消し可能なようDELETEで
+// 行ごと削除する(状態機械は持たない。「マークされているか否か」の2値のみ)。
+model ImprovementActionSelfServeMark {
+  id       String @id @default(cuid())
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id])
+
+  reportId String
+  report   Diagnosis @relation(fields: [reportId], references: [id])
+  version  Int       @default(1)
+  // ImprovementCandidate.key(永続化された行を持たないため文字列参照)。
+  improvementActionKey String
+
+  markedAt DateTime @default(now())
+
+  @@unique([reportId, version, improvementActionKey])
   @@index([clinicId])
 }
 

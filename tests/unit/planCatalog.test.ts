@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isPlanId, PLAN_FEATURE_ROWS, PLAN_SUMMARIES } from "@/domain/billing/planCatalog";
+import {
+  COMPETITOR_DISPLAY_LIMIT,
+  isPlanId,
+  PLAN_FEATURE_ROWS,
+  PLAN_SUMMARIES,
+} from "@/domain/billing/planCatalog";
 
 describe("プラン比較カタログ", () => {
   it("3プランを重複なく定義する", () => {
@@ -15,5 +20,9 @@ describe("プラン比較カタログ", () => {
   it("許可されたプランIDだけを受け付ける", () => {
     expect(isPlanId("standard")).toBe(true);
     expect(isPlanId("enterprise")).toBe(false);
+  });
+
+  it("競合医院の表示件数上限はPLAN_FEATURE_ROWSの「競合医院」行(3院/10院/20院)と一致する", () => {
+    expect(COMPETITOR_DISPLAY_LIMIT).toEqual({ light: 3, standard: 10, premium: 20 });
   });
 });

@@ -63,3 +63,15 @@ export const PLAN_FEATURE_ROWS: readonly PlanFeatureRow[] = [
 export function isPlanId(value: string): value is PlanId {
   return PLAN_IDS.includes(value as PlanId);
 }
+
+/**
+ * ダッシュボードの競合医院比較で表示する件数の上限(PLAN_FEATURE_ROWSの「競合医院」行と
+ * 一致させる)。診断時に何院探索するかという診断エンジン側のロジックではなく、
+ * 既に取得済みの候補のうち画面へ何院まで表示するかという表示制御のみを行う
+ * (2026-09-22のユーザー指示: プラン別表示制御)。未契約(プラン不明)は最も狭いlight相当。
+ */
+export const COMPETITOR_DISPLAY_LIMIT: Readonly<Record<PlanId, number>> = {
+  light: 3,
+  standard: 10,
+  premium: 20,
+} as const;

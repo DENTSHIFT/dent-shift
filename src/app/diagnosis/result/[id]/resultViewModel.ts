@@ -475,6 +475,11 @@ export interface ImprovementViewModel {
   confidenceLabel: string;
   urgencyLabel: string;
   dataGapReason: string | null;
+  // 2026-09-22: kind==="risk_escalation"の候補を画面上で区別表示するため
+  // (ドメイン層では既に優先度付けされていたが、UIのview-modelがkindを
+  // 保持しておらず区別できていなかった)。
+  isCriticalRisk: boolean;
+  criticalRiskReason: string | null;
 }
 
 export function buildImprovementViewModel(task: ImprovementCandidate): ImprovementViewModel {
@@ -488,6 +493,8 @@ export function buildImprovementViewModel(task: ImprovementCandidate): Improveme
     confidenceLabel: LEVEL_LABEL_JA[task.confidence],
     urgencyLabel: LEVEL_LABEL_JA[task.urgency],
     dataGapReason: task.dataGap?.reason ?? null,
+    isCriticalRisk: task.kind === "risk_escalation",
+    criticalRiskReason: task.kind === "risk_escalation" ? (task.escalation?.reason ?? null) : null,
   };
 }
 

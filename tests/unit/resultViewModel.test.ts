@@ -673,4 +673,27 @@ describe("buildImprovementViewModel(改善TOP3の内部表現除去、2026-09-06
     const vm = buildImprovementViewModel(improvementCandidate({ dataGap: undefined }));
     expect(vm.dataGapReason).toBeNull();
   });
+
+  it("kind=standardはisCriticalRisk=falseで、criticalRiskReasonはnull", () => {
+    const vm = buildImprovementViewModel(improvementCandidate({ kind: "standard" }));
+    expect(vm.isCriticalRisk).toBe(false);
+    expect(vm.criticalRiskReason).toBeNull();
+  });
+
+  it("kind=risk_escalationはisCriticalRisk=trueで、escalation.reasonを転記する", () => {
+    const vm = buildImprovementViewModel(
+      improvementCandidate({
+        kind: "risk_escalation",
+        priority: undefined,
+        escalation: {
+          category: "booking_failure",
+          severity: "critical",
+          confidence: "high",
+          reason: "予約フォームが送信エラーになる",
+        },
+      })
+    );
+    expect(vm.isCriticalRisk).toBe(true);
+    expect(vm.criticalRiskReason).toBe("予約フォームが送信エラーになる");
+  });
 });
