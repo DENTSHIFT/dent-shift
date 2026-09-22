@@ -20,6 +20,10 @@ export async function createSubscriptionRecord(input: {
   plan: PlanId;
   status: SubscriptionStatus;
   externalSubscriptionId: string;
+  // 招待経由(パイロット/1円モニター)で作成された契約の追跡用。通常契約は未指定。
+  inviteId?: string;
+  trialStartedAt?: Date;
+  trialEndsAt?: Date;
 }) {
   return prisma.subscription.create({ data: input });
 }

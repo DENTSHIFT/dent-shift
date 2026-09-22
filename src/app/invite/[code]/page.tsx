@@ -2,11 +2,15 @@ import Link from "next/link";
 import { getInviteByCode } from "@/server/db/inviteRepository";
 import { validateInvite } from "@/domain/invite/inviteCode";
 import { getCurrentContact } from "@/server/auth/session";
+import { resolvePilotInviteConfigFromProcessEnv } from "@/server/config/pilotInviteConfig";
 import styles from "../../auth.module.css";
 import { InviteCheckoutButton } from "./InviteCheckoutButton";
+import { PilotActivateButton } from "./PilotActivateButton";
 
 /**
- * 知人院長向け「1円モニター利用」専用招待ページ(2026-09-22確定)。
+ * 知人院長向け招待ページ(2026-09-22確定)。通常の「1円モニター利用」(Stripe決済あり)
+ * と、「パイロット先行利用」(campaign==="pilot"、test環境限定、Stripeを一切呼ばない)の
+ * 2種類を、campaignフィールドとPILOT_INVITE_MODEで分岐する。
  * 通常LP・料金表には一切リンクを置かず、この招待URLを直接知っている場合のみ到達する。
  * 無効・期限切れ・使用済みの場合も存在有無を詳細に区別せず、一律の案内文にする。
  */
@@ -15,8 +19,14 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
   const invite = await getInviteByCode(code);
   const contact = await getCurrentContact();
 
+  const isPilotInvite = invite?.campaign === "pilot";
+  const pilotConfig = resolvePilotInviteConfigFromProcessEnv();
+  // パイロットmodeが無効な環境(productionを含む)では、pilot招待自体を「利用不可」扱いにする。
+  const isPilotUsable = isPilotInvite && pilotConfig.mode === "enabled";
+
   const isValid =
     invite &&
+    (!isPilotInvite || isPilotUsable) &&
     validateInvite({
       status: invite.status,
       startsAt: invite.startsAt,
@@ -46,46 +56,89 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
           </>
         ) : (
           <>
-            <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#2563EB" }}>
-              DENT SHIFT 特別招待
-            </p>
-            <h1 className={styles.title} style={{ marginTop: 6 }}>
-              {invite.clinicName} 様
-            </h1>
-            <p className={styles.description}>
-              DENT SHIFTを特別価格でモニターご利用いただけます。
-            </p>
+            {isPilotInvite ? (
+              <>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#2563EB" }}>
+                  DENT SHIFT パイロット利用
+                </p>
+                <h1 className={styles.title} style={{ marginTop: 6 }}>
+                  {invite.clinicName} 様
+                </h1>
+                <p className={styles.description}>知り合い院長向け先行利用</p>
 
-            <div
-              style={{
-                marginTop: 20,
-                padding: 16,
-                border: "1px solid #E5E9F0",
-                borderRadius: 12,
-                background: "#F8FAFC",
-                display: "grid",
-                gap: 8,
-              }}
-            >
-              <Row label="機能" value="スタンダードプラン相当" />
-              <Row label="月額" value={`${invite.specialPriceJpy}円（税込）`} />
-              <Row label="利用期間" value={`${invite.durationMonths}か月間`} />
-              <Row label="期間終了後" value="自動的にご請求は終了します(通常料金への自動移行はありません)" />
-            </div>
+                <div
+                  style={{
+                    marginTop: 20,
+                    padding: 16,
+                    border: "1px solid #E5E9F0",
+                    borderRadius: 12,
+                    background: "#F8FAFC",
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  <Row label="機能" value="スタンダードプラン相当機能を3か月利用できます" />
+                  <Row label="利用期間" value={`${invite.durationMonths}か月間`} />
+                  <Row label="決済" value="現在はテスト環境のため決済は発生しません" />
+                </div>
 
-            <p className={styles.helper} style={{ marginTop: 16 }}>
-              継続してご利用いただく場合は、期間終了後にご自身で通常プランをお申し込みください。
-              自動的に通常料金(月額14,800円〜)へ切り替わることはありません。
-            </p>
+                <p className={styles.helper} style={{ marginTop: 16 }}>
+                  これはテスト環境(test.dentshift.jp)限定の先行利用です。実際の請求は発生しません。
+                </p>
+              </>
+            ) : (
+              <>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#2563EB" }}>
+                  DENT SHIFT 特別招待
+                </p>
+                <h1 className={styles.title} style={{ marginTop: 6 }}>
+                  {invite.clinicName} 様
+                </h1>
+                <p className={styles.description}>
+                  DENT SHIFTを特別価格でモニターご利用いただけます。
+                </p>
+
+                <div
+                  style={{
+                    marginTop: 20,
+                    padding: 16,
+                    border: "1px solid #E5E9F0",
+                    borderRadius: 12,
+                    background: "#F8FAFC",
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  <Row label="機能" value="スタンダードプラン相当" />
+                  <Row label="月額" value={`${invite.specialPriceJpy}円（税込）`} />
+                  <Row label="利用期間" value={`${invite.durationMonths}か月間`} />
+                  <Row label="期間終了後" value="自動的にご請求は終了します(通常料金への自動移行はありません)" />
+                </div>
+
+                <p className={styles.helper} style={{ marginTop: 16 }}>
+                  継続してご利用いただく場合は、期間終了後にご自身で通常プランをお申し込みください。
+                  自動的に通常料金(月額14,800円〜)へ切り替わることはありません。
+                </p>
+              </>
+            )}
 
             <div style={{ marginTop: 20 }}>
               {contact ? (
-                <InviteCheckoutButton
-                  inviteCode={code}
-                  requireEmailMatch={invite.requireEmailMatch}
-                  inviteEmail={invite.email}
-                  currentEmail={contact.email}
-                />
+                isPilotInvite ? (
+                  <PilotActivateButton
+                    inviteCode={code}
+                    requireEmailMatch={invite.requireEmailMatch}
+                    inviteEmail={invite.email}
+                    currentEmail={contact.email}
+                  />
+                ) : (
+                  <InviteCheckoutButton
+                    inviteCode={code}
+                    requireEmailMatch={invite.requireEmailMatch}
+                    inviteEmail={invite.email}
+                    currentEmail={contact.email}
+                  />
+                )
               ) : (
                 <div style={{ display: "grid", gap: 10 }}>
                   <p className={styles.helper} style={{ margin: 0 }}>
