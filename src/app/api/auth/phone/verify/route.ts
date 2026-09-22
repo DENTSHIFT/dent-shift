@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prismaClient";
 import { getCurrentContact } from "@/server/auth/session";
-import { resolveSmsConfigFromProcessEnv } from "@/server/config/smsConfig";
-import { createTwilioVerifySmsProvider } from "@/server/providers/sms/twilioVerifySmsProvider";
+import { resolveSmsConfigFromProcessEnv, SmsConfigError } from "@/server/config/smsConfig";
+import {
+  createTwilioVerifySmsProvider,
+  SmsDeliveryError,
+} from "@/server/providers/sms/twilioVerifySmsProvider";
 import { canTransitionRegistrationStep, type RegistrationStep } from "@/domain/auth/registrationStep";
 import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
 import { activateTrialIfEligible } from "@/server/services/activateTrial";
@@ -29,13 +32,34 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "確認コードを入力してください" }, { status: 400 });
   }
 
-  const config = resolveSmsConfigFromProcessEnv();
+  let config;
+  try {
+    config = resolveSmsConfigFromProcessEnv();
+  } catch (error) {
+    if (error instanceof SmsConfigError) {
+      console.error("[POST /api/auth/phone/verify] SMS configuration error");
+      return NextResponse.json({ error: "SMS認証は現在利用できません" }, { status: 503 });
+    }
+    throw error;
+  }
   if (config.provider === "disabled") {
     return NextResponse.json({ error: "SMS認証は現在利用できません" }, { status: 503 });
   }
 
   const provider = createTwilioVerifySmsProvider(config);
-  const result = await provider.checkVerification(contact.phoneNumber, code.trim());
+  let result;
+  try {
+    result = await provider.checkVerification(contact.phoneNumber, code.trim());
+  } catch (error) {
+    if (error instanceof SmsDeliveryError) {
+      console.error("[POST /api/auth/phone/verify] SMS verification check failed:", error.message);
+      return NextResponse.json(
+        { error: "確認コードを確認できませんでした。時間をおいて再度お試しください" },
+        { status: 502 }
+      );
+    }
+    throw error;
+  }
 
   if (result === "expired") {
     return NextResponse.json(

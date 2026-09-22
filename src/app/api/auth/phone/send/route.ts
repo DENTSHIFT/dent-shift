@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prismaClient";
 import { getCurrentContact } from "@/server/auth/session";
 import { normalizeJapanesePhoneNumberToE164, PhoneNumberFormatError } from "@/domain/auth/phoneNumber";
-import { resolveSmsConfigFromProcessEnv } from "@/server/config/smsConfig";
-import { createTwilioVerifySmsProvider } from "@/server/providers/sms/twilioVerifySmsProvider";
+import { resolveSmsConfigFromProcessEnv, SmsConfigError } from "@/server/config/smsConfig";
+import {
+  createTwilioVerifySmsProvider,
+  SmsDeliveryError,
+} from "@/server/providers/sms/twilioVerifySmsProvider";
 import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
 
 const RESEND_MIN_INTERVAL_MS = 1000 * 60; // 1分
@@ -71,7 +74,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const config = resolveSmsConfigFromProcessEnv();
+  let config;
+  try {
+    config = resolveSmsConfigFromProcessEnv();
+  } catch (error) {
+    if (error instanceof SmsConfigError) {
+      console.error("[POST /api/auth/phone/send] SMS configuration error");
+      return NextResponse.json({ error: "SMS認証は現在利用できません" }, { status: 503 });
+    }
+    throw error;
+  }
   if (config.provider === "disabled") {
     return NextResponse.json(
       { error: "SMS認証は現在利用できません" },
@@ -80,7 +92,18 @@ export async function POST(request: NextRequest) {
   }
 
   const provider = createTwilioVerifySmsProvider(config);
-  await provider.sendVerification(normalizedPhone);
+  try {
+    await provider.sendVerification(normalizedPhone);
+  } catch (error) {
+    if (error instanceof SmsDeliveryError) {
+      console.error("[POST /api/auth/phone/send] SMS delivery failed:", error.message);
+      return NextResponse.json(
+        { error: "SMSを送信できませんでした。時間をおいて再度お試しください" },
+        { status: 502 }
+      );
+    }
+    throw error;
+  }
 
   await prisma.contact.update({
     where: { id: contact.id },

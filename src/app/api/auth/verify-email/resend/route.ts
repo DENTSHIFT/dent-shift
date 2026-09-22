@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentContact } from "@/server/auth/session";
 import { sendEmailVerification } from "@/server/services/sendEmailVerification";
 import { EMAIL_VERIFICATION_TTL_MS } from "@/server/auth/emailVerificationToken";
+import { ResultEmailDeliveryError } from "@/server/providers/email/resendEmailProvider";
 
 const RESEND_MIN_INTERVAL_MS = 1000 * 60; // 1分
 
@@ -21,11 +22,23 @@ export async function POST() {
     }
   }
 
-  const status = await sendEmailVerification({
-    contactId: contact.id,
-    email: contact.email,
-    clinicName: contact.clinic.name,
-  });
+  let status;
+  try {
+    status = await sendEmailVerification({
+      contactId: contact.id,
+      email: contact.email,
+      clinicName: contact.clinic.name,
+    });
+  } catch (error) {
+    if (error instanceof ResultEmailDeliveryError) {
+      console.error("[POST /api/auth/verify-email/resend] email delivery failed:", error.message);
+      return NextResponse.json(
+        { error: "確認メールを送信できませんでした。時間をおいて再度お試しください" },
+        { status: 502 }
+      );
+    }
+    throw error;
+  }
 
   return NextResponse.json({ status }, { status: 200 });
 }
