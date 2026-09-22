@@ -75,6 +75,8 @@ describe("Stripe billing event normalization", () => {
         externalSubscriptionId: "sub_1",
         clinicId: "clinic-1",
         plan: "premium",
+        inviteId: null,
+        inviteCode: null,
       },
       initialStatus: "active",
     });
@@ -97,8 +99,34 @@ describe("Stripe billing event normalization", () => {
         externalSubscriptionId: "sub_1",
         clinicId: "clinic-1",
         plan: "light",
+        inviteId: null,
+        inviteCode: null,
       },
       initialStatus: "trial",
+    });
+  });
+
+  it("招待経由(invite_code/invite_id)のcheckout.session.completedはidentityへ引き継がれる(2026-09-22の1円招待モニター)", () => {
+    const command = normalizeStripeBillingEvent(
+      event("checkout.session.completed", {
+        id: "cs_test_invite",
+        client_reference_id: "clinic-1",
+        subscription: "sub_invite",
+        payment_status: "paid",
+        amount_total: 1,
+        metadata: { clinic_id: "clinic-1", plan: "standard", invite_code: "ABC123", invite_id: "invite-1" },
+      })
+    );
+    expect(command.action).toEqual({
+      kind: "checkout_completed",
+      identity: {
+        externalSubscriptionId: "sub_invite",
+        clinicId: "clinic-1",
+        plan: "standard",
+        inviteId: "invite-1",
+        inviteCode: "ABC123",
+      },
+      initialStatus: "active",
     });
   });
 
@@ -136,6 +164,8 @@ describe("Stripe billing event normalization", () => {
         externalSubscriptionId: "sub_1",
         clinicId: "clinic-1",
         plan: "standard",
+        inviteId: null,
+        inviteCode: null,
       },
       status: "active",
       paymentStatus: "paid",

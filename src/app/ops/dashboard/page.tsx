@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireOperator } from "@/server/auth/requireOperator";
 import { prisma } from "@/server/db/prismaClient";
 import { recordAuditLog } from "@/server/db/auditLogRepository";
@@ -60,6 +61,12 @@ export default async function OpsDashboardPage() {
           </div>
           <span className={styles.countBadge}>最新{clinics.length}件を表示</span>
         </div>
+
+        <p style={{ margin: "0 0 18px" }}>
+          <Link href="/ops/invites" style={{ color: "#2563eb", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+            招待URL管理(1円モニター利用)へ →
+          </Link>
+        </p>
 
         <section className={styles.tableCard} aria-label="医院一覧">
           <div className={styles.tableScroller}>

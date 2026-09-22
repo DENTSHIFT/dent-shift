@@ -198,6 +198,7 @@ model Contact {
   optionOrders    OptionOrder[]
   clinicAuditLogs ClinicAuditLog[]
   selfServeMarks  ImprovementActionSelfServeMark[]
+  invitesUsed     Invite[]
 
   @@index([phoneNumber])
 }
@@ -231,6 +232,12 @@ model Subscription {
   trialEndsAt            DateTime?
   // Stripeの決済方法登録状態("none" | "pending" | "completed" 等)。カード情報自体は保持しない。
   paymentMethodStatus    String?
+
+  // 2026-09-22: 知人院長向け1円招待モニター経由で作成された契約かどうかの追跡用(任意)。
+  // 通常契約はnull。招待経由のplanは常に"standard"(機能判定用。実際の請求は
+  // Invite.stripePriceIdの別Priceを使うため、料金ロジックには一切影響しない)。
+  inviteId               String?
+  invite                 Invite?   @relation(fields: [inviteId], references: [id])
 
   @@index([clinicId])
 }
@@ -545,4 +552,50 @@ model ClinicAuditLog {
   @@index([clinicId])
   @@index([targetType, targetId])
   @@index([createdAt])
+}
+
+// 2026-09-22: 知人院長向け「1円モニター利用」専用招待。通常のプラン・料金表・
+// Stripe Priceとは完全に分離する(通常LP/料金表には一切出さず、
+// `/invite/{inviteCode}` 経由でのみ到達させる)。将来的にDoctorbook限定・提携先限定
+// 等の別キャンペーンにも流用できるよう、汎用的なフィールド構成にしている。
+model Invite {
+  id         String  @id @default(cuid())
+  inviteCode String  @unique
+
+  // 表示・運営者の管理用情報(実在Clinicとの紐付けは招待時点では行わない。
+  // 対象医院はまだ会員登録していない前提のため)。
+  clinicName String
+  email      String
+
+  specialPriceJpy Int    @default(1)
+  durationMonths  Int    @default(3)
+  // 招待専用Price(通常のSTRIPE_PRICE_ID_STANDARD等とは別のPrice ID)。
+  stripePriceId   String
+
+  startsAt  DateTime  @default(now())
+  expiresAt DateTime?
+
+  maxUses   Int       @default(1)
+  usedCount Int       @default(0)
+  usedAt    DateTime?
+  usedByContactId String?
+  usedByContact   Contact? @relation(fields: [usedByContactId], references: [id])
+
+  // 登録メールアドレスと招待メールアドレスの一致を必須にするかどうか
+  // (URL転送による不正利用対策。デフォルトtrue)。
+  requireEmailMatch Boolean @default(true)
+
+  campaign String? // 例: "founder-monitor" | "doctorbook" | "partner"
+  // "active" | "used" | "expired" | "revoked"
+  status   String  @default("active")
+
+  createdByOperatorId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@index([status])
+  @@index([email])
 }

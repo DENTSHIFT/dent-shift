@@ -110,6 +110,7 @@ model Contact {
   optionOrders    OptionOrder[]
   clinicAuditLogs ClinicAuditLog[]
   selfServeMarks  ImprovementActionSelfServeMark[]
+  invitesUsed     Invite[]
 
   @@index([phoneNumber])
 }
@@ -137,6 +138,9 @@ model Subscription {
   trialStartedAt         DateTime?
   trialEndsAt            DateTime?
   paymentMethodStatus    String?
+
+  inviteId               String?
+  invite                 Invite?   @relation(fields: [inviteId], references: [id])
 
   @@index([clinicId])
 }
@@ -383,4 +387,40 @@ model ClinicAuditLog {
   @@index([clinicId])
   @@index([targetType, targetId])
   @@index([createdAt])
+}
+
+model Invite {
+  id         String  @id @default(cuid())
+  inviteCode String  @unique
+
+  clinicName String
+  email      String
+
+  specialPriceJpy Int    @default(1)
+  durationMonths  Int    @default(3)
+  stripePriceId   String
+
+  startsAt  DateTime  @default(now())
+  expiresAt DateTime?
+
+  maxUses   Int       @default(1)
+  usedCount Int       @default(0)
+  usedAt    DateTime?
+  usedByContactId String?
+  usedByContact   Contact? @relation(fields: [usedByContactId], references: [id])
+
+  requireEmailMatch Boolean @default(true)
+
+  campaign String?
+  status   String  @default("active")
+
+  createdByOperatorId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@index([status])
+  @@index([email])
 }

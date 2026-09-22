@@ -14,6 +14,9 @@ import { applyOptionOrderWebhookEvent } from "@/server/db/optionOrderRepository"
 import { prisma } from "@/server/db/prismaClient";
 import { activateTrialIfEligible } from "@/server/services/activateTrial";
 import { generateInstructionPdfArtifact } from "@/server/services/optionOrders/generateInstructionPdfArtifact";
+import { consumeInviteForClinic, getInviteById } from "@/server/db/inviteRepository";
+import { computeInviteCancelAtEpochSeconds } from "@/domain/invite/inviteCode";
+import { scheduleStripeSubscriptionCancellation } from "@/server/providers/billing/stripeCheckoutProvider";
 
 export const runtime = "nodejs";
 
@@ -100,7 +103,8 @@ export async function POST(request: Request) {
     // 決済方法登録完了(checkout完了)を契機に、他の3条件(SMS/メール/規約同意)が
     // 既に揃っていればtrialを開始する(指示書4章、activateTrial.ts参照)。
     if (result === "processed" && command.action?.kind === "checkout_completed") {
-      const clinicId = command.action.identity.clinicId;
+      const identity = command.action.identity;
+      const clinicId = identity.clinicId;
       if (clinicId) {
         const contacts = await prisma.contact.findMany({ where: { clinicId } });
         for (const contact of contacts) {
@@ -110,6 +114,39 @@ export async function POST(request: Request) {
               activationError
             );
           });
+        }
+
+        // 2026-09-22: 知人院長向け1円招待モニター経由の決済のみ、招待を消費し、
+        // Subscription自体にcancel_at(durationMonths後の絶対時刻)を設定する。
+        // Checkout Session作成時にはcancel_atを設定できない(Stripe API制約、
+        // requestInviteCheckout.ts参照)ため、決済確定後のここで別途更新する。
+        const inviteId = identity.inviteId;
+        if (inviteId) {
+          await consumeInviteForClinic({ inviteId, clinicId }).catch((inviteError) => {
+            console.error(
+              "[POST /api/billing/webhook] consumeInviteForClinic failed:",
+              inviteError
+            );
+          });
+          await getInviteById(inviteId)
+            .then((invite) => {
+              if (!invite) return;
+              const cancelAtEpochSeconds = computeInviteCancelAtEpochSeconds(
+                new Date(),
+                invite.durationMonths
+              );
+              return scheduleStripeSubscriptionCancellation({
+                apiKey: config.apiKey,
+                subscriptionId: identity.externalSubscriptionId,
+                cancelAtEpochSeconds,
+              });
+            })
+            .catch((cancelError) => {
+              console.error(
+                "[POST /api/billing/webhook] scheduleStripeSubscriptionCancellation failed:",
+                cancelError
+              );
+            });
         }
       }
     }

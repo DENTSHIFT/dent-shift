@@ -50,13 +50,20 @@ function objectId(value: unknown): string | null {
   return nonEmptyString(asRecord(value)?.id);
 }
 
-function readMetadata(value: unknown): { clinicId: string | null; plan: PlanId | null } {
+function readMetadata(value: unknown): {
+  clinicId: string | null;
+  plan: PlanId | null;
+  inviteId: string | null;
+  inviteCode: string | null;
+} {
   const metadata = asRecord(value);
   const clinicId = nonEmptyString(metadata?.clinic_id);
   const planValue = nonEmptyString(metadata?.plan);
   return {
     clinicId,
     plan: planValue && isPlanId(planValue) ? planValue : null,
+    inviteId: nonEmptyString(metadata?.invite_id),
+    inviteCode: nonEmptyString(metadata?.invite_code),
   };
 }
 

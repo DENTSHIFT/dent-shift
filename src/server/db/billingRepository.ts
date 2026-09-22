@@ -106,6 +106,8 @@ async function findOrCreateWebhookSubscription(
             status: initialStatus,
             externalSubscriptionId: identity.externalSubscriptionId,
             statusEventAt: eventAt,
+            // 招待経由(1円モニター)のみ設定される。通常契約はnullのまま。
+            inviteId: identity.inviteId ?? undefined,
           },
           update: {},
         })
