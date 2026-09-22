@@ -128,6 +128,29 @@ export async function getOptionOrderById(orderId: string) {
   return prisma.optionOrder.findUnique({ where: { id: orderId } });
 }
 
+/**
+ * ダウンロード成功のたびに呼ぶ。available→downloadedへ遷移し、以降の再ダウンロードは
+ * downloaded→downloaded(自己遷移、状態機械上許可済み)で冪等に扱う。
+ * 「dl可能かどうか」の判定(DOWNLOADABLE_STATUSES)はavailable/downloaded/completedを
+ * 引き続きすべて許可しているため、この遷移自体は再ダウンロード可否に影響しない
+ * (2026-09-22のユーザー指示: 監査ログはdownloadedまで記録されるのにOptionOrder.status
+ * がavailableのまま止まっていた状態管理の不整合を解消する)。
+ */
+export async function markOptionOrderDownloaded(orderId: string) {
+  const order = await prisma.optionOrder.findUnique({ where: { id: orderId } });
+  if (!order || !isOptionOrderStatus(order.status)) {
+    throw new OptionOrderRepositoryStateError("Option order was not found or is invalid.");
+  }
+  if (!canTransitionOptionOrderStatus(order.status as OptionOrderStatus, "downloaded")) {
+    // completed等、ダウンロード後さらに進んだ状態からの再ダウンロードは状態を戻さない。
+    return order;
+  }
+  return prisma.optionOrder.update({
+    where: { id: order.id },
+    data: { status: "downloaded" },
+  });
+}
+
 export async function getOptionOrderByReport(input: {
   reportId: string;
   version: number;

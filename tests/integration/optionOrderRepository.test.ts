@@ -220,3 +220,65 @@ describe("OptionOrderRepository: 二重課金・二重生成防止", () => {
     expect(result).toBe("order_not_found");
   });
 });
+
+describe("OptionOrderRepository: markOptionOrderDownloaded", () => {
+  it("available→downloadedへ遷移する", async () => {
+    const { clinic, diagnosis } = await createClinicWithDiagnosis("-download-available");
+    const product = await repo.ensureOptionProduct({
+      definition: DEFINITION,
+      stripePriceId: "price_test_download_available",
+    });
+    const order = await repo.createOrReuseDraftOptionOrder({
+      clinicId: clinic.id,
+      contactId: null,
+      productId: product.id,
+      productKey: "instruction_pdf",
+      reportId: diagnosis.id,
+      version: 1,
+    });
+    await prisma.optionOrder.update({ where: { id: order.id }, data: { status: "available" } });
+
+    const updated = await repo.markOptionOrderDownloaded(order.id);
+    expect(updated.status).toBe("downloaded");
+  });
+
+  it("再ダウンロード(downloaded→downloaded)は冪等", async () => {
+    const { clinic, diagnosis } = await createClinicWithDiagnosis("-download-idempotent");
+    const product = await repo.ensureOptionProduct({
+      definition: DEFINITION,
+      stripePriceId: "price_test_download_idempotent",
+    });
+    const order = await repo.createOrReuseDraftOptionOrder({
+      clinicId: clinic.id,
+      contactId: null,
+      productId: product.id,
+      productKey: "instruction_pdf",
+      reportId: diagnosis.id,
+      version: 1,
+    });
+    await prisma.optionOrder.update({ where: { id: order.id }, data: { status: "downloaded" } });
+
+    const updated = await repo.markOptionOrderDownloaded(order.id);
+    expect(updated.status).toBe("downloaded");
+  });
+
+  it("completedからは状態を戻さない(将来のcompleted以降フローに影響しない)", async () => {
+    const { clinic, diagnosis } = await createClinicWithDiagnosis("-download-completed");
+    const product = await repo.ensureOptionProduct({
+      definition: DEFINITION,
+      stripePriceId: "price_test_download_completed",
+    });
+    const order = await repo.createOrReuseDraftOptionOrder({
+      clinicId: clinic.id,
+      contactId: null,
+      productId: product.id,
+      productKey: "instruction_pdf",
+      reportId: diagnosis.id,
+      version: 1,
+    });
+    await prisma.optionOrder.update({ where: { id: order.id }, data: { status: "completed" } });
+
+    const updated = await repo.markOptionOrderDownloaded(order.id);
+    expect(updated.status).toBe("completed");
+  });
+});

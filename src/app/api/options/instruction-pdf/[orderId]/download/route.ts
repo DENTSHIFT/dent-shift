@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentContact } from "@/server/auth/session";
-import { getOptionOrderById } from "@/server/db/optionOrderRepository";
+import { getOptionOrderById, markOptionOrderDownloaded } from "@/server/db/optionOrderRepository";
 import { getArtifactByOrderId, markArtifactDownloaded } from "@/server/db/generatedArtifactRepository";
 import { recordClinicAuditLog } from "@/server/db/clinicAuditLogRepository";
 import { prisma } from "@/server/db/prismaClient";
@@ -50,6 +50,7 @@ export async function GET(
   }
 
   await markArtifactDownloaded(order.id);
+  await markOptionOrderDownloaded(order.id);
   await recordClinicAuditLog(prisma, {
     clinicId: currentContact.clinicId,
     contactId: currentContact.id,

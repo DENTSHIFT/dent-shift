@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 const mocks = vi.hoisted(() => ({
   currentContact: vi.fn(),
   getOptionOrderById: vi.fn(),
+  markOptionOrderDownloaded: vi.fn(),
   getArtifactByOrderId: vi.fn(),
   markArtifactDownloaded: vi.fn(),
   recordClinicAuditLog: vi.fn(),
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/server/auth/session", () => ({ getCurrentContact: mocks.currentContact }));
 vi.mock("@/server/db/optionOrderRepository", () => ({
   getOptionOrderById: mocks.getOptionOrderById,
+  markOptionOrderDownloaded: mocks.markOptionOrderDownloaded,
 }));
 vi.mock("@/server/db/generatedArtifactRepository", () => ({
   getArtifactByOrderId: mocks.getArtifactByOrderId,
@@ -51,6 +53,7 @@ beforeEach(() => {
     storageRef: "order-1",
   });
   mocks.storageRead.mockResolvedValue(Buffer.from("%PDF-mock"));
+  mocks.markOptionOrderDownloaded.mockResolvedValue({ status: "downloaded" });
 });
 
 describe("GET /api/options/instruction-pdf/[orderId]/download", () => {
@@ -109,6 +112,7 @@ describe("GET /api/options/instruction-pdf/[orderId]/download", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("application/pdf");
     expect(mocks.markArtifactDownloaded).toHaveBeenCalledWith("order-1");
+    expect(mocks.markOptionOrderDownloaded).toHaveBeenCalledWith("order-1");
     expect(mocks.recordClinicAuditLog).toHaveBeenCalledWith(
       {},
       expect.objectContaining({ action: "artifact_downloaded", targetId: "order-1" })
