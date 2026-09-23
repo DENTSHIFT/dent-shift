@@ -6,7 +6,7 @@ import styles from "../auth.module.css";
 
 type Step = "enter-phone" | "enter-code";
 
-export function VerifyPhoneForm() {
+export function VerifyPhoneForm({ next }: { next?: string }) {
   const router = useRouter();
   const [step, setStep] = useState<Step>("enter-phone");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -52,7 +52,7 @@ export function VerifyPhoneForm() {
         setError(data.error ?? "確認に失敗しました");
         return;
       }
-      router.push("/dashboard");
+      router.push(next ?? "/dashboard");
       router.refresh();
     } catch {
       setError("通信エラーが発生しました。時間をおいて再度お試しください。");

@@ -5,9 +5,9 @@ import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ clinicId?: string }>;
+  searchParams: Promise<{ clinicId?: string; next?: string; email?: string; clinicName?: string }>;
 }) {
-  const { clinicId } = await searchParams;
+  const { clinicId, next, email, clinicName } = await searchParams;
 
   return (
     <main className={styles.shell}>
@@ -23,7 +23,7 @@ export default async function SignupPage({
               ? "診断済みの医院をこのアカウントで管理できるようにします。"
               : "医院情報を登録してダッシュボードを利用できるようにします。"}
           </p>
-          <SignupForm clinicId={clinicId} />
+          <SignupForm clinicId={clinicId} next={next} prefillEmail={email} prefillClinicName={clinicName} />
         </section>
         <SupportPhoneFooter />
       </div>

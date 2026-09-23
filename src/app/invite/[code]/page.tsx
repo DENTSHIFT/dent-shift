@@ -85,8 +85,8 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
                     label="機能"
                     value={
                       invite.pilotDurationDays != null
-                        ? `スタンダードプラン相当機能を${invite.pilotDurationDays}日間利用できます`
-                        : `スタンダードプラン相当機能を${invite.durationMonths}か月利用できます`
+                        ? `スタンダードプラン相当機能を${invite.pilotDurationDays}日間無料でご利用いただけます`
+                        : `スタンダードプラン相当機能を${invite.durationMonths}か月無料でご利用いただけます`
                     }
                   />
                   <Row
@@ -97,7 +97,8 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
                         : `${invite.durationMonths}か月間`
                     }
                   />
-                  <Row label="決済" value="現在はテスト環境のため決済は発生しません" />
+                  <Row label="クレジットカード" value="登録不要です" />
+                  <Row label="お支払い" value="発生しません" />
                 </div>
 
                 <p className={styles.helper} style={{ marginTop: 16 }}>
@@ -165,7 +166,11 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
                   <p className={styles.helper} style={{ margin: 0 }}>
                     ご利用にはDENT SHIFTへのログインが必要です。
                   </p>
-                  <Link className={styles.primaryButton} style={{ textAlign: "center", textDecoration: "none" }} href="/signup">
+                  <Link
+                    className={styles.primaryButton}
+                    style={{ textAlign: "center", textDecoration: "none" }}
+                    href={`/signup?next=${encodeURIComponent(`/invite/${code}`)}&email=${encodeURIComponent(invite.email)}${isPilotInvite ? `&clinicName=${encodeURIComponent(invite.clinicName)}` : ""}`}
+                  >
                     無料会員登録してはじめる
                   </Link>
                   <p className={styles.switchLink}>

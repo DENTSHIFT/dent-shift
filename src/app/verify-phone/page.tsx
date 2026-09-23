@@ -10,10 +10,25 @@ import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
  * 明示エラーにする。ここからDENT SHIFTが営業電話をかけることは一切ない旨を明示する
  * (最重要原則: 営業マン0人・営業電話なし)。
  */
-export default async function VerifyPhonePage() {
+/**
+ * オープンリダイレクト対策: サイト内の絶対パス("/"始まり、"//"は除く)のみ許可する。
+ */
+function safeNextPath(next: string | undefined): string | null {
+  if (!next) return null;
+  if (!next.startsWith("/") || next.startsWith("//")) return null;
+  return next;
+}
+
+export default async function VerifyPhonePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const { next } = await searchParams;
+  const safeNext = safeNextPath(next);
   const contact = await requireContact();
   if (contact.phoneVerifiedAt) {
-    redirect("/dashboard");
+    redirect(safeNext ?? "/dashboard");
   }
 
   return (
@@ -28,7 +43,7 @@ export default async function VerifyPhonePage() {
           <p className={styles.description}>
             なりすまし登録を防ぐため、携帯電話番号のSMS認証をお願いしています。
           </p>
-          <VerifyPhoneForm />
+          <VerifyPhoneForm next={safeNext ?? undefined} />
         </section>
         <SupportPhoneFooter />
       </div>

@@ -4,11 +4,21 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "../auth.module.css";
 
-export function SignupForm({ clinicId }: { clinicId?: string }) {
+export function SignupForm({
+  clinicId,
+  next,
+  prefillEmail,
+  prefillClinicName,
+}: {
+  clinicId?: string;
+  next?: string;
+  prefillEmail?: string;
+  prefillClinicName?: string;
+}) {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(prefillEmail ?? "");
   const [password, setPassword] = useState("");
-  const [clinicName, setClinicName] = useState("");
+  const [clinicName, setClinicName] = useState(prefillClinicName ?? "");
   const [clinicUrl, setClinicUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +47,7 @@ export function SignupForm({ clinicId }: { clinicId?: string }) {
         setError(data.error ?? "登録に失敗しました");
         return;
       }
-      router.push("/verify-phone");
+      router.push(next ? `/verify-phone?next=${encodeURIComponent(next)}` : "/verify-phone");
       router.refresh();
     } catch {
       setError("通信エラーが発生しました。時間をおいて再度お試しください。");
