@@ -6,6 +6,9 @@ export type SubscriptionTone = "neutral" | "positive" | "info" | "warning" | "da
 export interface DashboardSubscriptionRecord {
   plan: PlanId;
   status: SubscriptionStatus;
+  // 永久無料の特別アカウント(既定false/未指定)。trueの場合、契約状況カードの
+  // 表示を「永久無料プラン」として明示する(billingRepository.createSubscriptionRecord参照)。
+  billingExempt?: boolean;
 }
 
 export interface DashboardSubscriptionViewModel {
@@ -80,9 +83,16 @@ export function buildSubscriptionViewModel(
   const canContinueOnboarding = ["trial", "active", "cancel_scheduled"].includes(
     subscription.status
   );
+  const isLifetimeFree = subscription.billingExempt === true;
   return {
     planName: planName ?? subscription.plan,
     ...status,
+    ...(isLifetimeFree
+      ? {
+          statusLabel: "永久無料",
+          description: "永久無料の特別プランとしてご利用いただけます。お支払いは発生しません。",
+        }
+      : {}),
     actionLabel: canContinueOnboarding ? "初期設定を確認する" : "プラン内容を確認する",
     actionHref: canContinueOnboarding ? "/onboarding" : "/plans",
   };

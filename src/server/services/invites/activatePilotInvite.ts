@@ -24,6 +24,8 @@ export class PilotInviteError extends Error {
  * - Subscriptionをこの場で直接standard相当・active状態で作成する
  * - 3か月後の終了予定はtrialEndsAtに記録するのみ(Stripe側のcancel_atは存在しない、
  *   実際の自動終了の強制はスコープ外の残課題として運用側で管理する)
+ * - invite.isLifetimeFree===trueの場合は例外で、trialEndsAtを設定せず(期限なし)、
+ *   Subscription.billingExemptをtrueにする(永久無料の特別アカウント用)
  */
 export async function activatePilotInvite(input: {
   inviteCode: string;
@@ -64,10 +66,13 @@ export async function activatePilotInvite(input: {
   }
 
   const now = new Date();
-  // pilotDurationDaysが設定されていれば日数単位(2〜4週間等の短期試用)を優先し、
-  // 未設定の場合のみ従来のdurationMonths(月単位)で計算する。
-  const endsAt =
-    invite.pilotDurationDays != null
+  // isLifetimeFree(永久無料の特別アカウント)は期限を持たない。pilotDurationDays/
+  // durationMonthsに基づく終了予定日は計算せず、trialEndsAtをnullのまま作成する。
+  // それ以外は従来どおり、pilotDurationDaysが設定されていれば日数単位(2〜4週間等の
+  // 短期試用)を優先し、未設定の場合のみdurationMonths(月単位)で計算する。
+  const endsAt: Date | null = invite.isLifetimeFree
+    ? null
+    : invite.pilotDurationDays != null
       ? new Date(computeInviteCancelAtEpochSecondsByDays(now, invite.pilotDurationDays) * 1000)
       : new Date(computeInviteCancelAtEpochSeconds(now, invite.durationMonths) * 1000);
 
@@ -79,6 +84,7 @@ export async function activatePilotInvite(input: {
     inviteId: invite.id,
     trialStartedAt: now,
     trialEndsAt: endsAt,
+    billingExempt: invite.isLifetimeFree === true,
   });
 
   return { subscriptionId: subscription.id, startedAt: now, endsAt };

@@ -17,6 +17,7 @@ export async function createInvite(input: {
   campaign?: string | null;
   isPilot?: boolean;
   pilotDurationDays?: number | null;
+  isLifetimeFree?: boolean;
   createdByOperatorId?: string | null;
 }) {
   // 招待コードのunique制約に稀に衝突した場合のみ再生成する(実質発生しない想定)。
@@ -37,6 +38,7 @@ export async function createInvite(input: {
           campaign: input.campaign ?? null,
           isPilot: input.isPilot ?? false,
           pilotDurationDays: input.pilotDurationDays ?? null,
+          isLifetimeFree: input.isLifetimeFree ?? false,
           createdByOperatorId: input.createdByOperatorId ?? null,
         },
       });

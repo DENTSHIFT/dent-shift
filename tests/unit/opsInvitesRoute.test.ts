@@ -138,6 +138,74 @@ describe("POST /api/ops/invites", () => {
     expect(mocks.createInvite).not.toHaveBeenCalled();
   });
 
+  it("2026-09-24: isLifetimeFree===trueはisPilot===trueでなければ400、DBは書かない", async () => {
+    const response = await POST(
+      request({ clinicName: "永久無料医院", email: "owner@example.com", isLifetimeFree: true })
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.createInvite).not.toHaveBeenCalled();
+  });
+
+  it("isPilot===true かつ isLifetimeFree===true なら、pilotDurationDaysの指定・検証をスキップしてnullで作成する", async () => {
+    mocks.createInvite.mockResolvedValue({
+      id: "invite-lifetime-1",
+      inviteCode: "LIFETIME1",
+      clinicName: "永久無料医院",
+      email: "owner@example.com",
+      campaign: "direct",
+      isPilot: true,
+      isLifetimeFree: true,
+    });
+    const response = await POST(
+      request({
+        clinicName: "永久無料医院",
+        email: "owner@example.com",
+        isPilot: true,
+        isLifetimeFree: true,
+        campaign: "direct",
+        // pilotDurationDaysは意図的に付けない(付けても無視される想定)
+      })
+    );
+    expect(response.status).toBe(201);
+    expect(mocks.createInvite).toHaveBeenCalledWith(
+      expect.objectContaining({ isPilot: true, isLifetimeFree: true, pilotDurationDays: null })
+    );
+  });
+
+  it("isLifetimeFree===trueのときpilotDurationDaysを指定してもnullのまま(検証エラーにもならない)", async () => {
+    mocks.createInvite.mockResolvedValue({
+      id: "invite-lifetime-2",
+      inviteCode: "LIFETIME2",
+      clinicName: "永久無料医院2",
+      email: "owner2@example.com",
+      isPilot: true,
+      isLifetimeFree: true,
+    });
+    const response = await POST(
+      request({
+        clinicName: "永久無料医院2",
+        email: "owner2@example.com",
+        isPilot: true,
+        isLifetimeFree: true,
+        pilotDurationDays: 0, // 通常なら400になる不正値だが、isLifetimeFreeでは検証自体をスキップする
+      })
+    );
+    expect(response.status).toBe(201);
+    expect(mocks.createInvite).toHaveBeenCalledWith(
+      expect.objectContaining({ isLifetimeFree: true, pilotDurationDays: null })
+    );
+  });
+
+  it("isLifetimeFreeを指定しない通常Pilotはfalseで作成される", async () => {
+    const response = await POST(
+      request({ clinicName: "サンプル知人歯科", email: "owner@example.com", isPilot: true })
+    );
+    expect(response.status).toBe(201);
+    expect(mocks.createInvite).toHaveBeenCalledWith(
+      expect.objectContaining({ isLifetimeFree: false })
+    );
+  });
+
   it("正常系は招待コードを返し、監査ログを記録する", async () => {
     const response = await POST(
       request({ clinicName: "サンプル知人歯科", email: "owner@example.com", maxUses: 1 })

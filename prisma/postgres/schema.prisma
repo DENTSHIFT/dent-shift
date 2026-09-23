@@ -143,6 +143,10 @@ model Subscription {
   inviteId               String?
   invite                 Invite?   @relation(fields: [inviteId], references: [id])
 
+  // 2026-09-24: 永久無料の特別アカウント向け。trueの場合trialEndsAtはnull(期限なし)、
+  // 将来の自動停止対象から除外する。通常のPilot・通常課金には影響しない(既定false)。
+  billingExempt          Boolean   @default(false)
+
   @@index([clinicId])
 }
 
@@ -425,7 +429,12 @@ model Invite {
   // campaignを流入元記録用に自由に使えるようにするため)。
   isPilot Boolean @default(false)
 
+  // isLifetimeFree===trueの招待では無視する(期限なしのため)。
   pilotDurationDays Int?
+
+  // 2026-09-24: 永久無料の特別アカウント発行用。isPilot===trueの招待でのみ指定可能。
+  // trueの場合、pilotDurationDaysは無視され、Subscription.billingExemptがtrueになる。
+  isLifetimeFree Boolean @default(false)
 
   createdByOperatorId String?
 

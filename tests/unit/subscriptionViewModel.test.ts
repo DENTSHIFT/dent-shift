@@ -38,6 +38,22 @@ describe("dashboard subscription view model", () => {
     expect(vm.statusLabel).not.toContain("解約");
   });
 
+  it("2026-09-24: billingExempt=trueの契約は永久無料として表示する(planName等は通常どおり)", () => {
+    const vm = buildSubscriptionViewModel(
+      { plan: "standard", status: "active", billingExempt: true },
+      true
+    );
+    expect(vm.statusLabel).toBe("永久無料");
+    expect(vm.description).toContain("永久無料");
+    expect(vm.tone).toBe("positive");
+    expect(vm.planName).toBe("スタンダードプラン");
+  });
+
+  it("billingExemptがfalse/未指定の通常契約は従来どおりの表示のまま", () => {
+    const vm = buildSubscriptionViewModel({ plan: "standard", status: "active" }, true);
+    expect(vm.statusLabel).toBe("利用中");
+  });
+
   it("停止・解約予定・解約済みを区別する", () => {
     expect(buildSubscriptionViewModel({ plan: "premium", status: "suspended" }, true).statusLabel)
       .toBe("利用停止中");

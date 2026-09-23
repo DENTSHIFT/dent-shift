@@ -138,6 +138,36 @@ describe("activatePilotInvite", () => {
     expect(Math.floor(endsAt.getTime() / 1000)).toBe(expectedEpochSeconds);
   });
 
+  it("2026-09-24: isLifetimeFree===trueの招待はtrialEndsAtをnull(期限なし)にし、billingExempt:trueでSubscriptionを作成する", async () => {
+    mocks.getInviteByCode.mockResolvedValue({ ...PILOT_INVITE, isLifetimeFree: true, pilotDurationDays: 28 });
+    const result = await activatePilotInvite({
+      inviteCode: "PILOT123",
+      clinicId: "clinic-1",
+      contactEmail: "sensei@example.com",
+    });
+    expect(mocks.createSubscriptionRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clinicId: "clinic-1",
+        plan: "standard",
+        status: "active",
+        trialEndsAt: null,
+        billingExempt: true,
+      })
+    );
+    expect(result.endsAt).toBeNull();
+  });
+
+  it("isLifetimeFreeがfalse/未指定の通常Pilotはbilling Exempt:falseで作成する", async () => {
+    await activatePilotInvite({
+      inviteCode: "PILOT123",
+      clinicId: "clinic-1",
+      contactEmail: "sensei@example.com",
+    });
+    expect(mocks.createSubscriptionRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ billingExempt: false })
+    );
+  });
+
   it("PilotInviteErrorはErrorのサブクラス", async () => {
     mocks.getInviteByCode.mockResolvedValue(null);
     try {

@@ -84,17 +84,21 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
                   <Row
                     label="機能"
                     value={
-                      invite.pilotDurationDays != null
-                        ? `スタンダードプラン相当機能を${invite.pilotDurationDays}日間無料でご利用いただけます`
-                        : `スタンダードプラン相当機能を${invite.durationMonths}か月無料でご利用いただけます`
+                      invite.isLifetimeFree
+                        ? "スタンダードプラン相当機能を永久無料でご利用いただけます"
+                        : invite.pilotDurationDays != null
+                          ? `スタンダードプラン相当機能を${invite.pilotDurationDays}日間無料でご利用いただけます`
+                          : `スタンダードプラン相当機能を${invite.durationMonths}か月無料でご利用いただけます`
                     }
                   />
                   <Row
                     label="利用期間"
                     value={
-                      invite.pilotDurationDays != null
-                        ? `${invite.pilotDurationDays}日間`
-                        : `${invite.durationMonths}か月間`
+                      invite.isLifetimeFree
+                        ? "無期限"
+                        : invite.pilotDurationDays != null
+                          ? `${invite.pilotDurationDays}日間`
+                          : `${invite.durationMonths}か月間`
                     }
                   />
                   <Row label="クレジットカード" value="登録不要です" />

@@ -106,10 +106,11 @@ export default async function OpsInvitesPage() {
                   const clinic = invite.usedByContact?.clinic ?? null;
                   const latestDiagnosis = clinic?.diagnoses[0] ?? null;
                   const activated = subscription?.status === "active";
+                  const isLifetimeFree = invite.isLifetimeFree || subscription?.billingExempt === true;
                   const usageEndsAt = subscription?.trialEndsAt ?? null;
                   return (
                     <tr key={invite.id}>
-                      <td>
+                      <td style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                         {isPilot ? (
                           <span
                             style={{
@@ -126,6 +127,21 @@ export default async function OpsInvitesPage() {
                           </span>
                         ) : (
                           <span style={{ fontSize: 11, color: "#9CA3AF" }}>通常</span>
+                        )}
+                        {isLifetimeFree && (
+                          <span
+                            style={{
+                              display: "inline-block",
+                              padding: "2px 8px",
+                              borderRadius: 999,
+                              background: "#FFF7ED",
+                              color: "#9A3412",
+                              fontSize: 11,
+                              fontWeight: 700,
+                            }}
+                          >
+                            永久無料
+                          </span>
                         )}
                       </td>
                       <td className={styles.clinicUrl}>{invite.campaign ?? "—"}</td>
@@ -155,7 +171,7 @@ export default async function OpsInvitesPage() {
                         {formatDate(invite.usedAt)}
                       </td>
                       <td className={`${styles.numeric} ${styles.clinicUrl}`}>
-                        {formatDate(usageEndsAt)}
+                        {isLifetimeFree && activated ? "無期限" : formatDate(usageEndsAt)}
                       </td>
                       <td>{activated ? "済み" : "未"}</td>
                       <td className={`${styles.numeric} ${styles.clinicUrl}`}>

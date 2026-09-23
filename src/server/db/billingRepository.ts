@@ -23,7 +23,10 @@ export async function createSubscriptionRecord(input: {
   // 招待経由(パイロット/1円モニター)で作成された契約の追跡用。通常契約は未指定。
   inviteId?: string;
   trialStartedAt?: Date;
-  trialEndsAt?: Date;
+  trialEndsAt?: Date | null;
+  // 永久無料の特別アカウント向け(既定false)。trueの場合、将来実装される
+  // trialEndsAt到達時の自動停止対象から明示的に除外する。
+  billingExempt?: boolean;
 }) {
   return prisma.subscription.create({ data: input });
 }

@@ -23,8 +23,17 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "リクエストボディがJSONとして解釈できません" }, { status: 400 });
   }
-  const { clinicName, email, expiresAt, maxUses, campaign, requireEmailMatch, isPilot: isPilotInput, pilotDurationDays } =
-    (body ?? {}) as Record<string, unknown>;
+  const {
+    clinicName,
+    email,
+    expiresAt,
+    maxUses,
+    campaign,
+    requireEmailMatch,
+    isPilot: isPilotInput,
+    pilotDurationDays,
+    isLifetimeFree: isLifetimeFreeInput,
+  } = (body ?? {}) as Record<string, unknown>;
 
   if (typeof clinicName !== "string" || !clinicName.trim()) {
     return NextResponse.json({ error: "対象医院名は必須です" }, { status: 400 });
@@ -36,11 +45,22 @@ export async function POST(request: NextRequest) {
   // Pilot判定は明示的なisPilotフラグで行う(campaignは流入元・施策区分の記録用に
   // 自由記述できるようにするため、campaign==="pilot"での判定はしない)。
   const isPilot = isPilotInput === true;
+  const isLifetimeFree = isLifetimeFreeInput === true;
+
+  // 永久無料はStripeを呼ばないPilot有効化経路を流用するため、Pilot招待でのみ指定できる。
+  if (isLifetimeFree && !isPilot) {
+    return NextResponse.json(
+      { error: "永久無料の特別アカウントはPilot招待としてのみ発行できます" },
+      { status: 400 }
+    );
+  }
+
   let resolvedPilotDurationDays: number | null = null;
-  if (isPilot) {
+  if (isPilot && !isLifetimeFree) {
     // パイロットは自由入力による設定ミスを防ぐため、日数は正の整数のみ許可する
     // (未指定時は既定28日=4週間。ユーザー方針「3か月固定にせず2〜4週間でフィードバックを
-    // 取る」に合わせたデフォルト)。
+    // 取る」に合わせたデフォルト)。永久無料招待(isLifetimeFree)では期限なしのため
+    // pilotDurationDaysは常にnullとし、この検証自体を行わない。
     if (pilotDurationDays !== undefined) {
       if (typeof pilotDurationDays !== "number" || !Number.isInteger(pilotDurationDays) || pilotDurationDays <= 0) {
         return NextResponse.json(
@@ -84,6 +104,7 @@ export async function POST(request: NextRequest) {
     campaign: typeof campaign === "string" && campaign.trim() ? campaign.trim() : null,
     isPilot,
     pilotDurationDays: resolvedPilotDurationDays,
+    isLifetimeFree,
     createdByOperatorId: operator.id,
   });
 
@@ -97,6 +118,7 @@ export async function POST(request: NextRequest) {
       email: invite.email,
       campaign: invite.campaign,
       isPilot: invite.isPilot,
+      isLifetimeFree: invite.isLifetimeFree,
     },
   }).catch((error) => {
     console.error("[POST /api/ops/invites] audit log recording failed:", error);

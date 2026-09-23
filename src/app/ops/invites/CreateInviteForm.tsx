@@ -20,6 +20,7 @@ export function CreateInviteForm() {
   const [campaignPreset, setCampaignPreset] = useState("");
   const [isPilot, setIsPilot] = useState(false);
   const [pilotDurationDays, setPilotDurationDays] = useState("28");
+  const [isLifetimeFree, setIsLifetimeFree] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
@@ -43,7 +44,8 @@ export function CreateInviteForm() {
           // 流入元・施策区分(doctorbook/founder-monitor/direct等)の記録用。
           isPilot,
           campaign: effectiveCampaign || undefined,
-          pilotDurationDays: isPilot ? Number(pilotDurationDays) : undefined,
+          pilotDurationDays: isPilot && !isLifetimeFree ? Number(pilotDurationDays) : undefined,
+          isLifetimeFree: isPilot ? isLifetimeFree : undefined,
         }),
       });
       const data = await res.json();
@@ -59,6 +61,7 @@ export function CreateInviteForm() {
       setCampaignPreset("");
       setIsPilot(false);
       setPilotDurationDays("28");
+      setIsLifetimeFree(false);
       router.refresh();
     } catch {
       setError("通信エラーが発生しました。時間をおいて再度お試しください。");
@@ -125,12 +128,42 @@ export function CreateInviteForm() {
           <input
             type="checkbox"
             checked={isPilot}
-            onChange={(e) => setIsPilot(e.target.checked)}
+            onChange={(e) => {
+              setIsPilot(e.target.checked);
+              if (!e.target.checked) setIsLifetimeFree(false);
+            }}
           />
           <span>Pilot招待として発行する(決済不要・Stripeカード登録なし)</span>
         </label>
 
         {isPilot && (
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 12,
+              fontWeight: 650,
+              color: "#7C2D12",
+              padding: "8px 10px",
+              border: "1px solid #FDBA74",
+              borderRadius: 8,
+              background: isLifetimeFree ? "#FFF7ED" : "#fff",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={isLifetimeFree}
+              onChange={(e) => setIsLifetimeFree(e.target.checked)}
+            />
+            <span>
+              永久無料の特別アカウントとして発行する(期限なし。通常のPilot28日には使わず、
+              個別に永久無料と決めた相手にのみ使用してください)
+            </span>
+          </label>
+        )}
+
+        {isPilot && !isLifetimeFree && (
           <Field label="パイロット利用日数(有効化から終了予定日までの日数)">
             <input
               type="number"
