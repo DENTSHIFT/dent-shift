@@ -17,6 +17,7 @@ import { generateInstructionPdfArtifact } from "@/server/services/optionOrders/g
 import { consumeInviteForClinic, getInviteById } from "@/server/db/inviteRepository";
 import { computeInviteCancelAtEpochSeconds } from "@/domain/invite/inviteCode";
 import { scheduleStripeSubscriptionCancellation } from "@/server/providers/billing/stripeCheckoutProvider";
+import { sendBillingStatusChangeEmail } from "@/server/services/sendBillingStatusChangeEmail";
 
 export const runtime = "nodejs";
 
@@ -98,7 +99,22 @@ export async function POST(request: Request) {
     }
 
     const command = normalizeStripeBillingEvent(event);
-    const result = await applyBillingWebhookEvent(command);
+    const { result, notify } = await applyBillingWebhookEvent(command);
+
+    // 契約状態が悪化方向(past_due/restricted/suspended)または解約(cancelled)へ
+    // 実際に遷移した場合のみ通知メールを送る(applyBillingWebhookEvent側で
+    // 状態変化の有無を判定済み。Webhook再送による重複送信はここに来ない)。
+    if (notify) {
+      await sendBillingStatusChangeEmail({
+        clinicId: notify.clinicId,
+        status: notify.toStatus,
+      }).catch((emailError) => {
+        console.error(
+          "[POST /api/billing/webhook] sendBillingStatusChangeEmail failed:",
+          emailError instanceof Error ? emailError.name : "UnknownError"
+        );
+      });
+    }
 
     // 決済方法登録完了(checkout完了)を契機に、他の3条件(SMS/メール/規約同意)が
     // 既に揃っていればtrialを開始する(指示書4章、activateTrial.ts参照)。

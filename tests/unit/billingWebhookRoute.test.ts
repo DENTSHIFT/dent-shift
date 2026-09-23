@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => {
     verify: vi.fn(),
     normalize: vi.fn(),
     apply: vi.fn(),
+    sendBillingStatusChangeEmail: vi.fn(),
   };
 });
 
@@ -24,6 +25,9 @@ vi.mock("@/server/providers/billing/stripeWebhookProvider", () => ({
 }));
 vi.mock("@/server/db/billingRepository", () => ({
   applyBillingWebhookEvent: mocks.apply,
+}));
+vi.mock("@/server/services/sendBillingStatusChangeEmail", () => ({
+  sendBillingStatusChangeEmail: mocks.sendBillingStatusChangeEmail,
 }));
 
 import { POST } from "@/app/api/billing/webhook/route";
@@ -52,7 +56,8 @@ beforeEach(() => {
   mocks.resolveConfig.mockReturnValue(STRIPE_CONFIG);
   mocks.verify.mockReturnValue({ id: "evt_1" });
   mocks.normalize.mockReturnValue({ providerEventId: "evt_1" });
-  mocks.apply.mockResolvedValue("processed");
+  mocks.apply.mockResolvedValue({ result: "processed", notify: null });
+  mocks.sendBillingStatusChangeEmail.mockResolvedValue("sent");
 });
 
 describe("POST /api/billing/webhook", () => {
@@ -99,5 +104,35 @@ describe("POST /api/billing/webhook", () => {
     mocks.apply.mockRejectedValue(new Error("database unavailable"));
     const response = await POST(request());
     expect(response.status).toBe(500);
+  });
+
+  it("契約状態が悪化方向へ遷移した場合は通知メールを送る", async () => {
+    mocks.apply.mockResolvedValue({
+      result: "processed",
+      notify: { clinicId: "clinic-1", toStatus: "past_due" },
+    });
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(mocks.sendBillingStatusChangeEmail).toHaveBeenCalledWith({
+      clinicId: "clinic-1",
+      status: "past_due",
+    });
+  });
+
+  it("状態遷移がない場合は通知メールを送らない", async () => {
+    mocks.apply.mockResolvedValue({ result: "processed", notify: null });
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(mocks.sendBillingStatusChangeEmail).not.toHaveBeenCalled();
+  });
+
+  it("通知メール送信の失敗はWebhookの200応答をブロックしない", async () => {
+    mocks.apply.mockResolvedValue({
+      result: "processed",
+      notify: { clinicId: "clinic-1", toStatus: "cancelled" },
+    });
+    mocks.sendBillingStatusChangeEmail.mockRejectedValue(new Error("resend down"));
+    const response = await POST(request());
+    expect(response.status).toBe(200);
   });
 });

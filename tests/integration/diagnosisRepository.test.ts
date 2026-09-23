@@ -779,7 +779,7 @@ describe("BillingRepository: 契約状態の医院スコープ", () => {
     const paidAt = new Date("2026-09-10T01:01:00.000Z");
 
     expect(
-      await billingRepo.applyBillingWebhookEvent({
+      (await billingRepo.applyBillingWebhookEvent({
         providerEventId: "evt_checkout_unique",
         eventType: "checkout.session.completed",
         occurredAt: checkoutAt,
@@ -792,7 +792,7 @@ describe("BillingRepository: 契約状態の医院スコープ", () => {
           },
           initialStatus: "trial",
         },
-      })
+      })).result
     ).toBe("processed");
 
     const paidCommand = {
@@ -811,8 +811,8 @@ describe("BillingRepository: 契約状態の医院スコープ", () => {
         externalPaymentId: "in_paid_unique",
       },
     };
-    expect(await billingRepo.applyBillingWebhookEvent(paidCommand)).toBe("processed");
-    expect(await billingRepo.applyBillingWebhookEvent(paidCommand)).toBe("duplicate");
+    expect((await billingRepo.applyBillingWebhookEvent(paidCommand)).result).toBe("processed");
+    expect((await billingRepo.applyBillingWebhookEvent(paidCommand)).result).toBe("duplicate");
 
     expect((await billingRepo.getLatestSubscriptionByClinicId(clinic.id))?.status).toBe("active");
     expect(await prisma.payment.count({ where: { externalPaymentId: "in_paid_unique" } })).toBe(1);
@@ -848,7 +848,7 @@ describe("BillingRepository: 契約状態の医院スコープ", () => {
       }),
     ]);
 
-    expect(results).toEqual(["processed", "processed"]);
+    expect(results.map((r) => r.result)).toEqual(["processed", "processed"]);
     expect(
       await prisma.subscription.count({
         where: { externalSubscriptionId: "sub_webhook_race_unique" },

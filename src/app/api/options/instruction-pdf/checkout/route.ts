@@ -9,6 +9,7 @@ import { OptionProductConfigError } from "@/server/config/optionProductConfig";
 import { BillingConfigError } from "@/server/config/billingConfig";
 import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
 import { isEntitledSubscriptionStatus } from "@/domain/options/planEntitlements";
+import { blocksFeatureAccess } from "@/domain/billing/subscriptionStatus";
 import type { PlanId } from "@/domain/billing/planCatalog";
 
 /**
@@ -43,6 +44,16 @@ export async function POST(request: NextRequest) {
   const { reportId, improvementActionKey } = (body ?? {}) as Record<string, unknown>;
   if (typeof reportId !== "string" || !reportId) {
     return NextResponse.json({ error: "reportIdは必須です" }, { status: 400 });
+  }
+
+  // 2026-09-24: 機能制限。past_due/restricted/suspended/cancelledの間は、この有料
+  // オプション注文自体を作成させない(画面側の非表示だけに依存しない必須ガード)。
+  const currentSubscription = await getLatestSubscriptionByClinicId(currentContact.clinicId);
+  if (blocksFeatureAccess(currentSubscription)) {
+    return NextResponse.json(
+      { error: "現在この機能はご利用いただけません。お支払い情報をご確認ください。" },
+      { status: 403 }
+    );
   }
 
   // reportId(診断)が自院のものであることを必ず確認する(他clinicの診断IDを渡されても

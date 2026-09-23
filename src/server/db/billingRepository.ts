@@ -7,11 +7,21 @@ import {
 import { isPlanId, type PlanId } from "@/domain/billing/planCatalog";
 import type { Prisma } from "@prisma/client";
 import type {
+  BillingStatusNotification,
+  BillingWebhookApplyOutcome,
   BillingWebhookApplyResult,
   BillingWebhookCommand,
   BillingWebhookIdentity,
 } from "@/domain/billing/billingWebhook";
 import { confirmAttributionForClinic } from "./ambassadorRepository";
+
+// 契約状態がここに遷移した時点でユーザーへメール通知する(解約はcancelledで別文面)。
+const NOTIFY_ON_STATUSES: readonly SubscriptionStatus[] = [
+  "past_due",
+  "restricted",
+  "suspended",
+  "cancelled",
+];
 
 export class BillingRepositoryStateError extends Error {}
 
@@ -160,16 +170,17 @@ async function updateWebhookSubscriptionStatus(
  */
 export async function applyBillingWebhookEvent(
   input: BillingWebhookCommand
-): Promise<BillingWebhookApplyResult> {
+): Promise<BillingWebhookApplyOutcome> {
   return prisma.$transaction(async (tx) => {
     const alreadyProcessed = await tx.billingWebhookEvent.findUnique({
       where: { providerEventId: input.providerEventId },
       select: { id: true },
     });
-    if (alreadyProcessed) return "duplicate";
+    if (alreadyProcessed) return { result: "duplicate", notify: null };
 
     let result: Exclude<BillingWebhookApplyResult, "duplicate"> = "processed";
     let clinicId: string | null = null;
+    let notify: BillingStatusNotification | null = null;
 
     if (input.action.kind === "ignored") {
       result = "ignored";
@@ -188,12 +199,21 @@ export async function applyBillingWebhookEvent(
         result = "ignored";
       } else {
         clinicId = subscription.clinicId;
+        const statusBeforeUpdate = subscription.status;
         subscription = await updateWebhookSubscriptionStatus(
           tx,
           subscription,
           initialStatus,
           input.occurredAt
         );
+        if (
+          subscription &&
+          subscription.status !== statusBeforeUpdate &&
+          isSubscriptionStatus(subscription.status) &&
+          NOTIFY_ON_STATUSES.includes(subscription.status)
+        ) {
+          notify = { clinicId: subscription.clinicId, toStatus: subscription.status };
+        }
         if (input.action.kind === "invoice_status" && subscription) {
           await tx.payment.upsert({
             where: { externalPaymentId: input.action.externalPaymentId },
@@ -234,6 +254,6 @@ export async function applyBillingWebhookEvent(
         occurredAt: input.occurredAt,
       },
     });
-    return result;
+    return { result, notify };
   });
 }

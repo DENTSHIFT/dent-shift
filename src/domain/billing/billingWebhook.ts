@@ -40,3 +40,21 @@ export interface BillingWebhookCommand {
 }
 
 export type BillingWebhookApplyResult = "processed" | "ignored" | "duplicate";
+
+/**
+ * 2026-09-23: 契約状態が実際に悪化方向へ遷移した場合のみ、呼び出し側(webhook route)へ
+ * 通知メール送信のトリガーを返す。Stripe Webhookの再送(同一providerEventIdの重複)は
+ * applyBillingWebhookEvent側の一意制約で"duplicate"として弾かれるため、ここに到達する
+ * 時点で新規イベントであることは保証されている。さらに「更新前後でstatusが実際に
+ * 変化した場合のみ」に絞ることで、同一状態を繰り返し報告するイベント(例: 複数回の
+ * invoice.payment_failed)による通知の重複送信を防ぐ(冪等性の担保)。
+ */
+export interface BillingStatusNotification {
+  clinicId: string;
+  toStatus: SubscriptionStatus;
+}
+
+export interface BillingWebhookApplyOutcome {
+  result: BillingWebhookApplyResult;
+  notify: BillingStatusNotification | null;
+}

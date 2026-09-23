@@ -19,6 +19,8 @@ import {
   currentEntitlementPeriod,
 } from "@/domain/options/planEntitlements";
 import { getEntitlementUsage } from "@/server/db/planEntitlementUsageRepository";
+import { blocksFeatureAccess } from "@/domain/billing/subscriptionStatus";
+import { resolveFeatureAccessNotice } from "./featureAccessNotice";
 
 const NAV_ITEMS = [
   { label: "経営サマリー", icon: "⌂", href: "/dashboard", active: true },
@@ -123,10 +125,55 @@ function DashboardNav({ bookingUrl }: { bookingUrl: string | undefined }) {
 
 export default async function DashboardPage() {
   const contact = await requireContact({ next: "/dashboard" });
-  const [diagnoses, subscription] = await Promise.all([
-    getDiagnosesByClinicId(contact.clinicId),
-    getLatestSubscriptionByClinicId(contact.clinicId),
-  ]);
+  const subscription = await getLatestSubscriptionByClinicId(contact.clinicId);
+
+  // 2026-09-24: 契約状態による機能制限。past_due/restricted/suspended/cancelledの間は
+  // 診断・レポート等の主要機能を表示せず、案内(お支払い確認 or 再契約)のみを表示する。
+  // billingExempt(永久無料・Pilot)・trial・active・cancel_scheduledは対象外。
+  if (subscription && blocksFeatureAccess(subscription)) {
+    const notice = resolveFeatureAccessNotice(subscription.status);
+    return (
+      <div className={styles.shell}>
+        <DashboardNav bookingUrl={undefined} />
+        <div className={styles.main}>
+          <header className={styles.topbar}>
+            <div>
+              <p className={styles.clinicEyebrow}>医院ダッシュボード</p>
+              <p className={styles.clinicName}>{contact.clinic.name}</p>
+            </div>
+            <div className={styles.topActions}>
+              <span className={styles.accountLabel}>{contact.email}</span>
+              <LogoutButton />
+            </div>
+          </header>
+          <main className={styles.content}>
+            <section className={styles.subscriptionCard} aria-label="ご利用制限のお知らせ">
+              <div className={styles.subscriptionCopy}>
+                <h2 className={styles.subscriptionPlan}>{notice?.heading ?? "現在この機能はご利用いただけません"}</h2>
+                <p className={styles.subscriptionDescription}>
+                  {notice?.body ?? "詳しくはお問い合わせください。"}
+                </p>
+              </div>
+              {notice &&
+                (notice.ctaMethod === "post" ? (
+                  <form action={notice.ctaHref} method="post">
+                    <button className={styles.newDiagnosisLink} type="submit">
+                      {notice.ctaLabel}
+                    </button>
+                  </form>
+                ) : (
+                  <Link className={styles.newDiagnosisLink} href={notice.ctaHref}>
+                    {notice.ctaLabel}
+                  </Link>
+                ))}
+            </section>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  const diagnoses = await getDiagnosesByClinicId(contact.clinicId);
   const latest = diagnoses[0] ? await getDiagnosisById(diagnoses[0].id) : null;
   const history = diagnoses.map((diagnosis) => ({
     ...diagnosis,
