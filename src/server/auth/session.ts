@@ -12,6 +12,9 @@ export async function createSession(contactId: string): Promise<string> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   await prisma.session.create({ data: { token, contactId, expiresAt } });
+  // 運営側のパイロット医院モニタリング一覧(/ops/invites)で「最終ログイン」を
+  // 表示するために記録する(ログイン・サインアップ直後の自動ログイン双方を含む)。
+  await prisma.contact.update({ where: { id: contactId }, data: { lastLoginAt: new Date() } });
   return token;
 }
 

@@ -44,6 +44,8 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
             className={styles.logo}
             src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
             alt="DENT SHIFT 歯科集患を、AIでシフトする。"
+            width={1844}
+            height={572}
           />
         </div>
 
@@ -79,8 +81,22 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
                     gap: 8,
                   }}
                 >
-                  <Row label="機能" value="スタンダードプラン相当機能を3か月利用できます" />
-                  <Row label="利用期間" value={`${invite.durationMonths}か月間`} />
+                  <Row
+                    label="機能"
+                    value={
+                      invite.pilotDurationDays != null
+                        ? `スタンダードプラン相当機能を${invite.pilotDurationDays}日間利用できます`
+                        : `スタンダードプラン相当機能を${invite.durationMonths}か月利用できます`
+                    }
+                  />
+                  <Row
+                    label="利用期間"
+                    value={
+                      invite.pilotDurationDays != null
+                        ? `${invite.pilotDurationDays}日間`
+                        : `${invite.durationMonths}か月間`
+                    }
+                  />
                   <Row label="決済" value="現在はテスト環境のため決済は発生しません" />
                 </div>
 

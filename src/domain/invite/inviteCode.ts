@@ -51,3 +51,13 @@ export function computeInviteCancelAtEpochSeconds(startedAt: Date, durationMonth
   cancelAt.setUTCMonth(cancelAt.getUTCMonth() + durationMonths);
   return Math.floor(cancelAt.getTime() / 1000);
 }
+
+/**
+ * パイロット先行利用専用(2026-09-23)。durationMonths(月単位)では
+ * 2〜4週間のような短い試用期間を表現できないため、日数単位で終了予定日を計算する。
+ */
+export function computeInviteCancelAtEpochSecondsByDays(startedAt: Date, durationDays: number): number {
+  const cancelAt = new Date(startedAt);
+  cancelAt.setUTCDate(cancelAt.getUTCDate() + durationDays);
+  return Math.floor(cancelAt.getTime() / 1000);
+}

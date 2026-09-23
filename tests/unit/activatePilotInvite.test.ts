@@ -118,9 +118,23 @@ describe("activatePilotInvite", () => {
       })
     );
     expect(result.subscriptionId).toBe("sub-1");
-    const startedAt = mocks.createSubscriptionRecord.mock.calls[0][0].trialStartedAt as Date;
-    const endsAt = mocks.createSubscriptionRecord.mock.calls[0][0].trialEndsAt as Date;
+    const startedAt = mocks.createSubscriptionRecord.mock.calls[0]![0].trialStartedAt as Date;
+    const endsAt = mocks.createSubscriptionRecord.mock.calls[0]![0].trialEndsAt as Date;
     expect(endsAt.getUTCMonth()).toBe((startedAt.getUTCMonth() + 3) % 12);
+  });
+
+  it("pilotDurationDaysが設定されている場合は日数単位でtrialEndsAtを計算する(durationMonthsより優先)", async () => {
+    mocks.getInviteByCode.mockResolvedValue({ ...PILOT_INVITE, pilotDurationDays: 28 });
+    await activatePilotInvite({
+      inviteCode: "PILOT123",
+      clinicId: "clinic-1",
+      contactEmail: "sensei@example.com",
+    });
+    const startedAt = mocks.createSubscriptionRecord.mock.calls[0]![0].trialStartedAt as Date;
+    const endsAt = mocks.createSubscriptionRecord.mock.calls[0]![0].trialEndsAt as Date;
+    // computeInviteCancelAtEpochSecondsByDaysは秒単位に切り捨てるため、秒精度で比較する。
+    const expectedEpochSeconds = Math.floor((startedAt.getTime() + 28 * 24 * 60 * 60 * 1000) / 1000);
+    expect(Math.floor(endsAt.getTime() / 1000)).toBe(expectedEpochSeconds);
   });
 
   it("PilotInviteErrorはErrorのサブクラス", async () => {

@@ -15,6 +15,7 @@ export async function createInvite(input: {
   maxUses?: number;
   requireEmailMatch?: boolean;
   campaign?: string | null;
+  pilotDurationDays?: number | null;
   createdByOperatorId?: string | null;
 }) {
   // 招待コードのunique制約に稀に衝突した場合のみ再生成する(実質発生しない想定)。
@@ -33,6 +34,7 @@ export async function createInvite(input: {
           maxUses: input.maxUses ?? 1,
           requireEmailMatch: input.requireEmailMatch ?? true,
           campaign: input.campaign ?? null,
+          pilotDurationDays: input.pilotDurationDays ?? null,
           createdByOperatorId: input.createdByOperatorId ?? null,
         },
       });
@@ -73,7 +75,23 @@ export async function consumeInviteForClinic(input: { inviteId: string; clinicId
 }
 
 export async function listInvites() {
-  return prisma.invite.findMany({ orderBy: { createdAt: "desc" } });
+  return prisma.invite.findMany({
+    orderBy: { createdAt: "desc" },
+    include: {
+      // パイロットモニタリング一覧(/ops/invites)用。使用済みでなければ全てnull。
+      usedByContact: {
+        include: {
+          clinic: {
+            include: {
+              // 最新の診断1件だけで十分(「診断実行済みか」「スコア」の表示用)。
+              diagnoses: { orderBy: { measuredAt: "desc" }, take: 1 },
+            },
+          },
+        },
+      },
+      subscriptions: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
+  });
 }
 
 /**

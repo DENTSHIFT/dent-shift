@@ -12,7 +12,7 @@ const STATUS_LABELS: Record<string, string> = {
   revoked: "無効化",
 };
 
-function formatDate(value: Date | null) {
+function formatDate(value: Date | null | undefined) {
   if (!value) return "—";
   return value.toISOString().slice(0, 10);
 }
@@ -74,28 +74,60 @@ export default async function OpsInvitesPage() {
             <table className={styles.table}>
               <thead>
                 <tr>
+                  <th>種別</th>
                   <th>招待コード</th>
                   <th>対象医院名</th>
+                  <th>院長名</th>
+                  <th>医院URL</th>
                   <th>メールアドレス</th>
                   <th>有効期限</th>
                   <th>使用回数</th>
                   <th>ステータス</th>
                   <th>利用開始日</th>
                   <th>利用終了予定日</th>
+                  <th>アクティベート済み</th>
+                  <th>最終ログイン</th>
+                  <th>診断実行済み</th>
+                  <th>診断スコア</th>
                 </tr>
               </thead>
               <tbody>
                 {invites.map((invite) => {
-                  const usageEndsAt = invite.usedAt
-                    ? new Date(invite.usedAt)
-                    : null;
-                  if (usageEndsAt) usageEndsAt.setUTCMonth(usageEndsAt.getUTCMonth() + invite.durationMonths);
+                  const isPilot = invite.campaign === "pilot";
+                  const subscription = invite.subscriptions[0] ?? null;
+                  const clinic = invite.usedByContact?.clinic ?? null;
+                  const latestDiagnosis = clinic?.diagnoses[0] ?? null;
+                  const activated = subscription?.status === "active";
+                  const usageEndsAt = subscription?.trialEndsAt ?? null;
                   return (
                     <tr key={invite.id}>
+                      <td>
+                        {isPilot ? (
+                          <span
+                            style={{
+                              display: "inline-block",
+                              padding: "2px 8px",
+                              borderRadius: 999,
+                              background: "#EFF6FF",
+                              color: "#1D4ED8",
+                              fontSize: 11,
+                              fontWeight: 700,
+                            }}
+                          >
+                            Pilot
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 11, color: "#9CA3AF" }}>通常</span>
+                        )}
+                      </td>
                       <td className={styles.clinicName} style={{ fontFamily: "monospace", fontSize: 11 }}>
                         {invite.inviteCode}
                       </td>
                       <td className={styles.clinicName}>{invite.clinicName}</td>
+                      <td className={styles.clinicName}>{clinic?.directorName ?? "—"}</td>
+                      <td className={styles.clinicUrl} title={clinic?.url ?? undefined}>
+                        {clinic?.url ?? "—"}
+                      </td>
                       <td className={styles.clinicUrl} title={invite.email}>
                         {invite.email}
                       </td>
@@ -116,12 +148,18 @@ export default async function OpsInvitesPage() {
                       <td className={`${styles.numeric} ${styles.clinicUrl}`}>
                         {formatDate(usageEndsAt)}
                       </td>
+                      <td>{activated ? "済み" : "未"}</td>
+                      <td className={`${styles.numeric} ${styles.clinicUrl}`}>
+                        {formatDate(invite.usedByContact?.lastLoginAt)}
+                      </td>
+                      <td>{latestDiagnosis ? "実行済み" : "未実行"}</td>
+                      <td className={styles.numeric}>{latestDiagnosis?.totalPoints ?? "—"}</td>
                     </tr>
                   );
                 })}
                 {invites.length === 0 && (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: "center", color: "#6b7280", padding: 24 }}>
+                    <td colSpan={15} style={{ textAlign: "center", color: "#6b7280", padding: 24 }}>
                       発行済みの招待はありません。
                     </td>
                   </tr>

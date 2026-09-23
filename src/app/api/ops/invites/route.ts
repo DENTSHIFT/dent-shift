@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "リクエストボディがJSONとして解釈できません" }, { status: 400 });
   }
-  const { clinicName, email, expiresAt, maxUses, campaign, requireEmailMatch } =
+  const { clinicName, email, expiresAt, maxUses, campaign, requireEmailMatch, pilotDurationDays } =
     (body ?? {}) as Record<string, unknown>;
 
   if (typeof clinicName !== "string" || !clinicName.trim()) {
@@ -31,6 +31,25 @@ export async function POST(request: NextRequest) {
   }
   if (typeof email !== "string" || !email.trim()) {
     return NextResponse.json({ error: "対象メールアドレスは必須です" }, { status: 400 });
+  }
+
+  const isPilot = campaign === "pilot";
+  let resolvedPilotDurationDays: number | null = null;
+  if (isPilot) {
+    // パイロットは自由入力による設定ミスを防ぐため、日数は正の整数のみ許可する
+    // (未指定時は既定28日=4週間。ユーザー方針「3か月固定にせず2〜4週間でフィードバックを
+    // 取る」に合わせたデフォルト)。
+    if (pilotDurationDays !== undefined) {
+      if (typeof pilotDurationDays !== "number" || !Number.isInteger(pilotDurationDays) || pilotDurationDays <= 0) {
+        return NextResponse.json(
+          { error: "パイロット利用日数は正の整数で指定してください" },
+          { status: 400 }
+        );
+      }
+      resolvedPilotDurationDays = pilotDurationDays;
+    } else {
+      resolvedPilotDurationDays = 28;
+    }
   }
 
   let config;
@@ -52,6 +71,7 @@ export async function POST(request: NextRequest) {
     maxUses: typeof maxUses === "number" && maxUses > 0 ? Math.floor(maxUses) : 1,
     requireEmailMatch: typeof requireEmailMatch === "boolean" ? requireEmailMatch : true,
     campaign: typeof campaign === "string" && campaign.trim() ? campaign.trim() : null,
+    pilotDurationDays: resolvedPilotDurationDays,
     createdByOperatorId: operator.id,
   });
 

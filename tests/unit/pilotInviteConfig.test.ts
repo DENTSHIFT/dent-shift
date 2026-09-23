@@ -26,11 +26,11 @@ describe("resolvePilotInviteConfig", () => {
     });
   });
 
-  it("APP_BASE_URLが本番ドメインの場合は強制的にdisabled(二重ガード)", () => {
+  it("2026-09-23改訂: 本番ドメイン(APP_BASE_URL=dentshift.jp)でも明示的にenabledにした場合はenabledになる(campaign===\"pilot\"の招待単位で別途絞り込まれるため、ドメイン単位の強制無効化は撤廃)", () => {
     expect(
       resolvePilotInviteConfig({
         env: { PILOT_INVITE_MODE: "enabled", APP_BASE_URL: "https://dentshift.jp" },
       })
-    ).toEqual({ mode: "disabled" });
+    ).toEqual({ mode: "enabled" });
   });
 });

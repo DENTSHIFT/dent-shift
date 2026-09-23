@@ -1,6 +1,10 @@
 import "server-only";
 import { getInviteByCode, consumeInviteForClinic } from "@/server/db/inviteRepository";
-import { validateInvite, computeInviteCancelAtEpochSeconds } from "@/domain/invite/inviteCode";
+import {
+  validateInvite,
+  computeInviteCancelAtEpochSeconds,
+  computeInviteCancelAtEpochSecondsByDays,
+} from "@/domain/invite/inviteCode";
 import { createSubscriptionRecord } from "@/server/db/billingRepository";
 import { resolvePilotInviteConfigFromProcessEnv } from "@/server/config/pilotInviteConfig";
 
@@ -60,7 +64,12 @@ export async function activatePilotInvite(input: {
   }
 
   const now = new Date();
-  const endsAt = new Date(computeInviteCancelAtEpochSeconds(now, invite.durationMonths) * 1000);
+  // pilotDurationDaysが設定されていれば日数単位(2〜4週間等の短期試用)を優先し、
+  // 未設定の場合のみ従来のdurationMonths(月単位)で計算する。
+  const endsAt =
+    invite.pilotDurationDays != null
+      ? new Date(computeInviteCancelAtEpochSecondsByDays(now, invite.pilotDurationDays) * 1000)
+      : new Date(computeInviteCancelAtEpochSeconds(now, invite.durationMonths) * 1000);
 
   const subscription = await createSubscriptionRecord({
     clinicId: input.clinicId,

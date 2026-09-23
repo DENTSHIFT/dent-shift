@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeInviteCancelAtEpochSeconds,
+  computeInviteCancelAtEpochSecondsByDays,
   generateInviteCode,
   validateInvite,
 } from "@/domain/invite/inviteCode";
@@ -64,6 +65,22 @@ describe("computeInviteCancelAtEpochSeconds", () => {
     const startedAt = new Date("2026-09-22T01:00:00Z");
     const epoch = computeInviteCancelAtEpochSeconds(startedAt, 3);
     const expected = Math.floor(new Date("2026-12-22T01:00:00Z").getTime() / 1000);
+    expect(epoch).toBe(expected);
+  });
+});
+
+describe("computeInviteCancelAtEpochSecondsByDays", () => {
+  it("開始日時からdurationDays後のUNIX秒を返す(パイロット先行利用の短期試用向け)", () => {
+    const startedAt = new Date("2026-09-22T01:00:00Z");
+    const epoch = computeInviteCancelAtEpochSecondsByDays(startedAt, 28);
+    const expected = Math.floor(new Date("2026-10-20T01:00:00Z").getTime() / 1000);
+    expect(epoch).toBe(expected);
+  });
+
+  it("14日(2週間)でも正しく計算できる", () => {
+    const startedAt = new Date("2026-09-22T01:00:00Z");
+    const epoch = computeInviteCancelAtEpochSecondsByDays(startedAt, 14);
+    const expected = Math.floor(new Date("2026-10-06T01:00:00Z").getTime() / 1000);
     expect(epoch).toBe(expected);
   });
 });

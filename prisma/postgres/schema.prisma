@@ -91,6 +91,7 @@ model Contact {
   passwordHash String
   role         String    @default("owner")
   createdAt    DateTime  @default(now())
+  lastLoginAt  DateTime?
   sessions     Session[]
 
   phoneNumber      String?
@@ -413,6 +414,8 @@ model Invite {
 
   campaign String?
   status   String  @default("active")
+
+  pilotDurationDays Int?
 
   createdByOperatorId String?
 
