@@ -13,11 +13,12 @@ import "server-only";
  * 安全性は「ドメイン単位の一律解禁」ではなく「招待単位の限定解禁」で担保する:
  * - この設定(PILOT_INVITE_MODE=enabled)は「パイロット機能そのものの
  *   スイッチ」であり、これをenabledにしただけでは何も解禁されない
- * - 実際にパイロット導線へ入れるのは、運営者(Operator)がcampaign="pilot"を
+ * - 実際にパイロット導線へ入れるのは、運営者(Operator)がisPilot=trueを
  *   明示的に指定して発行した招待コードを知っている相手のみ(src/app/invite/[code]/page.tsx
- *   の isPilotInvite = invite?.campaign === "pilot" 判定、
+ *   の isPilotInvite = invite?.isPilot === true 判定、
  *   src/server/services/invites/activatePilotInvite.ts の
- *   invite.campaign !== "pilot" ガードを参照)
+ *   !invite.isPilot ガードを参照)。campaignは流入元・施策区分の記録用の
+ *   自由記述フィールドであり、Pilot判定には使用しない(2026-09-24分離)。
  * - 通常の招待(1円モニター等)・通常の会員登録・Stripe決済フローは
  *   この設定値を一切参照しない(別のresolveInviteConfigFromProcessEnv() /
  *   billingConfig.tsを使う独立した経路のため、影響しない)

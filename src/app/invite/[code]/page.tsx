@@ -9,8 +9,8 @@ import { PilotActivateButton } from "./PilotActivateButton";
 
 /**
  * 知人院長向け招待ページ(2026-09-22確定)。通常の「1円モニター利用」(Stripe決済あり)
- * と、「パイロット先行利用」(campaign==="pilot"、test環境限定、Stripeを一切呼ばない)の
- * 2種類を、campaignフィールドとPILOT_INVITE_MODEで分岐する。
+ * と、「パイロット先行利用」(isPilot===true、test環境限定、Stripeを一切呼ばない)の
+ * 2種類を、isPilotフラグとPILOT_INVITE_MODEで分岐する。
  * 通常LP・料金表には一切リンクを置かず、この招待URLを直接知っている場合のみ到達する。
  * 無効・期限切れ・使用済みの場合も存在有無を詳細に区別せず、一律の案内文にする。
  */
@@ -19,7 +19,7 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
   const invite = await getInviteByCode(code);
   const contact = await getCurrentContact();
 
-  const isPilotInvite = invite?.campaign === "pilot";
+  const isPilotInvite = invite?.isPilot === true;
   const pilotConfig = resolvePilotInviteConfigFromProcessEnv();
   // パイロットmodeが無効な環境(productionを含む)では、pilot招待自体を「利用不可」扱いにする。
   const isPilotUsable = isPilotInvite && pilotConfig.mode === "enabled";

@@ -415,8 +415,15 @@ model Invite {
 
   requireEmailMatch Boolean @default(true)
 
+  // 流入元・施策区分の記録用(Pilot/通常招待を問わず自由記述)。
+  // 例: "founder-monitor" | "doctorbook" | "direct" | "partner"
+  // Pilot判定にはこのフィールドを使わない(isPilotを参照する)。
   campaign String?
   status   String  @default("active")
+
+  // 2026-09-24: Pilot判定を明示的なフラグに分離(以前はcampaign==="pilot"で判定していたが、
+  // campaignを流入元記録用に自由に使えるようにするため)。
+  isPilot Boolean @default(false)
 
   pilotDurationDays Int?
 

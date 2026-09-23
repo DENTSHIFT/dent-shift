@@ -593,11 +593,18 @@ model Invite {
   // (URL転送による不正利用対策。デフォルトtrue)。
   requireEmailMatch Boolean @default(true)
 
-  campaign String? // 例: "founder-monitor" | "doctorbook" | "partner" | "pilot"
+  // 流入元・施策区分の記録用(Pilot/通常招待を問わず自由記述)。
+  // 例: "founder-monitor" | "doctorbook" | "direct" | "partner"
+  // Pilot判定にはこのフィールドを使わない(isPilotを参照する)。
+  campaign String?
   // "active" | "used" | "expired" | "revoked"
   status   String  @default("active")
 
-  // 2026-09-23: パイロット先行利用(campaign==="pilot")専用。durationMonths(月単位)
+  // 2026-09-24: Pilot判定を明示的なフラグに分離(以前はcampaign==="pilot"で判定していたが、
+  // campaignを流入元記録用に自由に使えるようにするため)。
+  isPilot Boolean @default(false)
+
+  // 2026-09-23: パイロット先行利用(isPilot===true)専用。durationMonths(月単位)
   // では2〜4週間のような短い試用期間を表現できないため、日数単位の上書きを別途持つ。
   // 非pilot招待では常にnull(durationMonthsによる従来計算のまま)。
   pilotDurationDays Int?

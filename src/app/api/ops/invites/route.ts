@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "リクエストボディがJSONとして解釈できません" }, { status: 400 });
   }
-  const { clinicName, email, expiresAt, maxUses, campaign, requireEmailMatch, pilotDurationDays } =
+  const { clinicName, email, expiresAt, maxUses, campaign, requireEmailMatch, isPilot: isPilotInput, pilotDurationDays } =
     (body ?? {}) as Record<string, unknown>;
 
   if (typeof clinicName !== "string" || !clinicName.trim()) {
@@ -33,7 +33,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "対象メールアドレスは必須です" }, { status: 400 });
   }
 
-  const isPilot = campaign === "pilot";
+  // Pilot判定は明示的なisPilotフラグで行う(campaignは流入元・施策区分の記録用に
+  // 自由記述できるようにするため、campaign==="pilot"での判定はしない)。
+  const isPilot = isPilotInput === true;
   let resolvedPilotDurationDays: number | null = null;
   if (isPilot) {
     // パイロットは自由入力による設定ミスを防ぐため、日数は正の整数のみ許可する
@@ -80,6 +82,7 @@ export async function POST(request: NextRequest) {
     maxUses: typeof maxUses === "number" && maxUses > 0 ? Math.floor(maxUses) : 1,
     requireEmailMatch: typeof requireEmailMatch === "boolean" ? requireEmailMatch : true,
     campaign: typeof campaign === "string" && campaign.trim() ? campaign.trim() : null,
+    isPilot,
     pilotDurationDays: resolvedPilotDurationDays,
     createdByOperatorId: operator.id,
   });
@@ -89,7 +92,12 @@ export async function POST(request: NextRequest) {
     action: "ops_create_invite",
     targetType: "Invite",
     targetId: invite.id,
-    metadata: { clinicName: invite.clinicName, email: invite.email, campaign: invite.campaign },
+    metadata: {
+      clinicName: invite.clinicName,
+      email: invite.email,
+      campaign: invite.campaign,
+      isPilot: invite.isPilot,
+    },
   }).catch((error) => {
     console.error("[POST /api/ops/invites] audit log recording failed:", error);
   });

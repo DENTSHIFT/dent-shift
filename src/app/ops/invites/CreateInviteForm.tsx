@@ -3,17 +3,28 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+const CAMPAIGN_PRESETS = ["doctorbook", "founder-monitor", "direct"];
+
+function defaultExpiresAt() {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  return d.toISOString().slice(0, 10);
+}
+
 export function CreateInviteForm() {
   const router = useRouter();
   const [clinicName, setClinicName] = useState("");
   const [email, setEmail] = useState("");
-  const [expiresAt, setExpiresAt] = useState("");
+  const [expiresAt, setExpiresAt] = useState(defaultExpiresAt());
   const [campaign, setCampaign] = useState("");
+  const [campaignPreset, setCampaignPreset] = useState("");
   const [isPilot, setIsPilot] = useState(false);
   const [pilotDurationDays, setPilotDurationDays] = useState("28");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
+
+  const effectiveCampaign = campaignPreset === "custom" ? campaign.trim() : campaignPreset;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,9 +39,10 @@ export function CreateInviteForm() {
           clinicName,
           email,
           expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
-          // Pilotモード選択時は、自由入力によるcampaign値のミスを防ぐため
-          // campaignを"pilot"に固定する(手入力欄は非表示にする)。
-          campaign: isPilot ? "pilot" : campaign || undefined,
+          // isPilotとcampaignは独立している。campaignはPilot/通常招待を問わず
+          // 流入元・施策区分(doctorbook/founder-monitor/direct等)の記録用。
+          isPilot,
+          campaign: effectiveCampaign || undefined,
           pilotDurationDays: isPilot ? Number(pilotDurationDays) : undefined,
         }),
       });
@@ -42,8 +54,9 @@ export function CreateInviteForm() {
       setCreatedUrl(`${window.location.origin}/invite/${data.inviteCode}`);
       setClinicName("");
       setEmail("");
-      setExpiresAt("");
+      setExpiresAt(defaultExpiresAt());
       setCampaign("");
+      setCampaignPreset("");
       setIsPilot(false);
       setPilotDurationDays("28");
       router.refresh();
@@ -87,7 +100,7 @@ export function CreateInviteForm() {
             style={inputStyle}
           />
         </Field>
-        <Field label="URL有効期限(任意、未入力なら無期限)">
+        <Field label="URL有効期限(招待メール自体の有効期限。既定で7日後を設定、変更・空欄も可)">
           <input
             type="date"
             value={expiresAt}
@@ -114,13 +127,10 @@ export function CreateInviteForm() {
             checked={isPilot}
             onChange={(e) => setIsPilot(e.target.checked)}
           />
-          <span>
-            Pilot招待として発行する(決済不要・Stripeカード登録なし。<code>campaign</code>は自動的に
-            <code>pilot</code>に設定されます)
-          </span>
+          <span>Pilot招待として発行する(決済不要・Stripeカード登録なし)</span>
         </label>
 
-        {isPilot ? (
+        {isPilot && (
           <Field label="パイロット利用日数(有効化から終了予定日までの日数)">
             <input
               type="number"
@@ -135,11 +145,31 @@ export function CreateInviteForm() {
               取ることを推奨します(自動終了処理は未実装のため、期限到達後は運営側で手動停止が必要です)。
             </span>
           </Field>
-        ) : (
-          <Field label="キャンペーン区分(任意、例: founder-monitor)">
-            <input value={campaign} onChange={(e) => setCampaign(e.target.value)} style={inputStyle} />
-          </Field>
         )}
+
+        <Field label="キャンペーン区分(任意。Pilot/通常招待どちらでも、流入元・施策区分を記録できます)">
+          <select
+            value={campaignPreset}
+            onChange={(e) => setCampaignPreset(e.target.value)}
+            style={inputStyle}
+          >
+            <option value="">(未設定)</option>
+            {CAMPAIGN_PRESETS.map((preset) => (
+              <option key={preset} value={preset}>
+                {preset}
+              </option>
+            ))}
+            <option value="custom">その他(自由入力)</option>
+          </select>
+          {campaignPreset === "custom" && (
+            <input
+              value={campaign}
+              onChange={(e) => setCampaign(e.target.value)}
+              placeholder="例: partner-xyz"
+              style={{ ...inputStyle, marginTop: 6 }}
+            />
+          )}
+        </Field>
 
         {error && <p style={{ margin: 0, fontSize: 12, color: "#DC2626" }}>{error}</p>}
         {createdUrl && (

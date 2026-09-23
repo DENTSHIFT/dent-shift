@@ -35,7 +35,8 @@ const PILOT_INVITE = {
   usedCount: 0,
   requireEmailMatch: true,
   status: "active",
-  campaign: "pilot",
+  campaign: "founder-monitor",
+  isPilot: true,
 };
 
 beforeEach(() => {
@@ -63,8 +64,8 @@ describe("activatePilotInvite", () => {
     ).rejects.toMatchObject({ code: "not_found" });
   });
 
-  it("campaignが'pilot'でない招待(通常1円招待)はnot_found扱いで弾く", async () => {
-    mocks.getInviteByCode.mockResolvedValue({ ...PILOT_INVITE, campaign: null });
+  it("isPilotがfalseの招待(通常1円招待)はnot_found扱いで弾く(campaignの値には依存しない)", async () => {
+    mocks.getInviteByCode.mockResolvedValue({ ...PILOT_INVITE, isPilot: false, campaign: "founder-monitor" });
     await expect(
       activatePilotInvite({ inviteCode: "PILOT123", clinicId: "clinic-1", contactEmail: "sensei@example.com" })
     ).rejects.toMatchObject({ code: "not_found" });

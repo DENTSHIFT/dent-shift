@@ -15,6 +15,7 @@ export async function createInvite(input: {
   maxUses?: number;
   requireEmailMatch?: boolean;
   campaign?: string | null;
+  isPilot?: boolean;
   pilotDurationDays?: number | null;
   createdByOperatorId?: string | null;
 }) {
@@ -34,6 +35,7 @@ export async function createInvite(input: {
           maxUses: input.maxUses ?? 1,
           requireEmailMatch: input.requireEmailMatch ?? true,
           campaign: input.campaign ?? null,
+          isPilot: input.isPilot ?? false,
           pilotDurationDays: input.pilotDurationDays ?? null,
           createdByOperatorId: input.createdByOperatorId ?? null,
         },

@@ -26,7 +26,7 @@ describe("resolvePilotInviteConfig", () => {
     });
   });
 
-  it("2026-09-23改訂: 本番ドメイン(APP_BASE_URL=dentshift.jp)でも明示的にenabledにした場合はenabledになる(campaign===\"pilot\"の招待単位で別途絞り込まれるため、ドメイン単位の強制無効化は撤廃)", () => {
+  it("2026-09-23改訂: 本番ドメイン(APP_BASE_URL=dentshift.jp)でも明示的にenabledにした場合はenabledになる(isPilot===trueの招待単位で別途絞り込まれるため、ドメイン単位の強制無効化は撤廃)", () => {
     expect(
       resolvePilotInviteConfig({
         env: { PILOT_INVITE_MODE: "enabled", APP_BASE_URL: "https://dentshift.jp" },

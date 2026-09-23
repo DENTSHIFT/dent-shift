@@ -82,6 +82,7 @@ export default async function OpsInvitesPage() {
               <thead>
                 <tr>
                   <th>種別</th>
+                  <th>campaign</th>
                   <th>招待コード</th>
                   <th>対象医院名</th>
                   <th>院長名</th>
@@ -100,7 +101,7 @@ export default async function OpsInvitesPage() {
               </thead>
               <tbody>
                 {invites.map((invite) => {
-                  const isPilot = invite.campaign === "pilot";
+                  const isPilot = invite.isPilot;
                   const subscription = invite.subscriptions[0] ?? null;
                   const clinic = invite.usedByContact?.clinic ?? null;
                   const latestDiagnosis = clinic?.diagnoses[0] ?? null;
@@ -127,6 +128,7 @@ export default async function OpsInvitesPage() {
                           <span style={{ fontSize: 11, color: "#9CA3AF" }}>通常</span>
                         )}
                       </td>
+                      <td className={styles.clinicUrl}>{invite.campaign ?? "—"}</td>
                       <td className={styles.clinicName} style={{ fontFamily: "monospace", fontSize: 11 }}>
                         {invite.inviteCode}
                       </td>
@@ -166,7 +168,7 @@ export default async function OpsInvitesPage() {
                 })}
                 {invites.length === 0 && (
                   <tr>
-                    <td colSpan={15} style={{ textAlign: "center", color: "#6b7280", padding: 24 }}>
+                    <td colSpan={16} style={{ textAlign: "center", color: "#6b7280", padding: 24 }}>
                       発行済みの招待はありません。
                     </td>
                   </tr>

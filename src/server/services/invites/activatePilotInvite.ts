@@ -20,7 +20,7 @@ export class PilotInviteError extends Error {
  * 知人院長向けパイロット先行利用の有効化(test環境限定、Stripeを一切呼ばない)。
  * 通常の1円招待(requestInviteCheckout.ts)とは完全に別経路:
  * - Stripe Checkoutを作成しない、決済を一切発生させない
- * - campaign === "pilot" のInviteのみが対象(通常の1円招待は対象外)
+ * - isPilot === true のInviteのみが対象(通常の1円招待は対象外)
  * - Subscriptionをこの場で直接standard相当・active状態で作成する
  * - 3か月後の終了予定はtrialEndsAtに記録するのみ(Stripe側のcancel_atは存在しない、
  *   実際の自動終了の強制はスコープ外の残課題として運用側で管理する)
@@ -36,7 +36,7 @@ export async function activatePilotInvite(input: {
   }
 
   const invite = await getInviteByCode(input.inviteCode);
-  if (!invite || invite.campaign !== "pilot") {
+  if (!invite || !invite.isPilot) {
     throw new PilotInviteError("この招待は見つかりませんでした。", "not_found");
   }
 
