@@ -102,6 +102,9 @@ export function SignupForm({
                 setDuplicateConfirmPending(false);
               }}
             />
+            <span className={styles.fieldHelper}>
+              医院のWebサイトをAI診断・分析するために使用します
+            </span>
           </Field>
         </>
       )}

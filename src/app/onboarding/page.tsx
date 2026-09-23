@@ -18,7 +18,10 @@ export default async function OnboardingPage({
 }: {
   searchParams: Promise<{ checkout?: string }>;
 }) {
-  const [{ checkout }, contact] = await Promise.all([searchParams, requireContact()]);
+  const [{ checkout }, contact] = await Promise.all([
+    searchParams,
+    requireContact({ next: "/onboarding" }),
+  ]);
   const [subscription, diagnoses] = await Promise.all([
     getLatestSubscriptionByClinicId(contact.clinicId),
     getDiagnosesByClinicId(contact.clinicId),

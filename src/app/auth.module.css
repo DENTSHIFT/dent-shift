@@ -16,6 +16,7 @@
 .secondaryButton:hover { border-color: #93c5fd; background: #f8fbff; }
 .error { margin: 0; color: #dc2626; font-size: 12px; line-height: 1.5; }
 .helper { margin: -8px 0 0; color: #6b7280; font-size: 12px; line-height: 1.6; }
+.fieldHelper { margin-top: 2px; color: #6b7280; font-size: 11px; line-height: 1.5; font-weight: 400; }
 .sentNotice { margin: 0; padding: 10px 12px; border: 1px solid #bfdbfe; border-radius: 9px; color: #1e3a8a; background: #eff6ff; font-size: 12px; line-height: 1.55; }
 .switchLink { margin: 2px 0 0; color: #6b7280; font-size: 12px; text-align: center; }
 .switchLink a { color: #2563eb; font-weight: 700; text-decoration: none; }

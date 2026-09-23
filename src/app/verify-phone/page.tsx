@@ -26,7 +26,9 @@ export default async function VerifyPhonePage({
 }) {
   const { next } = await searchParams;
   const safeNext = safeNextPath(next);
-  const contact = await requireContact();
+  // このページ自身はSMS未認証でも表示する必要があるため、requireContactの
+  // phoneVerifiedAtチェックはここでは無効化する(無効化しないと無限リダイレクトになる)。
+  const contact = await requireContact({ requirePhoneVerified: false });
   if (contact.phoneVerifiedAt) {
     redirect(safeNext ?? "/dashboard");
   }

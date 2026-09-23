@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/server/db/prismaClient";
-import { hashEmailVerificationToken } from "@/server/auth/emailVerificationToken";
-import { canTransitionRegistrationStep, type RegistrationStep } from "@/domain/auth/registrationStep";
-import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
-import { activateTrialIfEligible } from "@/server/services/activateTrial";
+import { verifyEmailToken } from "@/server/services/verifyEmailToken";
 
 /**
- * メール本文中のリンク(GET)からの確認を受け付ける。
- * トークンは平文で受け取るが、照合はDBに保存済みのハッシュと突き合わせて行う。
+ * メール本文中のリンク(GET)からの確認を受け付けるAPI。
+ * 2026-09-24: 検証処理本体はverifyEmailToken()へ切り出し済み。
+ * このルートはJSON APIとしての契約(既存の呼び出し元向け)を保つためだけに残す。
+ * 実際にメール内リンクが遷移する先はUI画面の/verify-emailページ
+ * (src/app/verify-email/page.tsx、同じverifyEmailToken()を直接呼ぶ)。
  */
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token");
@@ -15,52 +14,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "確認トークンが指定されていません" }, { status: 400 });
   }
 
-  const tokenHash = hashEmailVerificationToken(token);
-  const contact = await prisma.contact.findFirst({
-    where: { emailVerificationTokenHash: tokenHash },
-  });
-
-  if (!contact) {
-    return NextResponse.json({ error: "確認リンクが無効です" }, { status: 400 });
-  }
-  if (contact.emailVerifiedAt) {
-    return NextResponse.json({ status: "already_verified" }, { status: 200 });
-  }
-  if (!contact.emailVerificationExpiresAt || contact.emailVerificationExpiresAt < new Date()) {
+  const result = await verifyEmailToken(token);
+  if (result.status === "error") {
     return NextResponse.json(
-      { error: "確認リンクの有効期限が切れています。再送してください", code: "expired" },
+      { error: result.message, ...(result.code === "expired" ? { code: result.code } : {}) },
       { status: 400 }
     );
   }
-
-  const nextStep: RegistrationStep = "payment";
-  const currentStep = contact.registrationStep as RegistrationStep;
-  const updatedStep = canTransitionRegistrationStep(currentStep, nextStep)
-    ? nextStep
-    : currentStep;
-
-  await prisma.contact.update({
-    where: { id: contact.id },
-    data: {
-      emailVerifiedAt: new Date(),
-      emailVerificationTokenHash: null,
-      emailVerificationExpiresAt: null,
-      registrationStep: updatedStep,
-    },
-  });
-
-  await enqueueIntegrationEvent({
-    eventType: "email_verified",
-    clinicId: contact.clinicId,
-    contactId: contact.id,
-    payload: { registration_step: updatedStep },
-  }).catch((error) => {
-    console.error("[GET /api/auth/verify-email] Salesforce sync enqueue failed:", error);
-  });
-
-  await activateTrialIfEligible(contact.id).catch((error) => {
-    console.error("[GET /api/auth/verify-email] activateTrialIfEligible failed:", error);
-  });
-
-  return NextResponse.json({ status: "verified" }, { status: 200 });
+  return NextResponse.json({ status: result.status }, { status: 200 });
 }

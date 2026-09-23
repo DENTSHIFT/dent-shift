@@ -65,6 +65,22 @@ export async function getInviteById(id: string) {
 }
 
 /**
+ * 2026-09-24: メール確認完了画面から「招待ページへ戻る」導線を出すための検索用。
+ * まだ使用されていない(usedCount < maxUses)・有効(status==="active")なPilot招待のみ対象。
+ * 該当が複数あれば最新のものを返す。
+ */
+export async function findActiveUnusedPilotInviteByEmail(email: string) {
+  return prisma.invite.findFirst({
+    where: {
+      email,
+      isPilot: true,
+      status: "active",
+    },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+/**
  * Webhook側(checkout.session.completed)から呼ぶ。決済成功が確認できた時点で
  * 初めて招待を消費する(Checkout作成時点では消費しない。仕様書■「1回限定の場合は
  * 使用後に無効化」を実際の支払い完了と一致させるため)。

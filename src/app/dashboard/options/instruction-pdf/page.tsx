@@ -15,7 +15,7 @@ export default async function InstructionPdfStatusPage({
 }: {
   searchParams: Promise<{ orderId?: string; checkout?: string }>;
 }) {
-  const contact = await requireContact();
+  const contact = await requireContact({ next: "/dashboard/options/instruction-pdf" });
   const { orderId, checkout } = await searchParams;
 
   if (!orderId) notFound();

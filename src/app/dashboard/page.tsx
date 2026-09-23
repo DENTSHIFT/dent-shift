@@ -80,6 +80,8 @@ function DashboardNav({ bookingUrl }: { bookingUrl: string | undefined }) {
         className={styles.logo}
         src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
         alt="DENT SHIFT 歯科集患を、AIでシフトする。"
+        width={1844}
+        height={572}
       />
       <nav className={styles.nav} aria-label="ダッシュボードメニュー">
         {NAV_ITEMS.map((item) => (
@@ -120,7 +122,7 @@ function DashboardNav({ bookingUrl }: { bookingUrl: string | undefined }) {
 }
 
 export default async function DashboardPage() {
-  const contact = await requireContact();
+  const contact = await requireContact({ next: "/dashboard" });
   const [diagnoses, subscription] = await Promise.all([
     getDiagnosesByClinicId(contact.clinicId),
     getLatestSubscriptionByClinicId(contact.clinicId),
@@ -260,6 +262,73 @@ export default async function DashboardPage() {
                 </div>
               )}
 
+              {/* 2026-09-22最終修正: 最上段を4KPI(総合スコア/AI選出率/優先課題数/取得状況)に整理。
+                  既存の算出値(overall.points/shareOfVoice/questionSummary/measurement)をそのまま
+                  再利用するだけで、新しい集計ロジックは追加しない。 */}
+              <section className={styles.metricsGrid} aria-label="サマリーKPI">
+                <div className={styles.metricCard}>
+                  <p className={styles.metricLabel}>総合スコア</p>
+                  <p className={styles.metricValue}>{vm.result.overall.points} / {vm.result.overall.maxPoints}点</p>
+                  <p className={styles.metricNote}>{vm.trend.label}</p>
+                </div>
+                <div className={styles.metricCard}>
+                  <p className={styles.metricLabel}>AI選出率</p>
+                  {vm.result.shareOfVoice.status === "measured" ? (
+                    <>
+                      <p className={styles.metricValue}>{vm.result.shareOfVoice.percentage}%</p>
+                      <p className={styles.metricNote}>
+                        患者質問{vm.result.shareOfVoice.measuredQuestionCount}件中
+                        {vm.result.shareOfVoice.winCount}件で優位推薦
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className={styles.metricValue}>算出不可</p>
+                      <p className={styles.metricNote}>0%として表示しません</p>
+                    </>
+                  )}
+                </div>
+                <div className={styles.metricCard}>
+                  <p className={styles.metricLabel}>優先課題数</p>
+                  <p className={styles.metricValue}>{vm.questionSummary.needsImprovement}件</p>
+                  <p className={styles.metricNote}>競合優勢と判定された質問</p>
+                </div>
+                <div className={styles.metricCard}>
+                  <p className={styles.metricLabel}>取得状況</p>
+                  <p className={styles.metricValue} style={{ fontSize: 13 }}>
+                    {vm.result.measurement.domainSourceSummary}
+                  </p>
+                  <p className={styles.metricNote}>未測定分は0点として扱いません</p>
+                </div>
+              </section>
+
+              {/* 改善TOP3をフル幅で最上段直下に配置(2026-09-22最終修正) */}
+              <article className={styles.card} id="improvements">
+                <div className={styles.cardHeader}>
+                  <div>
+                    <h2 className={styles.sectionLabel}>今月の優先改善 TOP3</h2>
+                    <p className={styles.cardSubtitle}>保存済みの診断結果に基づく優先順です。</p>
+                  </div>
+                  <Link className={styles.textLink} href={`/diagnosis/result/${vm.latestId}`}>詳細を見る</Link>
+                </div>
+                <div className={styles.improvementList}>
+                  {vm.result.topImprovements.length === 0 ? (
+                    <p className={styles.itemDescription}>現在表示できる改善項目はありません。</p>
+                  ) : (
+                    vm.result.topImprovements.slice(0, 3).map((task, index) => (
+                      <div className={styles.improvementItem} key={task.key}>
+                        <span className={styles.rank}>{index + 1}</span>
+                        <div>
+                          <p className={styles.itemTitle}>{task.title}</p>
+                          <p className={styles.itemDescription}>理由：{task.detectedFact}</p>
+                          <p className={styles.itemDescription}>まずやること：{task.firstAction}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </article>
+
               <section className={styles.overviewGrid} aria-label="診断スコア概要">
                 <div className={`${styles.card} ${styles.scoreCard}`}>
                   <h2 className={styles.sectionLabel}>AI集患総合スコア</h2>
@@ -312,56 +381,8 @@ export default async function DashboardPage() {
                 </div>
               </section>
 
-              <section className={styles.metricsGrid} id="ai-search" aria-label="主要指標">
-                <div className={styles.metricCard}>
-                  <p className={styles.metricLabel}>AIで選ばれている割合</p>
-                  <p className={styles.metricValue}>未連携</p>
-                  <p className={styles.metricNote}>正式な割合データの連携後に表示</p>
-                </div>
-                <div className={styles.metricCard}>
-                  <p className={styles.metricLabel}>表示良好な患者質問</p>
-                  <p className={styles.metricValue}>{vm.questionSummary.displayGood}件</p>
-                  <p className={styles.metricNote}>全{vm.result.questionResults.length}件中</p>
-                </div>
-                <div className={styles.metricCard}>
-                  <p className={styles.metricLabel}>改善余地のある質問</p>
-                  <p className={styles.metricValue}>{vm.questionSummary.needsImprovement}件</p>
-                  <p className={styles.metricNote}>データ不足は別に区別しています</p>
-                </div>
-                <div className={styles.metricCard}>
-                  <p className={styles.metricLabel}>商圏順位</p>
-                  <p className={styles.metricValue}>未連携</p>
-                  <p className={styles.metricNote}>存在しない順位は推測表示しません</p>
-                </div>
-              </section>
-
-              <section className={styles.twoColumn}>
+              <section className={styles.twoColumn} id="ai-search">
                 <div className={styles.stack}>
-                  <article className={styles.card} id="improvements">
-                    <div className={styles.cardHeader}>
-                      <div>
-                        <h2 className={styles.sectionLabel}>今月の優先改善 TOP3</h2>
-                        <p className={styles.cardSubtitle}>保存済みの診断結果に基づく優先順です。</p>
-                      </div>
-                      <Link className={styles.textLink} href={`/diagnosis/result/${vm.latestId}`}>詳細を見る</Link>
-                    </div>
-                    <div className={styles.improvementList}>
-                      {vm.result.topImprovements.length === 0 ? (
-                        <p className={styles.itemDescription}>現在表示できる改善項目はありません。</p>
-                      ) : (
-                        vm.result.topImprovements.slice(0, 3).map((task, index) => (
-                          <div className={styles.improvementItem} key={task.key}>
-                            <span className={styles.rank}>{index + 1}</span>
-                            <div>
-                              <p className={styles.itemTitle}>{task.title}</p>
-                              <p className={styles.itemDescription}>まずやること：{task.firstAction}</p>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </article>
-
                   <article className={styles.card}>
                     <div className={styles.cardHeader}>
                       <div>

@@ -30,7 +30,9 @@ export async function sendEmailVerification(input: {
 
   if (config.provider === "disabled") return "disabled";
 
-  const verifyUrl = new URL("/api/auth/verify-email", config.appBaseUrl);
+  // UI画面(/verify-email)へ遷移させる。2026-09-24以前は/api/auth/verify-emailの
+  // 生JSONへ直接リンクしていたが、一般ユーザー向けの完了画面を表示するため変更した。
+  const verifyUrl = new URL("/verify-email", config.appBaseUrl);
   verifyUrl.searchParams.set("token", token);
 
   const message = buildEmailVerificationMessage({
