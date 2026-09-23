@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFreeDiagnosis, InvalidDiagnosisInputError } from "@/server/services/runFreeDiagnosis";
 import { MockAiProvider } from "@/server/providers/ai/mockAiProvider";
-import { MockCompetitorProvider } from "@/server/providers/competitor/mockCompetitorProvider";
+import { UnavailableCompetitorProvider } from "@/server/providers/competitor/unavailableCompetitorProvider";
 import { MockScoreProvider } from "@/server/providers/scoring/mockScoreProvider";
-import { MockAdComplianceProvider } from "@/server/providers/ad-compliance/mockAdComplianceProvider";
+import { UnavailableAdComplianceProvider } from "@/server/providers/ad-compliance/unavailableAdComplianceProvider";
 import {
   saveDiagnosisResult,
   updateDiagnosisResultEmailStatus,
@@ -25,9 +25,12 @@ import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository"
 // 消さない。canonical aiMeasurementProvider(下記)はあくまでOpenAI実測overlayで
 // あり、legacy mock診断を置き換えるものではない)。
 const aiProvider = new MockAiProvider();
-const competitorProvider = new MockCompetitorProvider();
+// 2026-09-24のユーザー指示: 近隣競合比較・医療広告AIチェックは実データ取得基盤が
+// 未実装のため、架空の競合医院名やダミーのリスク判定を本番で表示しない。実装完了までは
+// 常に空配列を返すUnavailable系providerを使う(UI側は「準備中」表示にフォールバックする)。
+const competitorProvider = new UnavailableCompetitorProvider();
 const scoreProvider = new MockScoreProvider();
-const adComplianceProvider = new MockAdComplianceProvider();
+const adComplianceProvider = new UnavailableAdComplianceProvider();
 
 export async function POST(request: NextRequest) {
   let body: unknown;

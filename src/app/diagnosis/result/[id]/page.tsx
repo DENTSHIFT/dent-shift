@@ -395,7 +395,7 @@ export default async function DiagnosisResultPage({
 
             {/* 競合比較 */}
             <Card className="ds-order-competitors">
-              <SectionTitle title="近隣の競合医院" subtitle="名称・距離のみの一覧です(競合の総合スコアは今回未算出のため比較表示はしていません)" />
+              <SectionTitle title="近隣の競合医院" subtitle="近隣競合との比較機能は準備中です" />
               {vm.competitors.length > 0 ? (
                 <div style={{ display: "grid", gap: 8 }}>
                   {vm.competitors.map((c, i) => (
@@ -426,7 +426,7 @@ export default async function DiagnosisResultPage({
                   ))}
                 </div>
               ) : (
-                <EmptyNote text="近隣競合医院のデータがありません。" />
+                <EmptyNote text="近隣競合比較は現在準備中です。対応が完了次第、この結果ページに反映されます。" />
               )}
             </Card>
 
@@ -435,23 +435,26 @@ export default async function DiagnosisResultPage({
                 既存のfindingデータ・判定ロジックは変更せず、表示形式のみ変更する。 */}
             <Card className="ds-order-adcompliance">
               <SectionTitle title="医療広告AIチェック" />
-              <Banner tone="info" text={vm.adCompliance.disclaimer} />
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-                <Tag tone="muted">検出 {vm.adCompliance.findings.length}件</Tag>
-                {vm.adCompliance.findings.filter((f) => f.severityLabel.includes("高")).length > 0 && (
-                  <Tag tone="warn">
-                    高リスク {vm.adCompliance.findings.filter((f) => f.severityLabel.includes("高")).length}件
-                  </Tag>
-                )}
-              </div>
-              <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-                {vm.adCompliance.findings.map((f) => (
-                  <AdComplianceFindingCard key={f.id} f={f} />
-                ))}
-                {vm.adCompliance.findings.length === 0 && (
-                  <EmptyNote text="現時点で検出された所見はありません。" tone="positive" />
-                )}
-              </div>
+              {vm.adCompliance.findings.length > 0 ? (
+                <>
+                  <Banner tone="info" text={vm.adCompliance.disclaimer} />
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                    <Tag tone="muted">検出 {vm.adCompliance.findings.length}件</Tag>
+                    {vm.adCompliance.findings.filter((f) => f.severityLabel.includes("高")).length > 0 && (
+                      <Tag tone="warn">
+                        高リスク {vm.adCompliance.findings.filter((f) => f.severityLabel.includes("高")).length}件
+                      </Tag>
+                    )}
+                  </div>
+                  <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                    {vm.adCompliance.findings.map((f) => (
+                      <AdComplianceFindingCard key={f.id} f={f} />
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <EmptyNote text="医療広告AIチェックは現在準備中です。対応が完了次第、この結果ページに反映されます。" />
+              )}
             </Card>
           </div>
 

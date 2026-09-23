@@ -477,12 +477,12 @@ export default async function DashboardPage() {
                     <div className={styles.cardHeader}>
                       <div>
                         <h2 className={styles.sectionLabel}>競合医院候補</h2>
-                        <p className={styles.cardSubtitle}>競合スコアは未取得のため表示していません。</p>
+                        <p className={styles.cardSubtitle}>近隣競合との比較機能は準備中です</p>
                       </div>
                     </div>
                     <div className={styles.competitorList}>
                       {vm.result.competitors.length === 0 ? (
-                        <p className={styles.itemDescription}>競合候補のデータがありません。</p>
+                        <p className={styles.itemDescription}>近隣競合比較は現在準備中です。対応が完了次第、こちらに反映されます。</p>
                       ) : (
                         vm.result.competitors.slice(0, competitorDisplayLimit).map((competitor) => (
                           <div className={styles.competitorItem} key={`${competitor.name}-${competitor.url ?? ""}`}>
