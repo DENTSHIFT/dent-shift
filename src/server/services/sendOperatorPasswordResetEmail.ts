@@ -11,10 +11,23 @@ export type OperatorPasswordResetDeliveryStatus = "disabled" | "sent";
 
 const RESET_EMAIL_FROM = "support@dentshift.jp";
 
+export class OperatorPasswordResetEmailConfigError extends Error {}
+
 /**
- * 運営者(Operator)パスワード再設定メールの送信(2026-09-23追加)。
+ * 運営者(Operator)パスワード再設定メールの送信(2026-09-23追加、翌日にAPIキーを分離)。
+ *
  * 送信元は診断結果メール等のRESULT_EMAIL_FROM設定に関わらず、常にsupport@dentshift.jp固定
- * (ユーザー指示)。メール基盤(RESULT_EMAIL_PROVIDER)が未設定の場合はdisabledを返し、
+ * (ユーザー指示)。
+ *
+ * 重要: 送信に使うAPIキーは、既存のRESEND_API_KEY(診断結果メール等が使用中)とは別の
+ * RESEND_API_KEY_DENTSHIFTを使う。原因調査の結果、既存のRESEND_API_KEYはResend側で
+ * dentshift.jp以外のドメイン専用に発行されており、support@dentshift.jpからの送信が
+ * 403で拒否されることが判明したため(2026-09-23)。RESEND_API_KEY_DENTSHIFTはdentshift.jp
+ * 送信専用に新規発行したキーで、既存のRESEND_API_KEY・診断結果メール送信処理には一切
+ * 触れない(同じRESULT_EMAIL_PROVIDERのdisabled/resend判定だけを流用し、有効/無効の
+ * オン・オフ自体は共有する)。
+ *
+ * メール基盤(RESULT_EMAIL_PROVIDER)が"disabled"の場合はdisabledを返し、
  * 呼び出し側(forgot-passwordルート)は「メールアドレスの存在有無を判別できない」応答を保つ。
  */
 export async function sendOperatorPasswordResetEmail(input: {
@@ -30,6 +43,13 @@ export async function sendOperatorPasswordResetEmail(input: {
   });
 
   if (config.provider === "disabled") return "disabled";
+
+  const dentshiftApiKey = process.env.RESEND_API_KEY_DENTSHIFT?.trim();
+  if (!dentshiftApiKey) {
+    throw new OperatorPasswordResetEmailConfigError(
+      "RESEND_API_KEY_DENTSHIFT is not configured; cannot send operator password reset email."
+    );
+  }
 
   const resetUrl = new URL("/ops/reset-password", config.appBaseUrl);
   resetUrl.searchParams.set("token", token);
@@ -55,7 +75,7 @@ export async function sendOperatorPasswordResetEmail(input: {
   `;
 
   await sendWithResend({
-    apiKey: config.apiKey,
+    apiKey: dentshiftApiKey,
     from: RESET_EMAIL_FROM,
     to: input.email,
     message: { subject, text, html },
