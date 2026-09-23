@@ -8,6 +8,7 @@ export class InviteRepositoryError extends Error {}
 export async function createInvite(input: {
   clinicName: string;
   email: string;
+  directorName?: string | null;
   stripePriceId: string;
   specialPriceJpy?: number;
   durationMonths?: number;
@@ -29,6 +30,7 @@ export async function createInvite(input: {
           inviteCode,
           clinicName: input.clinicName,
           email: input.email,
+          directorName: input.directorName ?? null,
           stripePriceId: input.stripePriceId,
           specialPriceJpy: input.specialPriceJpy ?? 1,
           durationMonths: input.durationMonths ?? 3,

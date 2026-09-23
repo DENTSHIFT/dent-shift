@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
   const {
     clinicName,
     email,
+    directorName,
     expiresAt,
     maxUses,
     campaign,
@@ -97,6 +98,7 @@ export async function POST(request: NextRequest) {
   const invite = await createInvite({
     clinicName: clinicName.trim(),
     email: email.trim(),
+    directorName: typeof directorName === "string" && directorName.trim() ? directorName.trim() : null,
     stripePriceId,
     expiresAt: typeof expiresAt === "string" && expiresAt ? new Date(expiresAt) : null,
     maxUses: typeof maxUses === "number" && maxUses > 0 ? Math.floor(maxUses) : 1,

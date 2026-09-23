@@ -149,7 +149,7 @@ export default async function OpsInvitesPage() {
                         {invite.inviteCode}
                       </td>
                       <td className={styles.clinicName}>{invite.clinicName}</td>
-                      <td className={styles.clinicName}>{clinic?.directorName ?? "—"}</td>
+                      <td className={styles.clinicName}>{clinic?.directorName ?? invite.directorName ?? "—"}</td>
                       <td className={styles.clinicUrl} title={clinic?.url ?? undefined}>
                         {clinic?.url ?? "—"}
                       </td>

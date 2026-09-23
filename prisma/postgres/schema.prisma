@@ -403,6 +403,9 @@ model Invite {
 
   clinicName String
   email      String
+  // 2026-09-24: 招待ページで「医院名」ではなく実際の個人名(院長・理事長名)を
+  // 出したいケース(木村正人からの個別招待等)のための任意項目。未入力ならnull。
+  directorName String?
 
   specialPriceJpy Int    @default(1)
   durationMonths  Int    @default(3)

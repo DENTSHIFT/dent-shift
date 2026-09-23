@@ -14,6 +14,7 @@ function defaultExpiresAt() {
 export function CreateInviteForm() {
   const router = useRouter();
   const [clinicName, setClinicName] = useState("");
+  const [directorName, setDirectorName] = useState("");
   const [email, setEmail] = useState("");
   const [expiresAt, setExpiresAt] = useState(defaultExpiresAt());
   const [campaign, setCampaign] = useState("");
@@ -38,6 +39,7 @@ export function CreateInviteForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clinicName,
+          directorName: directorName.trim() || undefined,
           email,
           expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
           // isPilotとcampaignは独立している。campaignはPilot/通常招待を問わず
@@ -55,6 +57,7 @@ export function CreateInviteForm() {
       }
       setCreatedUrl(`${window.location.origin}/invite/${data.inviteCode}`);
       setClinicName("");
+      setDirectorName("");
       setEmail("");
       setExpiresAt(defaultExpiresAt());
       setCampaign("");
@@ -91,6 +94,14 @@ export function CreateInviteForm() {
             required
             value={clinicName}
             onChange={(e) => setClinicName(e.target.value)}
+            style={inputStyle}
+          />
+        </Field>
+        <Field label="院長・理事長名(任意。招待ページで医院名の代わりに個人名を表示したい場合に入力)">
+          <input
+            value={directorName}
+            onChange={(e) => setDirectorName(e.target.value)}
+            placeholder="例: 新原 拓也"
             style={inputStyle}
           />
         </Field>

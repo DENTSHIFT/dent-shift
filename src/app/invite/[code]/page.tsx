@@ -64,7 +64,8 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
                   木村正人からの特別オファー
                 </p>
                 <h1 className={styles.title} style={{ marginTop: 6 }}>
-                  {invite.clinicName}先生だけが利用できる限定プランです。
+                  {invite.directorName ? `${invite.directorName} 様` : invite.clinicName}
+                  だけが利用できる限定プランです。
                 </h1>
                 <p className={styles.description}>
                   このオファーは、DENT SHIFT開発者 木村正人 から直接ご案内した医院様限定の特別プランです。
@@ -81,6 +82,7 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
                     gap: 8,
                   }}
                 >
+                  {invite.directorName && <Row label="医院名" value={invite.clinicName} />}
                   <Row
                     label="機能"
                     value={
