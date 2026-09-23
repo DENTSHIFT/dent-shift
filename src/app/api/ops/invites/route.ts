@@ -52,21 +52,30 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  let config;
-  try {
-    config = resolveInviteConfigFromProcessEnv();
-  } catch (error) {
-    if (error instanceof InviteConfigError) {
-      console.error("[POST /api/ops/invites] invite configuration error");
-      return NextResponse.json({ error: "招待発行は現在利用できません。" }, { status: 503 });
+  // Pilot招待はStripeを一切使用しないため、通常招待用のStripe Price設定
+  // (resolveInviteConfigFromProcessEnv())を要求しない。これにより、通常招待用の
+  // Stripe設定が本番で未整備でも、Pilot招待の発行はブロックされない。
+  let stripePriceId: string;
+  if (isPilot) {
+    stripePriceId = "pilot-no-stripe";
+  } else {
+    let config;
+    try {
+      config = resolveInviteConfigFromProcessEnv();
+    } catch (error) {
+      if (error instanceof InviteConfigError) {
+        console.error("[POST /api/ops/invites] invite configuration error");
+        return NextResponse.json({ error: "招待発行は現在利用できません。" }, { status: 503 });
+      }
+      throw error;
     }
-    throw error;
+    stripePriceId = config.defaultStripePriceId;
   }
 
   const invite = await createInvite({
     clinicName: clinicName.trim(),
     email: email.trim(),
-    stripePriceId: config.defaultStripePriceId,
+    stripePriceId,
     expiresAt: typeof expiresAt === "string" && expiresAt ? new Date(expiresAt) : null,
     maxUses: typeof maxUses === "number" && maxUses > 0 ? Math.floor(maxUses) : 1,
     requireEmailMatch: typeof requireEmailMatch === "boolean" ? requireEmailMatch : true,
