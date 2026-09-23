@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prismaClient";
 import { getCurrentOperator } from "@/server/auth/operatorSession";
 import { hashPassword, verifyPassword } from "@/server/auth/password";
+import { validateOperatorPassword } from "@/domain/auth/operatorPassword";
 import { recordAuditLog } from "@/server/db/auditLogRepository";
 
 /**
@@ -25,13 +26,18 @@ export async function POST(request: NextRequest) {
   if (typeof currentPassword !== "string" || !currentPassword) {
     return NextResponse.json({ error: "現在のパスワードを入力してください" }, { status: 400 });
   }
-  if (typeof newPassword !== "string" || newPassword.length < 8) {
-    return NextResponse.json({ error: "新しいパスワードは8文字以上で入力してください" }, { status: 400 });
+  if (typeof newPassword !== "string") {
+    return NextResponse.json({ error: "新しいパスワードを入力してください" }, { status: 400 });
   }
 
   const passwordOk = await verifyPassword(currentPassword, operator.passwordHash);
   if (!passwordOk) {
     return NextResponse.json({ error: "現在のパスワードが正しくありません" }, { status: 401 });
+  }
+
+  const validation = validateOperatorPassword(newPassword, currentPassword);
+  if (!validation.valid) {
+    return NextResponse.json({ error: validation.reason }, { status: 400 });
   }
 
   const newPasswordHash = await hashPassword(newPassword);

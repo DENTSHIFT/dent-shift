@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { validateOperatorPassword } from "@/domain/auth/operatorPassword";
 
 export function ChangePasswordForm() {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -15,6 +16,11 @@ export function ChangePasswordForm() {
     setError(null);
     if (newPassword !== confirmPassword) {
       setError("新しいパスワード(確認用)が一致しません");
+      return;
+    }
+    const validation = validateOperatorPassword(newPassword, currentPassword);
+    if (!validation.valid) {
+      setError(validation.reason);
       return;
     }
     setSubmitting(true);
@@ -60,7 +66,7 @@ export function ChangePasswordForm() {
           autoComplete="current-password"
         />
       </Field>
-      <Field label="新しいパスワード(8文字以上)">
+      <Field label="新しいパスワード(8文字以上、数字1文字以上、絵文字1文字以上)">
         <input
           required
           type="password"

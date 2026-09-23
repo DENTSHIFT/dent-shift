@@ -339,6 +339,11 @@ model Operator {
   createdAt    DateTime          @default(now())
   sessions     OperatorSession[]
   auditLogs    AuditLog[]
+
+  // 2026-09-23: パスワード再設定(forgot-password)用。平文トークンは一切保存しない
+  // (sha256ハッシュのみ)。使用済み・期限切れ判定はAPI側で行い、成功後は両方nullに戻す。
+  passwordResetTokenHash String?
+  passwordResetExpiresAt DateTime?
 }
 
 // 医院側Sessionモデルと同型だが、テーブル・Cookie名を分離し、権限を混在させない。

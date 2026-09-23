@@ -221,6 +221,9 @@ model Operator {
   createdAt    DateTime          @default(now())
   sessions     OperatorSession[]
   auditLogs    AuditLog[]
+
+  passwordResetTokenHash String?
+  passwordResetExpiresAt DateTime?
 }
 
 model OperatorSession {

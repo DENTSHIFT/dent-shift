@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import styles from "../ops.module.css";
 
 export function OpsLoginForm() {
@@ -53,6 +54,13 @@ export function OpsLoginForm() {
       >
         {submitting ? "確認中..." : "管理者としてログイン"}
       </button>
+
+      <p style={{ margin: "12px 0 0", fontSize: 12, color: "#6B7280", textAlign: "center" }}>
+        ログインにお困りの方は{" "}
+        <Link href="/ops/forgot-password" style={{ color: "#2563EB" }}>
+          パスワードを再設定する
+        </Link>
+      </p>
     </form>
   );
 }

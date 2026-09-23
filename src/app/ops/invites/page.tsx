@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireOperator } from "@/server/auth/requireOperator";
 import { listInvites } from "@/server/db/inviteRepository";
 import { recordAuditLog } from "@/server/db/auditLogRepository";
@@ -51,6 +52,12 @@ export default async function OpsInvitesPage() {
             <p className={styles.operatorEmail}>{operator.email}</p>
             <p className={styles.operatorRole}>権限: {operator.role}</p>
           </div>
+          <Link
+            href="/ops/settings"
+            style={{ fontSize: 12, fontWeight: 700, color: "#2563EB", textDecoration: "none" }}
+          >
+            設定
+          </Link>
           <OpsLogoutButton />
         </div>
       </header>

@@ -58,15 +58,33 @@ describe("POST /api/ops/auth/change-password", () => {
   });
 
   it("新しいパスワードが8文字未満なら400", async () => {
-    const response = await POST(request({ currentPassword: "current", newPassword: "short" }));
+    const response = await POST(request({ currentPassword: "current", newPassword: "a1🔥" }));
+    expect(response.status).toBe(400);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("数字を含まなければ400", async () => {
+    const response = await POST(request({ currentPassword: "current", newPassword: "abcdefgh🔥" }));
+    expect(response.status).toBe(400);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("絵文字を含まなければ400", async () => {
+    const response = await POST(request({ currentPassword: "current", newPassword: "abcdefg1" }));
+    expect(response.status).toBe(400);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("現在のパスワードと同一なら400", async () => {
+    const response = await POST(request({ currentPassword: "current", newPassword: "current" }));
     expect(response.status).toBe(400);
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it("正常系: ハッシュ化した新パスワードで更新し、監査ログを残す", async () => {
-    const response = await POST(request({ currentPassword: "current", newPassword: "newpassword123" }));
+    const response = await POST(request({ currentPassword: "current", newPassword: "newpassword1🔥" }));
     expect(response.status).toBe(200);
-    expect(mocks.hashPassword).toHaveBeenCalledWith("newpassword123");
+    expect(mocks.hashPassword).toHaveBeenCalledWith("newpassword1🔥");
     expect(mocks.update).toHaveBeenCalledWith({
       where: { id: "operator-1" },
       data: { passwordHash: "newsalt:newhash" },
@@ -77,8 +95,8 @@ describe("POST /api/ops/auth/change-password", () => {
   });
 
   it("新しいパスワードの平文は監査ログのmetadataに含まれない", async () => {
-    await POST(request({ currentPassword: "current", newPassword: "newpassword123" }));
+    await POST(request({ currentPassword: "current", newPassword: "newpassword1🔥" }));
     const call = mocks.recordAuditLog.mock.calls[0]![0];
-    expect(JSON.stringify(call)).not.toContain("newpassword123");
+    expect(JSON.stringify(call)).not.toContain("newpassword1🔥");
   });
 });
