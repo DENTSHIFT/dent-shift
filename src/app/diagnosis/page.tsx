@@ -27,7 +27,7 @@ const ERROR = "#DC2626";
 // 下部案内)。全面金色にはせず、背景はごく薄いwarm ivoryに留める。他画面には使わない。
 const GOLD_BG = "#FBF8EF";
 const GOLD_BORDER = "#E4D6A7";
-const GOLD_TEXT = "#93762A";
+const GOLD_TEXT = "#7A5F1F";
 const GOLD_BADGE_BG = "#F6EDD6";
 // 2026-09-07のユーザー指示: 「診断でわかること」3カードのみで使う薄いブルー系border。
 // styled-jsxのcomponent scope問題(SpecialistCardと同一原因)によりInsightCard自身が
@@ -345,6 +345,8 @@ export default function DiagnosisPage() {
             <img
               src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
               alt="DENT SHIFT 歯科集患を、AIでシフトする。"
+              width={1844}
+              height={572}
               style={{ height: 36 }}
             />
           </div>
@@ -377,6 +379,8 @@ export default function DiagnosisPage() {
             <img
               src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
               alt="DENT SHIFT 歯科集患を、AIでシフトする。"
+              width={1844}
+              height={572}
             />
           </header>
 
@@ -718,7 +722,10 @@ export default function DiagnosisPage() {
            (2026-09-07のユーザー指示「左40-45% / 右55-60%」)。 */
         @media (min-width: 768px) {
           .ds-shell {
-            grid-template-columns: 44% 56%;
+            /* 2026-09-22最終修正: 素の%指定だとフォームカードの最小コンテンツ幅が
+               トラック幅を押し広げ、768/1280px等で横オーバーフローする。
+               minmax(0, %)にしてトラックが内容の最小幅より縮められるようにする。 */
+            grid-template-columns: minmax(0, 44%) minmax(0, 56%);
             /* 2026-09-07のユーザー指示: 左右の縦位置ズレ修正。align-items: startを基本にし、
                左カラムだけjustify-content:centerや大きなmargin-topを入れない
                (=左カラムのロゴ上端と右フォームカード上端を揃える)。 */

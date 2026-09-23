@@ -25,9 +25,9 @@ describe("診断結果メールの表示状態", () => {
     );
   });
 
-  it("送信失敗時も結果ページを確認できることを案内する", () => {
+  it("送信失敗時も結果ページを確認できることを案内する(控えめな通知にする)", () => {
     const notice = buildResultEmailDeliveryNotice("failed");
-    expect(notice.tone).toBe("error");
-    expect(notice.text).toContain("このページで確認できます");
+    expect(notice.tone).toBe("info");
+    expect(notice.text).toContain("このページで結果をご確認ください");
   });
 });

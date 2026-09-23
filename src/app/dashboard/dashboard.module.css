@@ -68,10 +68,10 @@
 .dataBadge { color: #475569; background: #f1f5f9; }
 .domainNote { margin: 7px 0 0; color: #64748b; font-size: 10px; line-height: 1.45; }
 .metricsGrid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; margin-top: 14px; }
-.metricCard { min-height: 94px; box-sizing: border-box; padding: 14px; border: 1px solid #e5e9f0; border-radius: 14px; background: #fff; box-shadow: 0 2px 8px rgba(15,27,45,.04); }
-.metricLabel { margin: 0; color: #64748b; font-size: 12px; }
-.metricValue { margin: 9px 0 2px; color: #0f1b2d; font-size: 24px; font-weight: 800; }
-.metricNote { margin: 0; color: #94a3b8; font-size: 10px; }
+.metricCard { min-width: 0; min-height: 94px; box-sizing: border-box; padding: 14px; border: 1px solid #e5e9f0; border-radius: 14px; background: #fff; box-shadow: 0 2px 8px rgba(15,27,45,.04); }
+.metricLabel { margin: 0; color: #64748b; font-size: 12px; overflow-wrap: anywhere; }
+.metricValue { margin: 9px 0 2px; color: #0f1b2d; font-size: 24px; font-weight: 800; overflow-wrap: anywhere; }
+.metricNote { margin: 0; color: #94a3b8; font-size: 10px; overflow-wrap: anywhere; }
 .twoColumn { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(300px,.75fr); gap: 14px; margin-top: 14px; }
 .stack { display: grid; gap: 14px; align-content: start; }
 .cardHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
@@ -128,11 +128,13 @@
   .metricCard { min-height: 90px; padding: 13px; }
   .card { padding: 16px; border-radius: 14px; }
   .mobileConsultCard { display: block; }
-  .mobileNav { position: fixed; inset: auto 0 0; z-index: 20; height: 66px; display: grid; grid-template-columns: repeat(5,1fr); background: #fff; border-top: 1px solid #e5e9f0; }
-  .mobileNav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #526176; font-size: 10px; font-weight: 650; text-decoration: none; }
+  .mobileNav { position: fixed; inset: auto 0 0; min-width: 0; width: 100%; box-sizing: border-box; z-index: 20; height: 66px; display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); background: #fff; border-top: 1px solid #e5e9f0; }
+  .mobileNav a { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #526176; font-size: 10px; font-weight: 650; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
   .mobileNav a:first-child { color: #2563eb; }
   .subscriptionCard { align-items: flex-start; flex-direction: column; padding: 15px 16px; }
-  .subscriptionActions { width: 100%; justify-content: space-between; }
+  /* 2026-09-22最終修正: 320px幅で「初期設定を確認する」「契約・請求を管理する」等の
+     nowrapテキストが1行に収まらず横オーバーフローしていたため、折り返しを許可する。 */
+  .subscriptionActions { width: 100%; justify-content: flex-start; flex-wrap: wrap; row-gap: 8px; }
 }
 
 @media (max-width:430px) {

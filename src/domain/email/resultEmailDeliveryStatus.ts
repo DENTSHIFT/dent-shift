@@ -28,10 +28,13 @@ export function buildResultEmailDeliveryNotice(status: ResultEmailDeliveryStatus
     };
   }
   if (status === "failed") {
+    // 2026-09-22最終修正: 利用者が対応できないシステム起因のメール送信失敗を、
+    // ファーストビュー最上部の赤い警告として強く見せない。主メッセージは
+    // 利用者が実際に取れる行動(URL保存)にし、メール未達の事実は控えめに添える。
     return {
-      tone: "error",
-      title: "診断結果メールを送信できませんでした",
-      text: "診断結果はこのページで確認できます。再確認できるよう、このページのURLを保存してください。",
+      tone: "info",
+      title: "このページのURLを保存してください",
+      text: "診断結果メールを送信できなかったため、このページで結果をご確認ください。",
     };
   }
   if (status === "disabled") {

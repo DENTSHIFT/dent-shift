@@ -33,6 +33,14 @@ const BG = "#F5F7FA";
 const BORDER = "#E5E9F0";
 const MUTED = "#6B7280";
 
+// 2026-09-22最終修正: 総合スコアだけでは良否が伝わらないため、点数帯ごとの評価ラベルを付す。
+function scoreEvaluationLabel(points: number): { label: string; color: string } {
+  if (points >= 85) return { label: "優良", color: "#166534" };
+  if (points >= 70) return { label: "良好", color: "#166534" };
+  if (points >= 40) return { label: "改善余地あり", color: "#B45309" };
+  return { label: "要改善", color: "#B91C1C" };
+}
+
 const STATUS_COLOR: Record<PatientQuestionResult["status"], string> = {
   win: "#16A34A",
   close: "#D97706",
@@ -129,14 +137,15 @@ export default async function DiagnosisResultPage({
         }
         .ds-order-clinic { order: 1; }
         .ds-order-score { order: 2; }
-        .ds-order-domains { order: 3; }
+        .ds-order-summary { order: 3; }
         .ds-order-top3 { order: 4; }
-        .ds-order-questions { order: 5; }
-        .ds-order-rootcause { order: 6; }
-        .ds-order-competitors { order: 7; }
-        .ds-order-adcompliance { order: 8; }
-        .ds-order-status { order: 9; }
-        .ds-order-consultation { order: 10; }
+        .ds-order-domains { order: 5; }
+        .ds-order-questions { order: 6; }
+        .ds-order-rootcause { order: 7; }
+        .ds-order-competitors { order: 8; }
+        .ds-order-adcompliance { order: 9; }
+        .ds-order-status { order: 10; }
+        .ds-order-consultation { order: 11; }
         @media (min-width: 960px) {
           .ds-result-grid {
             grid-template-columns: minmax(0, 2.2fr) minmax(300px, 1fr);
@@ -162,6 +171,10 @@ export default async function DiagnosisResultPage({
         }
         .ds-details summary::-webkit-details-marker {
           display: none;
+        }
+        .ds-details summary:focus-visible {
+          outline: 2px solid ${BLUE};
+          outline-offset: 2px;
         }
         @media (max-width: 599px) {
           .ds-score-gauge {
@@ -196,6 +209,8 @@ export default async function DiagnosisResultPage({
           <img
             src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
             alt="DENT SHIFT 歯科集患を、AIでシフトする。"
+            width={1844}
+            height={572}
             style={{ width: 172, height: "auto", display: "block" }}
           />
           {showDashboardReturn && (
@@ -286,6 +301,18 @@ export default async function DiagnosisResultPage({
                       {vm.overall.points}
                     </span>
                     <span style={{ fontSize: 12, color: MUTED }}>/ {vm.overall.maxPoints}点</span>
+                    {!vm.overall.statusCaveat && (
+                      <span
+                        style={{
+                          marginTop: 4,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: scoreEvaluationLabel(vm.overall.points).color,
+                        }}
+                      >
+                        {scoreEvaluationLabel(vm.overall.points).label}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div style={{ flex: 1, minWidth: 200 }}>
@@ -303,6 +330,20 @@ export default async function DiagnosisResultPage({
                 </div>
               </div>
             </Card>
+
+            {/* 診断要約(2026-09-22最終修正): 総合スコア直後に1文で「今どういう状態か」を示す。
+                新しい判定ロジックは追加せず、既存のvm(評価ラベル・改善TOP3の1位)のみから組み立てる。 */}
+            {vm.topImprovements.length > 0 && (
+              <Card className="ds-order-summary">
+                <p style={{ margin: 0, fontSize: 13, color: NAVY, lineHeight: 1.8 }}>
+                  {vm.overall.statusCaveat
+                    ? vm.overall.statusCaveat
+                    : `AI集患スコアは「${scoreEvaluationLabel(vm.overall.points).label}」です。`}
+                  {" "}
+                  特に「{vm.topImprovements[0]!.title}」の改善が優先です。
+                </p>
+              </Card>
+            )}
 
             {/* 6領域スコア */}
             <Card className="ds-order-domains">
@@ -337,7 +378,7 @@ export default async function DiagnosisResultPage({
             <Card className="ds-order-rootcause">
               <SectionTitle
                 title="改善余地がある理由"
-                subtitle="「改善余地あり」と判定された質問について、根拠のある範囲でのみ原因を示します(原因説明)"
+                subtitle="「競合優勢」と判定された質問について、根拠のある範囲でのみ原因を示します(原因説明)"
               />
               {vm.lossRootCauses.length > 0 ? (
                 <div style={{ display: "grid", gap: 14 }}>
@@ -348,7 +389,7 @@ export default async function DiagnosisResultPage({
               ) : hasLoseQuestions ? (
                 <EmptyNote text="改善余地のある質問はありますが、根拠不足のため原因を特定できませんでした(捏造を避けるため、断定的な原因表示はしていません)。" />
               ) : (
-                <EmptyNote text="現時点で「改善余地あり」と判定された患者質問はありません。" tone="positive" />
+                <EmptyNote text="現時点で「競合優勢」と判定された患者質問はありません。" tone="positive" />
               )}
             </Card>
 
@@ -389,11 +430,21 @@ export default async function DiagnosisResultPage({
               )}
             </Card>
 
-            {/* 医療広告AIチェック */}
+            {/* 医療広告AIチェック(2026-09-22最終修正): 長文カードの羅列から、
+                「検出N件・重要度高N件」の件数サマリー+個別所見はアコーディオンへ変更。
+                既存のfindingデータ・判定ロジックは変更せず、表示形式のみ変更する。 */}
             <Card className="ds-order-adcompliance">
               <SectionTitle title="医療広告AIチェック" />
               <Banner tone="info" text={vm.adCompliance.disclaimer} />
-              <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                <Tag tone="muted">検出 {vm.adCompliance.findings.length}件</Tag>
+                {vm.adCompliance.findings.filter((f) => f.severityLabel.includes("高")).length > 0 && (
+                  <Tag tone="warn">
+                    高リスク {vm.adCompliance.findings.filter((f) => f.severityLabel.includes("高")).length}件
+                  </Tag>
+                )}
+              </div>
+              <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
                 {vm.adCompliance.findings.map((f) => (
                   <AdComplianceFindingCard key={f.id} f={f} />
                 ))}
@@ -482,7 +533,7 @@ export default async function DiagnosisResultPage({
               textDecoration: "none",
             }}
           >
-            プランを比較する
+            改善プランを比較する
           </Link>
         </section>
 
@@ -844,12 +895,19 @@ function ImprovementCard({
               <Tag tone="danger">重大リスク</Tag>
             </div>
           )}
-          <p style={{ margin: 0, fontWeight: 700, color: NAVY, fontSize: 14 }}>{task.title}</p>
-          <p style={{ fontSize: 12, color: "#374151", margin: "4px 0 0" }}>
-            まずやること: {task.firstAction}
+          {/* 2026-09-22最終修正: 改善TOP3を「課題/理由/最初に行う作業/期待できる改善領域/詳細を見る」で
+              統一表示する。既存フィールド(title/detectedFact/firstAction/patientImpact)の
+              呼び方を変えるだけで、新しいデータ・判定ロジックは追加しない。 */}
+          <p style={{ margin: 0, fontWeight: 700, color: NAVY, fontSize: 14 }}>課題: {task.title}</p>
+          <p style={{ fontSize: 12, color: "#374151", margin: "6px 0 0" }}>理由: {task.detectedFact}</p>
+          <p style={{ fontSize: 12, color: "#374151", margin: "6px 0 0" }}>
+            最初に行う作業: {task.firstAction}
+          </p>
+          <p style={{ fontSize: 12, color: "#374151", margin: "6px 0 0" }}>
+            期待できる改善領域: {task.patientImpact}
           </p>
           {task.isCriticalRisk && task.criticalRiskReason && (
-            <p style={{ fontSize: 12, color: "#991B1B", margin: "4px 0 0" }}>
+            <p style={{ fontSize: 12, color: "#991B1B", margin: "6px 0 0" }}>
               重大リスクの理由: {task.criticalRiskReason}
             </p>
           )}
@@ -857,10 +915,6 @@ function ImprovementCard({
           <details className="ds-details" style={{ marginTop: 8 }}>
             <summary>詳細を見る</summary>
             <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-              <p style={{ fontSize: 12, color: "#374151", margin: 0 }}>検出事実: {task.detectedFact}</p>
-              <p style={{ fontSize: 12, color: "#374151", margin: 0 }}>
-                想定される影響: {task.patientImpact}
-              </p>
               {task.dataGapReason && (
                 <p style={{ fontSize: 12, color: "#D97706", margin: 0 }}>
                   データ不足: {task.dataGapReason}
@@ -893,25 +947,30 @@ function AdComplianceFindingCard({ f }: { f: AdComplianceFindingViewModel }) {
       ? { bg: "#F9FAFB", border: BORDER, fg: MUTED }
       : { bg: "#FEF2F2", border: "#FECACA", fg: "#991B1B" };
   return (
-    <div style={{ border: `1px solid ${tone.border}`, background: tone.bg, borderRadius: 10, padding: 14 }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+    <details
+      className="ds-details"
+      style={{ border: `1px solid ${tone.border}`, background: tone.bg, borderRadius: 10, padding: 14 }}
+    >
+      <summary style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <Tag tone={f.visualTone === "sample" ? "muted" : "warn"}>{f.severityLabel}</Tag>
         <Tag tone="muted">{f.confidenceLabel}</Tag>
         {f.escalationEligible && <Tag tone="info">改善TOP3にも反映済み</Tag>}
+        <span style={{ fontSize: 12, color: tone.fg, fontWeight: 400 }}>{f.displayMessage}</span>
+      </summary>
+      <div style={{ marginTop: 8 }}>
+        <p style={{ margin: "6px 0 0", fontSize: 12, color: MUTED }}>{f.sourceLabel}</p>
+        <p style={{ margin: "4px 0 0", fontSize: 12, color: MUTED }}>確認推奨: {f.requiresReviewBy}</p>
+        {f.evidence.length > 0 && (
+          <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 12, color: MUTED }}>
+            {f.evidence.map((e, i) => (
+              <li key={i}>
+                「{e.quotedText}」({e.sourceLocation}) {e.isSampleEvidence ? "※サンプルデータ" : ""}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
-      <p style={{ margin: 0, fontSize: 13, color: tone.fg }}>{f.displayMessage}</p>
-      <p style={{ margin: "6px 0 0", fontSize: 12, color: MUTED }}>{f.sourceLabel}</p>
-      <p style={{ margin: "4px 0 0", fontSize: 12, color: MUTED }}>確認推奨: {f.requiresReviewBy}</p>
-      {f.evidence.length > 0 && (
-        <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 12, color: MUTED }}>
-          {f.evidence.map((e, i) => (
-            <li key={i}>
-              「{e.quotedText}」({e.sourceLocation}) {e.isSampleEvidence ? "※サンプルデータ" : ""}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    </details>
   );
 }
 
@@ -987,7 +1046,7 @@ function ConsultationCta({
           fontSize: 14,
         }}
       >
-        AI集患スペシャリストに無料相談
+        診断結果について無料相談
       </TrackedCtaLink>
     </div>
   );

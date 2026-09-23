@@ -17,6 +17,7 @@ export function createLineWorksClient(config: EnabledLineWorksConfig): LineWorks
   return {
     async sendMessage(_input: LineWorksMessageInput): Promise<void> {
       void config;
+      void _input;
       throw new LineWorksDeliveryError(
         "LINE WORKS連携は開通・API仕様確定待ちのため未実装です(STEP6報告事項)。"
       );

@@ -1,0 +1,455 @@
+/* 2026-09-22 最終修正: モバイル横崩れの根絶を最優先にする。
+   固定幅・デスクトップ専用min-widthは持たせず、すべて100%/box-sizing基準にする。 */
+
+.section {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 56px 20px;
+  min-width: 0;
+}
+
+.sectionTight {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 40px 20px;
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .section {
+    padding: 104px 24px;
+  }
+  .sectionTight {
+    padding: 56px 24px;
+  }
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #2563eb;
+}
+
+.heading {
+  margin: 8px 0 0;
+  font-size: 22px;
+  line-height: 1.4;
+  color: #0f1b2d;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 720px) {
+  .heading {
+    font-size: 26px;
+  }
+}
+
+.sub {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #4b5563;
+  max-width: 640px;
+  overflow-wrap: anywhere;
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 28px;
+  width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 720px) {
+  .cardGrid2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cardGrid3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .cardGrid4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.card {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #e5e9f0;
+  border-radius: 14px;
+  background: #fff;
+  padding: 20px;
+  overflow-wrap: anywhere;
+}
+
+.mockFrame {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin-top: 28px;
+  border: 1px solid #e5e9f0;
+  border-radius: 16px;
+  background: #fff;
+  padding: 20px;
+  box-shadow: 0 12px 32px rgba(15, 27, 45, 0.05);
+  position: relative;
+  overflow-wrap: anywhere;
+}
+
+.mockLabel {
+  display: inline-flex;
+  align-items: center;
+  background: #f0f2f5;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+
+.twoCol {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 960px) {
+  .twoCol {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  }
+}
+
+.pillRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.pill {
+  box-sizing: border-box;
+  max-width: 100%;
+  font-size: 12px;
+  color: #0f1b2d;
+  background: #f5f7fa;
+  border: 1px solid #e5e9f0;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ctaButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  max-width: 100%;
+  min-height: 48px;
+  box-sizing: border-box;
+  background: #2563eb;
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.16);
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.ctaButtonFull {
+  width: 100%;
+}
+
+.ctaButtonOutline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  box-sizing: border-box;
+  background: #fff;
+  color: #2563eb;
+  border: 1px solid #2563eb;
+  padding: 10px 20px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.fv {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  background: linear-gradient(180deg, #f5f8fc 0%, #ffffff 100%);
+  padding: 40px 16px 32px;
+}
+
+@media (min-width: 720px) {
+  .fv {
+    padding: 56px 20px 40px;
+  }
+}
+
+.fvInner {
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  align-items: center;
+  min-width: 0;
+}
+
+@media (min-width: 960px) {
+  .fvInner {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  }
+}
+
+/* 比較表: デスクトップは表、768px未満は縦型カードへ切り替える */
+.tableWrap {
+  margin-top: 28px;
+  width: 100%;
+  min-width: 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  table-layout: fixed;
+}
+
+.table th,
+.table td {
+  padding: 12px 12px;
+  text-align: left;
+  border-bottom: 1px solid #eef1f5;
+  overflow-wrap: anywhere;
+}
+
+.table th {
+  background: #f8fafc;
+  color: #0f1b2d;
+  font-weight: 700;
+}
+
+.table td {
+  color: #374151;
+}
+
+.tableHighlightCol {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.compareCards {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .tableWrap table {
+    display: none;
+  }
+  .compareCards {
+    display: grid;
+    gap: 12px;
+  }
+}
+
+.compareCard {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid #e5e9f0;
+  border-radius: 14px;
+  padding: 16px;
+  background: #fff;
+  min-width: 0;
+}
+
+.compareRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f2f5;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.compareRow:last-child {
+  border-bottom: none;
+}
+
+.goldCard {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #e4d6a7;
+  background: #fbf8ef;
+  border-radius: 16px;
+  padding: 22px;
+  overflow-wrap: anywhere;
+}
+
+/* 料金カード */
+.priceGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 28px;
+  width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 860px) {
+  .priceGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.priceCard {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #e5e9f0;
+  border-radius: 16px;
+  background: #fff;
+  padding: 24px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.priceCardPopular {
+  border: 1.5px solid #2563eb;
+}
+
+.popularBadge {
+  position: absolute;
+  top: -13px;
+  left: 24px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+/* FAQ */
+.faqItem {
+  box-sizing: border-box;
+  border: 1px solid #e5e9f0;
+  border-radius: 12px;
+  overflow: hidden;
+  width: 100%;
+  min-width: 0;
+}
+
+.faqButton {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+  background: #fff;
+  border: none;
+  padding: 14px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f1b2d;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  overflow-wrap: anywhere;
+}
+
+.faqButton:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+}
+
+.faqAnswer {
+  padding: 0 16px 16px;
+  font-size: 13px;
+  color: #4b5563;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.faqCategoryLabel {
+  margin: 28px 0 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+}
+
+.faqCategoryLabel:first-child {
+  margin-top: 0;
+}
+
+/* 診断で分かる4つのこと: タブ */
+.tabRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.tabButton {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid #e5e9f0;
+  background: #fff;
+  color: #4b5563;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tabButtonActive {
+  background: #0f1b2d;
+  color: #fff;
+  border-color: #0f1b2d;
+}
+
+.imgResponsive {
+  max-width: 100%;
+  height: auto;
+}
+
+/* アクセシビリティ監査(2026-09-22): フォーカスリングを削除せず、キーボード操作時に
+   明確に見えるようにする。既存のブラウザ既定アウトラインを消していないため追加のみ。 */
+.ctaButton:focus-visible,
+.ctaButtonOutline:focus-visible,
+.tabButton:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}

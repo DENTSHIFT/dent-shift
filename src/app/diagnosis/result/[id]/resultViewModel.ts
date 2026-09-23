@@ -65,10 +65,13 @@ const DOMAIN_LABEL: Record<DomainKey, string> = {
 // は算出ロジック側の都合の並びなので、表示専用にこの並びへ入れ替える(算出ロジックは変更しない)。
 export const DOMAIN_DISPLAY_ORDER: DomainKey[] = ["AIO", "MEO", "SEO", "LLMO", "WEB_BOOKING", "REVIEWS"];
 
+// 2026-09-22のユーザー指示: 患者質問ごとの勝ち負け判定の表示ラベルを統一
+// (win→自院優勢 / close→拮抗 / lose→競合優勢 / insufficient_data→データ不足)。
+// ダッシュボード・診断結果画面の両方がこの定数を共有するため、両画面で表示が揃う。
 const QUESTION_STATUS_LABEL: Record<QuestionOutcomeStatus, string> = {
-  win: "表示良好",
-  close: "競合と同程度",
-  lose: "改善余地あり",
+  win: "自院優勢",
+  close: "拮抗",
+  lose: "競合優勢",
   insufficient_data: "データ不足",
 };
 

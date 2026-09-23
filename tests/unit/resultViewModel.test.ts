@@ -217,13 +217,13 @@ describe("buildDomainViewModels(6領域の表示順)", () => {
 describe("buildQuestionResultViewModel(患者質問別のAI表示状況)", () => {
   it("内部statusを院長向けの中立な表示ラベルへ変換する", () => {
     expect(buildQuestionResultViewModel(questionResult({ status: "win" })).statusLabel).toBe(
-      "表示良好"
+      "自院優勢"
     );
     expect(buildQuestionResultViewModel(questionResult({ status: "close" })).statusLabel).toBe(
-      "競合と同程度"
+      "拮抗"
     );
     expect(buildQuestionResultViewModel(questionResult({ status: "lose" })).statusLabel).toBe(
-      "改善余地あり"
+      "競合優勢"
     );
     expect(
       buildQuestionResultViewModel(questionResult({ status: "insufficient_data" })).statusLabel
