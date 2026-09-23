@@ -57,34 +57,34 @@ describe("POST /api/ops/auth/change-password", () => {
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it("新しいパスワードが8文字未満なら400", async () => {
-    const response = await POST(request({ currentPassword: "current", newPassword: "a1🔥" }));
+  it("7文字以下は400", async () => {
+    const response = await POST(request({ currentPassword: "current1", newPassword: "abc1234" }));
     expect(response.status).toBe(400);
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it("数字を含まなければ400", async () => {
-    const response = await POST(request({ currentPassword: "current", newPassword: "abcdefgh🔥" }));
+    const response = await POST(request({ currentPassword: "current1", newPassword: "abcdefgh" }));
     expect(response.status).toBe(400);
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it("絵文字を含まなければ400", async () => {
-    const response = await POST(request({ currentPassword: "current", newPassword: "abcdefg1" }));
+  it("英字を含まなければ400", async () => {
+    const response = await POST(request({ currentPassword: "current1", newPassword: "12345678" }));
     expect(response.status).toBe(400);
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it("現在のパスワードと同一なら400", async () => {
-    const response = await POST(request({ currentPassword: "current", newPassword: "current" }));
+    const response = await POST(request({ currentPassword: "current123", newPassword: "current123" }));
     expect(response.status).toBe(400);
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it("正常系: ハッシュ化した新パスワードで更新し、監査ログを残す", async () => {
-    const response = await POST(request({ currentPassword: "current", newPassword: "newpassword1🔥" }));
+  it("正常系: 英字+数字8文字以上ならハッシュ化した新パスワードで更新し、監査ログを残す", async () => {
+    const response = await POST(request({ currentPassword: "current1", newPassword: "newpassword1" }));
     expect(response.status).toBe(200);
-    expect(mocks.hashPassword).toHaveBeenCalledWith("newpassword1🔥");
+    expect(mocks.hashPassword).toHaveBeenCalledWith("newpassword1");
     expect(mocks.update).toHaveBeenCalledWith({
       where: { id: "operator-1" },
       data: { passwordHash: "newsalt:newhash" },
@@ -94,9 +94,19 @@ describe("POST /api/ops/auth/change-password", () => {
     );
   });
 
+  it("記号を含む新パスワードでもvalidなら成功", async () => {
+    const response = await POST(request({ currentPassword: "current1", newPassword: "abc123!?" }));
+    expect(response.status).toBe(200);
+  });
+
+  it("絵文字を含まなくても成功(絵文字は必須ではない)", async () => {
+    const response = await POST(request({ currentPassword: "current1", newPassword: "abcdefg1" }));
+    expect(response.status).toBe(200);
+  });
+
   it("新しいパスワードの平文は監査ログのmetadataに含まれない", async () => {
-    await POST(request({ currentPassword: "current", newPassword: "newpassword1🔥" }));
+    await POST(request({ currentPassword: "current1", newPassword: "newpassword1" }));
     const call = mocks.recordAuditLog.mock.calls[0]![0];
-    expect(JSON.stringify(call)).not.toContain("newpassword1🔥");
+    expect(JSON.stringify(call)).not.toContain("newpassword1");
   });
 });

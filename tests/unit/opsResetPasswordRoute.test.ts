@@ -58,7 +58,7 @@ beforeEach(() => {
 describe("POST /api/ops/auth/reset-password", () => {
   it("トークンが存在しなければ400、DBは更新しない", async () => {
     mocks.findFirst.mockResolvedValue(null);
-    const response = await POST(request({ token: "unknown", newPassword: "newpassword1🔥" }));
+    const response = await POST(request({ token: "unknown", newPassword: "newpassword1" }));
     expect(response.status).toBe(400);
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
@@ -70,7 +70,7 @@ describe("POST /api/ops/auth/reset-password", () => {
       passwordResetTokenHash: TOKEN_HASH,
       passwordResetExpiresAt: new Date(Date.now() - 1000),
     });
-    const response = await POST(request({ token: RAW_TOKEN, newPassword: "newpassword1🔥" }));
+    const response = await POST(request({ token: RAW_TOKEN, newPassword: "newpassword1" }));
     expect(response.status).toBe(400);
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
@@ -82,7 +82,7 @@ describe("POST /api/ops/auth/reset-password", () => {
       passwordResetTokenHash: null,
       passwordResetExpiresAt: null,
     });
-    const response = await POST(request({ token: RAW_TOKEN, newPassword: "newpassword1🔥" }));
+    const response = await POST(request({ token: RAW_TOKEN, newPassword: "newpassword1" }));
     expect(response.status).toBe(400);
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
@@ -93,15 +93,43 @@ describe("POST /api/ops/auth/reset-password", () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
+  it("7文字以下は400", async () => {
+    const response = await POST(request({ token: RAW_TOKEN, newPassword: "abc1234" }));
+    expect(response.status).toBe(400);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("英字のみ(数字なし)は400", async () => {
+    const response = await POST(request({ token: RAW_TOKEN, newPassword: "abcdefgh" }));
+    expect(response.status).toBe(400);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("数字のみ(英字なし)は400", async () => {
+    const response = await POST(request({ token: RAW_TOKEN, newPassword: "12345678" }));
+    expect(response.status).toBe(400);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("記号を含んでいても要件を満たせば成功", async () => {
+    const response = await POST(request({ token: RAW_TOKEN, newPassword: "abc123!?" }));
+    expect(response.status).toBe(200);
+  });
+
+  it("絵文字を含まなくても成功(絵文字は必須ではない)", async () => {
+    const response = await POST(request({ token: RAW_TOKEN, newPassword: "abcdefg1" }));
+    expect(response.status).toBe(200);
+  });
+
   it("現在のパスワードと同一なら400", async () => {
     mocks.verifyPassword.mockResolvedValue(true);
-    const response = await POST(request({ token: RAW_TOKEN, newPassword: "samepassword1🔥" }));
+    const response = await POST(request({ token: RAW_TOKEN, newPassword: "samepassword1" }));
     expect(response.status).toBe(400);
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
   it("正常系: パスワード更新・トークン無効化・全セッション削除・監査ログ記録を1トランザクションで行う", async () => {
-    const response = await POST(request({ token: RAW_TOKEN, newPassword: "newpassword1🔥" }));
+    const response = await POST(request({ token: RAW_TOKEN, newPassword: "newpassword1" }));
     expect(response.status).toBe(200);
     expect(mocks.update).toHaveBeenCalledWith({
       where: { id: "operator-1" },

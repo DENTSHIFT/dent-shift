@@ -78,7 +78,7 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
   return (
     <form onSubmit={handleSubmit} className={styles.loginForm}>
       <label className={styles.field}>
-        <span className={styles.fieldLabel}>新しいパスワード(8文字以上、数字1文字以上、絵文字1文字以上)</span>
+        <span className={styles.fieldLabel}>新しいパスワード(8文字以上、英字1文字以上、数字1文字以上)</span>
         <input
           className={styles.input}
           required

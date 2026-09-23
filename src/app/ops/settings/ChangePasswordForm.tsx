@@ -66,7 +66,7 @@ export function ChangePasswordForm() {
           autoComplete="current-password"
         />
       </Field>
-      <Field label="新しいパスワード(8文字以上、数字1文字以上、絵文字1文字以上)">
+      <Field label="新しいパスワード(8文字以上、英字1文字以上、数字1文字以上)">
         <input
           required
           type="password"
