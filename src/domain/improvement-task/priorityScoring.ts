@@ -56,6 +56,12 @@ export function domainLabel(domain: DomainKey): string {
 const DATA_GAP_REASON_BY_DOMAIN: Partial<Record<DomainKey, string>> = {
   MEO: "GBP(Googleビジネスプロフィール)のURLが未入力のため測定できません",
   WEB_BOOKING: "Web予約導線のURLが未入力のため測定できません",
+  // 2026-09-24: SEO/LLMO/REVIEWSは入力不足ではなく、実データ取得基盤が未実装のため
+  // 測定できない(MockScoreProviderの疑似乱数生成を廃止した結果)。医院側の入力不足であるかの
+  // ような誤解を与えないよう、他の2領域とは異なる文言にする。
+  SEO: "SEOの実測連携は現在準備中です",
+  LLMO: "LLMOの実測連携は現在準備中です",
+  REVIEWS: "口コミ・信頼性の実測連携は現在準備中です",
 };
 
 /**
@@ -230,11 +236,18 @@ function generateAdComplianceCandidates(findings: AdRiskFinding[]): DraftImprove
     });
 }
 
+// 2026-09-24: 医院側の入力不足で測定できない領域(URL未入力)と、当社側の実装が
+// まだ実データ取得基盤に接続していないため測定できない領域を区別する。前者は
+// 「情報を登録してください」で正しいが、後者に同じ文言を使うと医院側の不備であるかの
+// ように誤解させてしまうため、title/recommendedActionを分ける。
+const MISSING_INPUT_DOMAINS: DomainKey[] = ["MEO", "WEB_BOOKING"];
+
 function buildDataGapCandidate(domainScore: DomainScore): DraftImprovementCandidate {
   const domain = domainScore.domain;
   const reason =
     DATA_GAP_REASON_BY_DOMAIN[domain] ?? `${domainLabel(domain)}に関する情報が未登録のため測定できません`;
   const blocking = CRITICAL_BLOCKING_DOMAINS.includes(domain);
+  const isMissingInput = MISSING_INPUT_DOMAINS.includes(domain);
   // domainScore.status==="unavailable"の場合、全criterionがunavailableであり(deriveAggregateStatus参照)、
   // かつscoring.tsの検証によりそれぞれが既にunavailableReasonを持つ。この候補生成ロジック自身が
   // 新たな理由を主張せず、根拠となったcriterionからそのまま機械的に引き継ぐ(2026-09-06のユーザー指示④)。
@@ -251,11 +264,16 @@ function buildDataGapCandidate(domainScore: DomainScore): DraftImprovementCandid
     provisional: false,
     kind: "data_gap",
     domain,
-    title: `${domainLabel(domain)}: まず確認が必要です(データ不足)`,
+    title: isMissingInput
+      ? `${domainLabel(domain)}: まず確認が必要です(データ不足)`
+      : `${domainLabel(domain)}: 現在計測準備中です`,
     detectedFact: reason,
-    patientImpact:
-      "医院の弱点と断定はできません。まず情報の登録・接続・確認が必要な状態です(測定できない項目は改善提案の対象になっていません)",
-    recommendedAction: "該当情報(URL等)を登録・接続し、次回診断で状態を可視化してください",
+    patientImpact: isMissingInput
+      ? "医院の弱点と断定はできません。まず情報の登録・接続・確認が必要な状態です(測定できない項目は改善提案の対象になっていません)"
+      : "医院の弱点と断定はできません。この領域の実測機能は現在準備中で、対応が完了次第この診断結果に反映されます",
+    recommendedAction: isMissingInput
+      ? "該当情報(URL等)を登録・接続し、次回診断で状態を可視化してください"
+      : "現時点で医院側にご対応いただくことはありません。対応完了までしばらくお待ちください",
     recommendedAssignee: "医院",
     sourceCriteria: domainScore.criteria.map((c) => ({ domain, criterionKey: c.key })),
     structuredEvidence: domainScore.criteria.flatMap((c) => c.evidence),

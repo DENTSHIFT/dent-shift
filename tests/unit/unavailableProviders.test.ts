@@ -32,7 +32,7 @@ describe("UnavailableAdComplianceProvider", () => {
   });
 });
 
-describe("本番診断API(route.ts)がMockCompetitorProvider/MockAdComplianceProviderを使わないこと", () => {
+describe("本番診断API(route.ts)がMock系providerを使わないこと", () => {
   it("src/app/api/diagnosis/route.tsがUnavailable系providerをインスタンス化している", () => {
     const content = readFileSync(
       resolve(process.cwd(), "src/app/api/diagnosis/route.ts"),
@@ -40,9 +40,11 @@ describe("本番診断API(route.ts)がMockCompetitorProvider/MockAdCompliancePro
     );
     expect(content).toContain("new UnavailableCompetitorProvider()");
     expect(content).toContain("new UnavailableAdComplianceProvider()");
-    // 架空の競合医院名・ダミーリスク判定を生成するMock系providerが
+    expect(content).toContain("new UnavailableScoreProvider()");
+    // 架空の競合医院名・ダミーリスク判定・疑似乱数スコアを生成するMock系providerが
     // 本番経路へ再混入していないことを静的に保証する。
     expect(content).not.toMatch(/new MockCompetitorProvider\(/);
     expect(content).not.toMatch(/new MockAdComplianceProvider\(/);
+    expect(content).not.toMatch(/new MockScoreProvider\(/);
   });
 });

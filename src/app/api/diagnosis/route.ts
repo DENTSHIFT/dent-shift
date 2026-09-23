@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { runFreeDiagnosis, InvalidDiagnosisInputError } from "@/server/services/runFreeDiagnosis";
 import { MockAiProvider } from "@/server/providers/ai/mockAiProvider";
 import { UnavailableCompetitorProvider } from "@/server/providers/competitor/unavailableCompetitorProvider";
-import { MockScoreProvider } from "@/server/providers/scoring/mockScoreProvider";
+import { UnavailableScoreProvider } from "@/server/providers/scoring/unavailableScoreProvider";
 import { UnavailableAdComplianceProvider } from "@/server/providers/ad-compliance/unavailableAdComplianceProvider";
 import {
   saveDiagnosisResult,
@@ -29,7 +29,9 @@ const aiProvider = new MockAiProvider();
 // 未実装のため、架空の競合医院名やダミーのリスク判定を本番で表示しない。実装完了までは
 // 常に空配列を返すUnavailable系providerを使う(UI側は「準備中」表示にフォールバックする)。
 const competitorProvider = new UnavailableCompetitorProvider();
-const scoreProvider = new MockScoreProvider();
+// 2026-09-24のユーザー指示: 6領域スコアの疑似乱数生成(MockScoreProvider)も本番経路から
+// 除外する。実測AI観測に基づくAIOの一部criterionのみ算出し、それ以外はunavailableとする。
+const scoreProvider = new UnavailableScoreProvider();
 const adComplianceProvider = new UnavailableAdComplianceProvider();
 
 export async function POST(request: NextRequest) {
