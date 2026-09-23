@@ -7,6 +7,8 @@ import {
 } from "@/server/config/billingConfig";
 import { createStripeCheckoutSession } from "@/server/providers/billing/stripeCheckoutProvider";
 import { isTrialEligiblePlan, TRIAL_PERIOD_DAYS } from "@/domain/billing/trialActivation";
+import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
+import { hasExistingSubscription } from "@/domain/billing/subscriptionStatus";
 
 export async function POST(request: NextRequest) {
   const currentContact = await getCurrentContact();
@@ -48,6 +50,17 @@ export async function POST(request: NextRequest) {
   const plan = formData.get("plan");
   if (typeof plan !== "string" || !isPlanId(plan)) {
     return NextResponse.json({ error: "プランを選択してください。" }, { status: 400 });
+  }
+
+  // 二重契約・二重課金防止(2026-09-23)。既存の有効な契約(billingExempt/Pilot含む)が
+  // あるクリニックは新規Checkoutを作成させない。画面側の非表示だけに依存せず、
+  // API側でも必ずガードする。
+  const existingSubscription = await getLatestSubscriptionByClinicId(currentContact.clinicId);
+  if (hasExistingSubscription(existingSubscription)) {
+    return NextResponse.json(
+      { error: "既にご契約中です。プランの変更・解約はダッシュボードから行えます。" },
+      { status: 409 }
+    );
   }
 
   try {

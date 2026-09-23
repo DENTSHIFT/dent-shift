@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   currentContact: vi.fn(),
   resolveConfig: vi.fn(),
   createCheckout: vi.fn(),
+  getLatestSubscription: vi.fn(),
 }));
 
 vi.mock("@/server/auth/session", () => ({ getCurrentContact: mocks.currentContact }));
@@ -14,6 +15,9 @@ vi.mock("@/server/config/billingConfig", () => ({
 }));
 vi.mock("@/server/providers/billing/stripeCheckoutProvider", () => ({
   createStripeCheckoutSession: mocks.createCheckout,
+}));
+vi.mock("@/server/db/billingRepository", () => ({
+  getLatestSubscriptionByClinicId: mocks.getLatestSubscription,
 }));
 
 import { POST } from "@/app/api/billing/checkout/route";
@@ -43,6 +47,7 @@ beforeEach(() => {
   mocks.createCheckout.mockResolvedValue({
     url: "https://checkout.stripe.com/c/pay/test-session",
   });
+  mocks.getLatestSubscription.mockResolvedValue(null);
 });
 
 describe("POST /api/billing/checkout", () => {
@@ -125,5 +130,76 @@ describe("POST /api/billing/checkout", () => {
     const response = await POST(request("standard", "https://evil.example.com"));
     expect(response.status).toBe(403);
     expect(mocks.createCheckout).not.toHaveBeenCalled();
+  });
+
+  function stripeReadyConfig() {
+    mocks.resolveConfig.mockReturnValue({
+      provider: "stripe",
+      apiKey: "sk_test_secret",
+      webhookSecret: "whsec_test_secret",
+      taxRateId: "txr_japan_10_percent",
+      appBaseUrl: "https://dent-shift.example.com",
+      priceLabels: { light: "L", standard: "S", premium: "P" },
+      stripePriceIds: { light: "price_l", standard: "price_s", premium: "price_p" },
+    });
+  }
+
+  it.each([
+    ["active", false],
+    ["trial", false],
+    ["past_due", false],
+    ["restricted", false],
+    ["suspended", false],
+    ["cancel_scheduled", false],
+  ])(
+    "既存契約がstatus=%sの場合は409を返しCheckoutを作成しない(billingExempt=%s)",
+    async (status, billingExempt) => {
+      stripeReadyConfig();
+      mocks.getLatestSubscription.mockResolvedValue({ status, billingExempt });
+
+      const response = await POST(request("light"));
+      expect(response.status).toBe(409);
+      expect(mocks.createCheckout).not.toHaveBeenCalled();
+    }
+  );
+
+  it("billingExempt(永久無料)は状態にかかわらずCheckoutを作成しない", async () => {
+    stripeReadyConfig();
+    mocks.getLatestSubscription.mockResolvedValue({ status: "active", billingExempt: true });
+
+    const response = await POST(request("light"));
+    expect(response.status).toBe(409);
+    expect(mocks.createCheckout).not.toHaveBeenCalled();
+  });
+
+  it("Pilot由来(status=active)の契約もCheckoutを作成しない", async () => {
+    stripeReadyConfig();
+    mocks.getLatestSubscription.mockResolvedValue({
+      status: "active",
+      billingExempt: false,
+      externalSubscriptionId: "pilot_invite123",
+    });
+
+    const response = await POST(request("light"));
+    expect(response.status).toBe(409);
+    expect(mocks.createCheckout).not.toHaveBeenCalled();
+  });
+
+  it("既存契約がstatus=cancelledの場合は再Checkoutを許可する", async () => {
+    stripeReadyConfig();
+    mocks.getLatestSubscription.mockResolvedValue({ status: "cancelled", billingExempt: false });
+
+    const response = await POST(request("light"));
+    expect(response.status).toBe(303);
+    expect(mocks.createCheckout).toHaveBeenCalledTimes(1);
+  });
+
+  it("未契約(サブスクリプションなし)は通常どおりCheckoutできる", async () => {
+    stripeReadyConfig();
+    mocks.getLatestSubscription.mockResolvedValue(null);
+
+    const response = await POST(request("light"));
+    expect(response.status).toBe(303);
+    expect(mocks.createCheckout).toHaveBeenCalledTimes(1);
   });
 });

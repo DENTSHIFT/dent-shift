@@ -8,6 +8,7 @@ import {
   type BillingConfig,
 } from "@/server/config/billingConfig";
 import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
+import { hasExistingSubscription as subscriptionBlocksNewCheckout } from "@/domain/billing/subscriptionStatus";
 import styles from "./plans.module.css";
 import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
 
@@ -33,17 +34,25 @@ function PlanAction({
   checkoutReady,
   authenticated,
   isBillingExempt,
+  hasExistingSubscription,
 }: {
   plan: PlanId;
   checkoutReady: boolean;
   authenticated: boolean;
   isBillingExempt: boolean;
+  hasExistingSubscription: boolean;
 }) {
   // 2026-09-24: 永久無料の特別アカウント(billingExempt)には、Stripe決済へ進む
   // CTAを一切出さない(すでに無期限で有効な契約があり、購入操作自体が不要かつ
   // Stripe側に対応する契約が存在しないため実行してもエラーになる)。
   if (isBillingExempt) {
     return <span className={styles.disabledAction}>永久無料でご利用中です</span>;
+  }
+  // 2026-09-23: 二重契約・二重課金防止。既にactive/trial/past_due等の契約がある
+  // クリニックには新規Checkoutへの導線を出さない(APIも別途ガード済み、画面側だけに
+  // 依存しない)。プラン変更・解約はダッシュボードのCustomer Portal導線を案内する。
+  if (hasExistingSubscription) {
+    return <span className={styles.disabledAction}>既にご契約中です(ダッシュボードから管理)</span>;
   }
   if (!checkoutReady) {
     return <span className={styles.disabledAction}>オンライン契約は準備中</span>;
@@ -77,6 +86,7 @@ export default async function PlansPage({
     ? await getLatestSubscriptionByClinicId(currentContact.clinicId)
     : null;
   const isBillingExempt = subscription?.billingExempt === true;
+  const hasExistingSubscription = !isBillingExempt && subscriptionBlocksNewCheckout(subscription);
 
   return (
     <main className={styles.page}>
@@ -106,6 +116,12 @@ export default async function PlansPage({
 
       {checkout === "cancelled" && (
         <div className={styles.infoBanner}>決済は完了していません。プランをもう一度確認できます。</div>
+      )}
+
+      {hasExistingSubscription && (
+        <div className={styles.infoBanner}>
+          既にご契約中です。プランの変更・解約はダッシュボードから行えます。
+        </div>
       )}
 
       {!checkoutReady && (
@@ -138,6 +154,7 @@ export default async function PlansPage({
               checkoutReady={checkoutReady}
               authenticated={Boolean(currentContact)}
               isBillingExempt={isBillingExempt}
+              hasExistingSubscription={hasExistingSubscription}
             />
           </article>
         ))}
