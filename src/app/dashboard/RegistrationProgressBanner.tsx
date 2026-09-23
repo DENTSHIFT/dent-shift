@@ -175,7 +175,14 @@ function ConsentStepBanner() {
       </p>
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#1E3A8A" }}>
         <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-        利用規約・プライバシーポリシーに同意します
+        <a href="/legal/terms" target="_blank" rel="noreferrer" style={{ color: "#1E3A8A" }}>
+          利用規約
+        </a>
+        ・
+        <a href="/legal/privacy" target="_blank" rel="noreferrer" style={{ color: "#1E3A8A" }}>
+          プライバシーポリシー
+        </a>
+        に同意します
       </label>
       <div>
         <button
