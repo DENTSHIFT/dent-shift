@@ -7,6 +7,7 @@ import {
   resolveBillingConfigFromProcessEnv,
   type BillingConfig,
 } from "@/server/config/billingConfig";
+import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
 import styles from "./plans.module.css";
 import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
 
@@ -31,11 +32,19 @@ function PlanAction({
   plan,
   checkoutReady,
   authenticated,
+  isBillingExempt,
 }: {
   plan: PlanId;
   checkoutReady: boolean;
   authenticated: boolean;
+  isBillingExempt: boolean;
 }) {
+  // 2026-09-24: 永久無料の特別アカウント(billingExempt)には、Stripe決済へ進む
+  // CTAを一切出さない(すでに無期限で有効な契約があり、購入操作自体が不要かつ
+  // Stripe側に対応する契約が存在しないため実行してもエラーになる)。
+  if (isBillingExempt) {
+    return <span className={styles.disabledAction}>永久無料でご利用中です</span>;
+  }
   if (!checkoutReady) {
     return <span className={styles.disabledAction}>オンライン契約は準備中</span>;
   }
@@ -64,6 +73,10 @@ export default async function PlansPage({
   const [{ checkout }, currentContact] = await Promise.all([searchParams, getCurrentContact()]);
   const { config, configurationError } = safeBillingConfig();
   const checkoutReady = config.provider === "stripe";
+  const subscription = currentContact
+    ? await getLatestSubscriptionByClinicId(currentContact.clinicId)
+    : null;
+  const isBillingExempt = subscription?.billingExempt === true;
 
   return (
     <main className={styles.page}>
@@ -124,6 +137,7 @@ export default async function PlansPage({
               plan={plan.id}
               checkoutReady={checkoutReady}
               authenticated={Boolean(currentContact)}
+              isBillingExempt={isBillingExempt}
             />
           </article>
         ))}

@@ -212,7 +212,10 @@ export default async function DashboardPage() {
             </Link>
           </div>
 
-          <RegistrationProgressBanner registrationStep={contact.registrationStep} />
+          <RegistrationProgressBanner
+            registrationStep={contact.registrationStep}
+            hasActiveSubscription={subscription?.status === "active" || subscription?.status === "trial"}
+          />
 
           <section className={styles.subscriptionCard} id="subscription" aria-label="契約状況">
             <div className={styles.subscriptionCopy}>
@@ -233,13 +236,16 @@ export default async function DashboardPage() {
               <Link className={styles.subscriptionLink} href={subscriptionVm.actionHref}>
                 {subscriptionVm.actionLabel}
               </Link>
-              {subscription && checkoutReady && (
-                <form action="/api/billing/portal" method="post">
-                  <button className={styles.subscriptionLinkButton} type="submit">
-                    契約・請求を管理する
-                  </button>
-                </form>
-              )}
+              {subscription &&
+                checkoutReady &&
+                !subscription.billingExempt &&
+                !subscription.externalSubscriptionId?.startsWith("pilot_") && (
+                  <form action="/api/billing/portal" method="post">
+                    <button className={styles.subscriptionLinkButton} type="submit">
+                      契約・請求を管理する
+                    </button>
+                  </form>
+                )}
             </div>
           </section>
 

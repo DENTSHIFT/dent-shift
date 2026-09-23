@@ -18,11 +18,39 @@ const CARD_STYLE: React.CSSProperties = {
  * SMS認証(/verify-phone)に続く、メール確認・決済方法登録・規約同意の各ステップを
  * ダッシュボード上で案内する。全4条件(SMS+メール+規約同意+決済方法)が揃うまで
  * trial_started_atは設定されない(activateTrial.ts)。
+ *
+ * 2026-09-24: Pilot招待(永久無料含む)経由で既にactive/trialな契約が作成済みの場合、
+ * registrationStepの機械的な進行だけを見ると"payment"のままになり得る
+ * (activatePilotInvite.tsはregistrationStepを更新しないため)。この状態で
+ * 「7日間無料トライアルの開始には決済方法の登録が必要です」という誤ったCTAを
+ * 出さないよう、hasActiveSubscription===trueの間は決済案内バナーを抑制する。
  */
-export function RegistrationProgressBanner({ registrationStep }: { registrationStep: string }) {
-  if (registrationStep === "email") return <EmailStepBanner />;
-  if (registrationStep === "payment") return <PaymentStepBanner />;
-  if (registrationStep === "consent") return <ConsentStepBanner />;
+export type RegistrationBannerKind = "email" | "payment" | "consent" | "none";
+
+/**
+ * 表示するバナー種別を決める純粋関数(ロジックのみユニットテスト可能にするため分離)。
+ */
+export function resolveRegistrationBannerKind(
+  registrationStep: string,
+  hasActiveSubscription: boolean
+): RegistrationBannerKind {
+  if (registrationStep === "email") return "email";
+  if (registrationStep === "payment") return hasActiveSubscription ? "none" : "payment";
+  if (registrationStep === "consent") return "consent";
+  return "none";
+}
+
+export function RegistrationProgressBanner({
+  registrationStep,
+  hasActiveSubscription,
+}: {
+  registrationStep: string;
+  hasActiveSubscription: boolean;
+}) {
+  const kind = resolveRegistrationBannerKind(registrationStep, hasActiveSubscription);
+  if (kind === "email") return <EmailStepBanner />;
+  if (kind === "payment") return <PaymentStepBanner />;
+  if (kind === "consent") return <ConsentStepBanner />;
   return null;
 }
 
