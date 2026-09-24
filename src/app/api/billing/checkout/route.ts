@@ -76,9 +76,10 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.redirect(checkout.url, 303);
   } catch (error) {
+    // 例外メッセージ本文もログへ出す(Stripe APIキー等の機密値は含まれない)。
     console.error(
       "[POST /api/billing/checkout] checkout creation failed:",
-      error instanceof Error ? error.name : "UnknownError"
+      error instanceof Error ? `${error.name}: ${error.message}` : "UnknownError"
     );
     return NextResponse.json(
       { error: "決済画面を開始できませんでした。時間をおいて再度お試しください。" },
