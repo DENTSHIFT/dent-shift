@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireContact } from "@/server/auth/requireContact";
+import { prisma } from "@/server/db/prismaClient";
+import { canTransitionRegistrationStep, type RegistrationStep } from "@/domain/auth/registrationStep";
 import { VerifyPhoneForm } from "./VerifyPhoneForm";
 import styles from "../auth.module.css";
 import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
@@ -30,6 +32,20 @@ export default async function VerifyPhonePage({
   // phoneVerifiedAtチェックはここでは無効化する(無効化しないと無限リダイレクトになる)。
   const contact = await requireContact({ requirePhoneVerified: false });
   if (contact.phoneVerifiedAt) {
+    redirect(safeNext ?? "/dashboard");
+  }
+
+  // 2026-09-24: smsVerificationExempt(運営がContact単位で個別設定する限定例外)の場合、
+  // SMSフォーム自体を表示せずregistrationStepのみ進めて次のステップへ進む。
+  if (contact.smsVerificationExempt) {
+    const nextStep: RegistrationStep = "email";
+    const currentStep = contact.registrationStep as RegistrationStep;
+    if (canTransitionRegistrationStep(currentStep, nextStep)) {
+      await prisma.contact.update({
+        where: { id: contact.id },
+        data: { registrationStep: nextStep },
+      });
+    }
     redirect(safeNext ?? "/dashboard");
   }
 

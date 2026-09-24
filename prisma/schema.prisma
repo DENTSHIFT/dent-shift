@@ -186,6 +186,11 @@ model Contact {
   smsSentAt        DateTime?
   smsAttemptCount  Int       @default(0)
   smsResendCount   Int       @default(0)
+  // 2026-09-24: Twilio Trust Hub審査停止等でSMS認証が利用できない個別医院向けの
+  // 限定的な例外。運営が特定Contact行にのみ設定する(コード側でメール等をハードコード
+  // しない)。true の場合、requireContact()のphoneVerifiedAt必須チェックと
+  // /verify-phoneのSMSフォームをスキップし、registrationStepを"email"へ進める。
+  smsVerificationExempt Boolean @default(false)
 
   // 会員本人(Contact)のメールアドレス確認。トークン平文は保存せずハッシュのみ保持する。
   emailVerifiedAt             DateTime?

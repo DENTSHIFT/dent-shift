@@ -45,4 +45,15 @@ describe("requireContact", () => {
     mocks.getCurrentContact.mockResolvedValue(contact);
     await expect(requireContact({ requirePhoneVerified: false })).resolves.toBe(contact);
   });
+
+  it("2026-09-24: smsVerificationExemptがtrueなら、SMS未認証でもリダイレクトせず返す(個別例外)", async () => {
+    const contact = { id: "c1", phoneVerifiedAt: null, smsVerificationExempt: true };
+    mocks.getCurrentContact.mockResolvedValue(contact);
+    await expect(requireContact()).resolves.toBe(contact);
+  });
+
+  it("smsVerificationExemptがfalse(既定)の他ユーザーは、従来どおりSMS未認証で/verify-phoneへリダイレクトする", async () => {
+    mocks.getCurrentContact.mockResolvedValue({ id: "c2", phoneVerifiedAt: null, smsVerificationExempt: false });
+    await expect(requireContact()).rejects.toThrow("REDIRECT:/verify-phone");
+  });
 });
