@@ -1,0 +1,130 @@
+/* /visual: 画像主役の新LP専用スタイル。
+   page.module.cssの共通トークン(.section/.card/.ctaButton等)と併用する。
+   モバイル横崩れ根絶のため、固定幅・デスクトップ専用min-widthは持たせず
+   100%/box-sizing基準にする(page.module.cssと同じ方針)。 */
+
+.header {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e9f0;
+  background: #fff;
+}
+
+.fv {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  background: linear-gradient(180deg, #f5f8fc 0%, #ffffff 100%);
+  padding: 32px 20px 40px;
+}
+
+.fvInner {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.phoneFrame {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin-top: 24px;
+  border: 1px solid #e5e9f0;
+  border-radius: 20px;
+  background: #fff;
+  padding: 18px;
+  box-shadow: 0 16px 36px rgba(15, 27, 45, 0.07);
+}
+
+.chatRow {
+  width: 100%;
+  min-width: 0;
+  margin-top: 14px;
+  display: flex;
+}
+
+.chatRow:first-of-type {
+  margin-top: 16px;
+  justify-content: flex-end;
+}
+
+.chatBubbleUser {
+  box-sizing: border-box;
+  max-width: 92%;
+  min-width: 0;
+  background: #eff6ff;
+  color: #0f1b2d;
+  border-radius: 14px 14px 4px 14px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.chatBubbleAi {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  background: #f8fafc;
+  border: 1px solid #e5e9f0;
+  border-radius: 4px 14px 14px 14px;
+  padding: 12px 14px;
+  overflow-wrap: anywhere;
+}
+
+.missingTag {
+  box-sizing: border-box;
+  margin-top: 10px;
+  display: inline-block;
+  max-width: 100%;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.painGrid {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.domainGrid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .domainGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.domainCell {
+  box-sizing: border-box;
+  min-width: 0;
+  border: 1px solid #e5e9f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
