@@ -22,6 +22,7 @@ import { isDiagnosisResultAccessible } from "./resultAccess";
 import { formatMeasuredAtInJapan } from "@/domain/diagnosis/formatMeasuredAt";
 import { buildResultEmailDeliveryNotice } from "@/domain/email/resultEmailDeliveryStatus";
 import { TrackedCtaLink } from "./TrackedCtaLink";
+import { TimeRexEmbed } from "./TimeRexEmbed";
 import { InstructionPdfOrderButton } from "./InstructionPdfOrderButton";
 import { SelfServeToggleButton } from "./SelfServeToggleButton";
 
@@ -1051,6 +1052,11 @@ function ConsultationCta({
       >
         診断結果について無料相談
       </TrackedCtaLink>
+
+      {/* 2026-09-24: 診断前(LP/visual)は外部URLへ遷移するボタンのみだが、
+          診断後のこの結果ページでは、その場で予約できるようTimeRexカレンダーを
+          CTA直下に埋め込む。同じbookingUrlを使うため、LP・メールと予約URLは統一されている。 */}
+      <TimeRexEmbed bookingUrl={bookingUrl} />
     </div>
   );
 }
