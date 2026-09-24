@@ -19,6 +19,7 @@ import { duplicateCandidateMessage } from "@/domain/clinic/duplicateDetection";
 import { sendDiagnosisResultEmail } from "@/server/services/sendDiagnosisResultEmail";
 import type { ResultEmailDeliveryStatus } from "@/domain/email/resultEmailDeliveryStatus";
 import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
+import { sanitizeUtmAttribution } from "@/domain/marketing/utmAttribution";
 
 // legacy mock providers(P0案Bの「既存mock/reference score用」経路。2026-09-08の
 // ユーザー指示: AI_MEASUREMENT_PROVIDER="openai"でもこのlegacy aiProviderは
@@ -53,6 +54,11 @@ export async function POST(request: NextRequest) {
     allowDuplicateClinic,
   } =
     (body ?? {}) as Record<string, unknown>;
+
+  // 2026-09-24: Instagram等の流入チャネル別に診断「開始」と「完了」を比較するためのUTM値
+  // (5項目)。diagnosis_started(開始)と同じsanitizeUtmAttribution()を使い、
+  // 同じ入力からは常に同じ形の値を出す(未指定時はnull=直接流入・既存LP経由など)。
+  const utmFields = sanitizeUtmAttribution((body ?? {}) as Record<string, unknown>);
 
   if (allowDuplicateClinic !== undefined && typeof allowDuplicateClinic !== "boolean") {
     return NextResponse.json({ error: "重複確認の値が不正です" }, { status: 400 });
@@ -166,6 +172,7 @@ export async function POST(request: NextRequest) {
         clinic_name: diagnosisInput.clinicName,
         website_url: diagnosisInput.clinicUrl,
         phone: diagnosisInput.contactPhone ?? null,
+        ...utmFields,
       },
     }).catch((error) => {
       console.error("[POST /api/diagnosis] Salesforce sync enqueue failed:", error);

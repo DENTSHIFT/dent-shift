@@ -12,6 +12,15 @@ import {
 } from "./diagnosisPrefill";
 import type { ClinicDuplicateMatchType } from "@/domain/clinic/duplicateDetection";
 import { isValidClinicContactPhone } from "@/domain/clinic/contactPhone";
+import {
+  sanitizeUtmAttributionFromSearchParams,
+  type UtmAttribution,
+} from "@/domain/marketing/utmAttribution";
+import {
+  DIAGNOSIS_STARTED_SESSION_KEY,
+  diagnosisStartedFiredMarker,
+  isDiagnosisStartedAlreadyFired,
+} from "./diagnosisStartedTracking";
 
 // DENT SHIFT正式カラー(public/brand/logo/README_使用ガイド.md「正式カラー」節が正本)。
 // 結果画面(src/app/diagnosis/result/[id]/page.tsx)と同じ値をこの画面でも使用する。
@@ -120,6 +129,62 @@ export default function DiagnosisPage() {
   // 後から解決しても、現在の世代と一致しない場合はstateを更新しない(2重送信・連打対策)。
   const requestGenerationRef = useRef(0);
   const allowDuplicateClinicRef = useRef(false);
+  // 2026-09-24: Instagram等の流入チャネル別に診断「開始」と「完了」を比較するためのUTM値
+  // (5項目)。URLのクエリから読み取るだけで、フォームUI上には表示しない(値はrefで保持)。
+  const utmRef = useRef<UtmAttribution>({
+    utm_source: null,
+    utm_medium: null,
+    utm_campaign: null,
+    utm_content: null,
+    utm_term: null,
+  });
+
+  // ページ到達時点ではUTMを読み取るだけで、「診断開始」イベントは発火しない
+  // (2026-09-24修正: ページ閲覧数と混同しないよう、実際にフォーム入力を始めた
+  // 最初の操作でのみ発火させる。発火箇所はhandleChange/handleSubmit側)。
+  useEffect(() => {
+    // globalThis経由でlocationを参照する。ここはクエリの読み取りのみで遷移は行わないが、
+    // 本ファイルには「別経路の画面遷移が存在しない」ことを静的検査するテスト
+    // (diagnosisFlow.test.ts)があり、windowオブジェクト経由でのlocation参照を
+    // 禁止文字列としているため、それと衝突しない書き方にする。
+    const params = new URLSearchParams(globalThis.location.search);
+    utmRef.current = sanitizeUtmAttributionFromSearchParams(params);
+  }, []);
+
+  // 医院名・URL等いずれかのフィールドへ最初に入力した時点を「診断開始」とみなし、
+  // 1回だけ匿名イベントを送る(ページを開いただけの離脱はカウントしない)。
+  // 2026-09-24修正: useRefだけではページ再読み込み・戻る操作でリセットされ、
+  // 同一診断フロー中に重複送信されてしまうため、sessionStorage(このブラウザタブに
+  // 閉じたファーストパーティ一時保存。他サイト・他タブへは共有されない)で
+  // 「このタブでは送信済みか」を判定する。診断フローが完了した時点(結果画面への
+  // 遷移直前、下のuseEffect)でこのキーを消し、次の新しい診断フローでは
+  // 再度計測できるようにする。失敗してもフォーム利用自体は妨げない(ベストエフォート)。
+  function markDiagnosisStartedIfNeeded() {
+    let alreadyFired = false;
+    try {
+      alreadyFired = isDiagnosisStartedAlreadyFired(
+        sessionStorage.getItem(DIAGNOSIS_STARTED_SESSION_KEY)
+      );
+    } catch {
+      // sessionStorageが使えない環境(プライベートモード等)では、計測を諦めて
+      // 常に未送信扱いにする(フォーム利用自体は妨げない)。
+    }
+    if (alreadyFired) return;
+
+    try {
+      sessionStorage.setItem(DIAGNOSIS_STARTED_SESSION_KEY, diagnosisStartedFiredMarker());
+    } catch {
+      // 保存できなくても計測自体は試みる(タブを跨いだ重複防止だけ効かなくなる)。
+    }
+
+    fetch("/api/events/diagnosis-started", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(utmRef.current),
+    }).catch(() => {
+      // 計測用のベストエフォート呼び出し。失敗してもフォームは通常通り利用できる。
+    });
+  }
 
   // ダッシュボードから再診断する場合は、ログイン中の医院情報を自動入力する。
   // 未ログイン(401)や一時的な取得失敗では従来の空フォームをそのまま利用できる。
@@ -153,6 +218,7 @@ export default function DiagnosisPage() {
 
   function handleChange(name: FieldName) {
     return (e: ChangeEvent<HTMLInputElement>) => {
+      markDiagnosisStartedIfNeeded();
       setValues((prev) => ({ ...prev, [name]: e.target.value }));
       if (name === "clinicName" || name === "clinicUrl") {
         allowDuplicateClinicRef.current = false;
@@ -178,6 +244,7 @@ export default function DiagnosisPage() {
         body: JSON.stringify({
           ...values,
           allowDuplicateClinic: allowDuplicateClinicRef.current,
+          ...utmRef.current,
         }),
       });
       const data = await res.json();
@@ -241,6 +308,13 @@ export default function DiagnosisPage() {
   // diagnosisId)」の両方が揃うまで、どれだけAPIが速く終わっても遷移しない。
   useEffect(() => {
     if (shouldNavigateToResult({ flowState, analysisCompleted, apiCompleted, diagnosisId })) {
+      // この診断フローが完了したため、「開始」の重複防止フラグを消す。
+      // 次に(同じタブで)新しい診断フローが始まった際は、再度計測できるようにする。
+      try {
+        sessionStorage.removeItem(DIAGNOSIS_STARTED_SESSION_KEY);
+      } catch {
+        // 消せなくても致命的ではない(次の開始が計測されない方向にのみ影響する)。
+      }
       router.push(`/diagnosis/result/${diagnosisId}`);
     }
   }, [flowState, analysisCompleted, apiCompleted, diagnosisId, router]);
@@ -258,6 +332,9 @@ export default function DiagnosisPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    // ログイン中の自動入力のみで未編集のまま送信された場合(handleChangeが一度も
+    // 発火しない経路)の取りこぼしを防ぐ、送信時点での最終フォールバック。
+    markDiagnosisStartedIfNeeded();
     setSubmitAttempted(true);
 
     const allFields: FieldName[] = [
