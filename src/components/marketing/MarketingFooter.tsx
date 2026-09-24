@@ -13,6 +13,21 @@ const SERVICE_LINKS = [
   { label: "FAQ", href: "/#faq" },
 ];
 
+const INSTAGRAM_LINKS = [
+  { label: "DENT SHIFT公式Instagram", href: "https://www.instagram.com/dentshift_official/" },
+  { label: "寧々ちゃんのInstagram", href: "https://www.instagram.com/dentshift_nene/" },
+];
+
+function InstagramIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <rect x="3" y="3" width="18" height="18" rx="5" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="12" cy="12" r="4.2" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="17.2" cy="6.8" r="1.1" fill="currentColor" />
+    </svg>
+  );
+}
+
 const COMPANY_SLUGS: LegalPageSlug[] = ["company", "contact"];
 const LEGAL_SLUGS: LegalPageSlug[] = ["terms", "privacy", "tokushoho", "cookies"];
 
@@ -87,6 +102,36 @@ export function MarketingFooter() {
         <p style={{ marginTop: 8, textAlign: "center", fontSize: 11, color: MUTED }}>
           © DENT SHIFT
         </p>
+        <div
+          style={{
+            marginTop: 16,
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "center",
+            gap: 16,
+          }}
+        >
+          {INSTAGRAM_LINKS.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11,
+                color: MUTED,
+                textDecoration: "none",
+                overflowWrap: "anywhere",
+              }}
+            >
+              <InstagramIcon />
+              {link.label}
+            </a>
+          ))}
+        </div>
       </div>
     </footer>
   );
