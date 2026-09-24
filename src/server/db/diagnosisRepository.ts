@@ -323,3 +323,22 @@ export async function getDiagnosesByClinicId(clinicId: string) {
     select: { id: true, totalPoints: true, totalStatus: true, measuredAt: true, isSample: true },
   });
 }
+
+/**
+ * ops専用(2026-09-24): 結果メール送信に失敗した診断をクロステナントで一覧する。
+ * 診断本体・JSON列は読み込まず、再送に必要な最小限のみ取得する。
+ */
+export async function listFailedResultEmailDiagnosesForOps(limit = 50) {
+  return prisma.diagnosis.findMany({
+    where: { resultEmailStatus: "failed" },
+    orderBy: { measuredAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      measuredAt: true,
+      resultEmailStatus: true,
+      resultEmailSentAt: true,
+      clinic: { select: { id: true, name: true, contactEmail: true } },
+    },
+  });
+}

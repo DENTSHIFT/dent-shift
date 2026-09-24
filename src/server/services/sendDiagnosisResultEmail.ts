@@ -6,10 +6,21 @@ import { sendWithResend } from "@/server/providers/email/resendEmailProvider";
 
 export type ResultEmailDeliveryStatus = "disabled" | "sent";
 
+// 2026-09-24: opsからの再送(getDiagnosisByIdの戻り値から再構築)でも呼べるよう、
+// 実際にこの関数が参照するフィールドだけの最小形状にする(RunFreeDiagnosisResult
+// 全体を要求すると、DB保存済みJSON由来のオブジェクトでは型が合わない)。
+// 既存呼び出し元(runFreeDiagnosisの結果をそのまま渡す)は構造的に互換のため無変更で動く。
+export type DiagnosisResultEmailSource = Pick<
+  RunFreeDiagnosisResult,
+  "clinicName" | "isSample" | "topImprovements"
+> & {
+  scoreBreakdown: Pick<RunFreeDiagnosisResult["scoreBreakdown"], "totalPoints" | "totalStatus" | "maxPoints">;
+};
+
 export async function sendDiagnosisResultEmail(input: {
   to: string;
   diagnosisId: string;
-  result: RunFreeDiagnosisResult;
+  result: DiagnosisResultEmailSource;
 }): Promise<ResultEmailDeliveryStatus> {
   const config = resolveResultEmailConfigFromProcessEnv();
   if (config.provider === "disabled") return "disabled";

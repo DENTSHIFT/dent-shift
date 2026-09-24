@@ -75,6 +75,12 @@ export default async function OpsDashboardPage() {
           <Link href="/ops/integration-events" style={{ color: "#2563eb", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
             Salesforce連携キュー管理へ →
           </Link>
+          <Link href="/ops/metrics" style={{ color: "#2563eb", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+            診断ファネル計測へ →
+          </Link>
+          <Link href="/ops/diagnosis-result-emails" style={{ color: "#2563eb", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+            結果メール送信失敗一覧へ →
+          </Link>
         </p>
 
         <section className={styles.tableCard} aria-label="医院一覧">
