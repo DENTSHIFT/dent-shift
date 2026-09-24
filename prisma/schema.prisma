@@ -298,6 +298,9 @@ model IntegrationEvent {
   clinicId     String?
   createdAt    DateTime  @default(now())
   processedAt  DateTime?
+  // 2026-09-24: ops再送管理画面の「最終試行日時」表示用。同期を試行するたび
+  // (成功/失敗いずれも)更新する。既存行はnull(過去分は表示上「—」扱い)。
+  lastAttemptedAt DateTime?
 
   @@index([status])
   @@index([createdAt])

@@ -3,7 +3,7 @@ import { prisma } from "@/server/db/prismaClient";
 import { resolveSalesforceConfigFromProcessEnv } from "@/server/config/salesforceConfig";
 import { upsertSalesforceLeadByEmail, type SalesforceLeadFields } from "@/server/providers/salesforce/salesforceClient";
 
-const MAX_RETRY_COUNT = 8;
+export const MAX_RETRY_COUNT = 8;
 
 function toLeadFields(eventType: string, payload: Record<string, unknown>): SalesforceLeadFields | null {
   const email = payload.email;
@@ -38,7 +38,7 @@ export async function syncIntegrationEvent(eventId: string): Promise<void> {
     // Lead upsertの対象にできないため、同期不要として処理済み扱いにする。
     await prisma.integrationEvent.update({
       where: { id: event.id },
-      data: { status: "synced", processedAt: new Date() },
+      data: { status: "synced", processedAt: new Date(), lastAttemptedAt: new Date() },
     });
     return;
   }
@@ -47,7 +47,7 @@ export async function syncIntegrationEvent(eventId: string): Promise<void> {
     const { salesforceId } = await upsertSalesforceLeadByEmail({ config, fields: leadFields });
     await prisma.integrationEvent.update({
       where: { id: event.id },
-      data: { status: "synced", externalId: salesforceId, processedAt: new Date() },
+      data: { status: "synced", externalId: salesforceId, processedAt: new Date(), lastAttemptedAt: new Date() },
     });
   } catch (error) {
     await prisma.integrationEvent.update({
@@ -56,6 +56,7 @@ export async function syncIntegrationEvent(eventId: string): Promise<void> {
         status: "failed",
         lastError: error instanceof Error ? error.message.slice(0, 500) : "unknown error",
         retryCount: { increment: 1 },
+        lastAttemptedAt: new Date(),
       },
     });
     throw error;

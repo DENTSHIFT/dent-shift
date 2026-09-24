@@ -68,9 +68,12 @@ export default async function OpsDashboardPage() {
           <span className={styles.countBadge}>最新{clinics.length}件を表示</span>
         </div>
 
-        <p style={{ margin: "0 0 18px" }}>
+        <p style={{ margin: "0 0 18px", display: "flex", gap: 16 }}>
           <Link href="/ops/invites" style={{ color: "#2563eb", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
             招待URL管理(1円モニター利用)へ →
+          </Link>
+          <Link href="/ops/integration-events" style={{ color: "#2563eb", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+            Salesforce連携キュー管理へ →
           </Link>
         </p>
 

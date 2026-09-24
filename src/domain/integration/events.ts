@@ -57,3 +57,23 @@ export function assertNoForbiddenPayloadKeys(payload: Record<string, unknown>): 
     }
   }
 }
+
+// opsの再送管理画面向け。個人情報らしきキー(メール・電話・氏名)の値を画面表示前に
+// マスクする(2026-09-24、opsからの個人情報無条件表示を避けるための最終防衛線)。
+// キー自体(項目名)は残し、値のみ伏せることで、どのデータが保存されているかは
+// 運営者が把握しつつ、値そのものは露出しない。
+const PII_LIKE_PAYLOAD_KEY_PATTERN = /email|phone|tel|name|address/i;
+
+export function redactIntegrationEventPayloadForOps(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  const redacted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (PII_LIKE_PAYLOAD_KEY_PATTERN.test(key) && typeof value === "string" && value.length > 0) {
+      redacted[key] = "•••(マスク済み)";
+    } else {
+      redacted[key] = value;
+    }
+  }
+  return redacted;
+}

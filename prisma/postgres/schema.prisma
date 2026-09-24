@@ -188,6 +188,7 @@ model IntegrationEvent {
   clinicId     String?
   createdAt    DateTime  @default(now())
   processedAt  DateTime?
+  lastAttemptedAt DateTime?
 
   @@index([status])
   @@index([createdAt])
