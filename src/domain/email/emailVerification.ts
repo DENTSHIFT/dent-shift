@@ -1,3 +1,5 @@
+import { buildEmailLogoHeaderHtml } from "./emailBranding";
+
 export interface EmailVerificationMessage {
   subject: string;
   text: string;
@@ -39,6 +41,7 @@ export function buildEmailVerificationMessage(input: {
   <body style="margin:0;background:#f5f7fa;color:#0f1b2d;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
     <div style="max-width:640px;margin:0 auto;padding:32px 20px">
       <div style="background:#ffffff;border:1px solid #e5e9f0;border-radius:16px;padding:28px">
+        ${buildEmailLogoHeaderHtml()}
         <p>${escapedClinicName} ご担当者様</p>
         <h1 style="font-size:22px;margin:20px 0 12px">メールアドレスの確認をお願いします</h1>
         <p>DENT SHIFTの無料トライアル登録ありがとうございます。以下のボタンからメールアドレスの確認を完了してください（24時間有効）。</p>

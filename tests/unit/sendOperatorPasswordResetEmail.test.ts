@@ -87,4 +87,21 @@ describe("sendOperatorPasswordResetEmail", () => {
     expect(call.message.text).toMatch(/^https:\/\/dentshift\.jp\/ops\/reset-password\?token=/m);
     expect(call.message.html).toContain("https://dentshift.jp/ops/reset-password?token=");
   });
+
+  it("2026-09-24: 本文にDENT SHIFTロゴヘッダーを含める", async () => {
+    mocks.resolveResultEmailConfig.mockReturnValue({
+      provider: "resend",
+      apiKey: "existing-diagnosis-key-should-not-be-used",
+      from: "noreply@dent-shift.mcollection-japan.jp",
+      appBaseUrl: "https://dentshift.jp",
+    });
+    process.env.RESEND_API_KEY_DENTSHIFT = "dentshift-only-key";
+
+    await sendOperatorPasswordResetEmail({ operatorId: "operator-1", email: "ops@example.com" });
+    const call = mocks.sendWithResend.mock.calls[0]![0];
+    expect(call.message.html).toContain(
+      "https://dentshift.jp/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
+    );
+    expect(call.message.html).toContain('alt="DENT SHIFT"');
+  });
 });

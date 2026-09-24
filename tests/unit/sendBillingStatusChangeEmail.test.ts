@@ -104,4 +104,13 @@ describe("sendBillingStatusChangeEmail", () => {
     expect(call.message.subject).toContain("終了");
     expect(call.message.text).toContain("再度お申し込み");
   });
+
+  it("2026-09-24: 本文にDENT SHIFTロゴヘッダーを含める", async () => {
+    await sendBillingStatusChangeEmail({ clinicId: "clinic-1", status: "past_due" });
+    const call = mocks.sendWithResend.mock.calls[0]![0];
+    expect(call.message.html).toContain(
+      "https://dentshift.jp/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
+    );
+    expect(call.message.html).toContain('alt="DENT SHIFT"');
+  });
 });

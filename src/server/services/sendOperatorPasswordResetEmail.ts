@@ -6,6 +6,7 @@ import {
   generateOperatorPasswordResetToken,
   OPERATOR_PASSWORD_RESET_TTL_MS,
 } from "@/server/auth/operatorPasswordResetToken";
+import { wrapEmailBodyHtml } from "@/domain/email/emailBranding";
 
 export type OperatorPasswordResetDeliveryStatus = "disabled" | "sent";
 
@@ -66,13 +67,13 @@ export async function sendOperatorPasswordResetEmail(input: {
     "",
     "このリクエストに心当たりがない場合は、このメールを無視してください。",
   ].join("\n");
-  const html = `
+  const html = wrapEmailBodyHtml(`
     <p>DENT SHIFT管理者アカウントのパスワード再設定リクエストを受け付けました。</p>
     <p>以下のURLから新しいパスワードを設定してください。</p>
     <p><a href="${resetUrl.toString()}">${resetUrl.toString()}</a></p>
     <p>このURLの有効期限は${ttlMinutes}分です。</p>
     <p>このリクエストに心当たりがない場合は、このメールを無視してください。</p>
-  `;
+  `);
 
   await sendWithResend({
     apiKey: dentshiftApiKey,

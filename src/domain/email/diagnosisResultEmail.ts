@@ -1,4 +1,5 @@
 import type { OverallScoreStatus } from "@/domain/diagnosis/types";
+import { buildEmailLogoHeaderHtml } from "./emailBranding";
 
 export interface DiagnosisResultEmailImprovement {
   title: string;
@@ -124,6 +125,7 @@ export function buildDiagnosisResultEmail(
   <body style="margin:0;background:#f5f7fa;color:#0f1b2d;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
     <div style="max-width:640px;margin:0 auto;padding:32px 20px">
       <div style="background:#ffffff;border:1px solid #e5e9f0;border-radius:16px;padding:28px">
+        ${buildEmailLogoHeaderHtml()}
         <p>${escapedClinicName} ご担当者様</p>
         <h1 style="font-size:22px;margin:20px 0 12px">AI集患診断の結果ができました</h1>
         <p>DENT SHIFTのAI集患診断をご利用いただき、ありがとうございます。</p>

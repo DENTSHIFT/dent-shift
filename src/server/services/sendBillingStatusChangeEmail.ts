@@ -3,6 +3,7 @@ import { prisma } from "@/server/db/prismaClient";
 import { resolveResultEmailConfigFromProcessEnv } from "@/server/config/resultEmailConfig";
 import { sendWithResend } from "@/server/providers/email/resendEmailProvider";
 import type { SubscriptionStatus } from "@/domain/billing/subscriptionStatus";
+import { wrapEmailBodyHtml } from "@/domain/email/emailBranding";
 
 const NOTIFICATION_EMAIL_FROM = "support@dentshift.jp";
 
@@ -38,12 +39,12 @@ function buildBillingStatusEmailContent(input: {
         "",
         "ご不明な点がございましたらお問い合わせください。",
       ].join("\n"),
-      html: `
+      html: wrapEmailBodyHtml(`
         <p>DENT SHIFTのご契約が終了しました。</p>
         <p>引き続きご利用をご希望の場合は、ダッシュボードから再度お申し込みいただけます。</p>
         <p><a href="${dashboardUrl}">${dashboardUrl}</a></p>
         <p>ご不明な点がございましたらお問い合わせください。</p>
-      `,
+      `),
     };
   }
 
@@ -61,13 +62,13 @@ function buildBillingStatusEmailContent(input: {
       "解決しない場合、一部機能のご利用を制限させていただくことがあります。",
       "ご不明な点がございましたらお問い合わせください。",
     ].join("\n"),
-    html: `
+    html: wrapEmailBodyHtml(`
       <p>DENT SHIFTのご契約について、決済に問題があるため確認が必要な状態です。</p>
       <p>お手数ですが、ダッシュボードからお支払い情報をご確認ください。</p>
       <p><a href="${dashboardUrl}">${dashboardUrl}</a></p>
       <p>解決しない場合、一部機能のご利用を制限させていただくことがあります。</p>
       <p>ご不明な点がございましたらお問い合わせください。</p>
-    `,
+    `),
   };
 }
 
