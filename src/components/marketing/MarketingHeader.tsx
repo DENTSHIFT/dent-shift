@@ -63,7 +63,7 @@ export function MarketingHeader() {
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              minHeight: 40,
+              minHeight: 44,
               padding: "0 14px",
               background: "#2563EB",
               color: "#fff",

@@ -14,7 +14,7 @@
   gap: 16px;
 }
 
-.logo { height: 38px; display: block; }
+.logo { height: 38px; width: auto; display: block; }
 .headerLink { color: #2563eb; font-size: 14px; font-weight: 700; text-decoration: none; }
 
 .hero { max-width: 760px; margin: 72px auto 30px; text-align: center; }

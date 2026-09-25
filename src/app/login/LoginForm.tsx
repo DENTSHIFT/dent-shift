@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "../auth.module.css";
 
-export function LoginForm() {
+export function LoginForm({ next }: { next?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,7 +26,7 @@ export function LoginForm() {
         setError(data.error ?? "ログインに失敗しました");
         return;
       }
-      router.push("/dashboard");
+      router.push(next ?? "/dashboard");
       router.refresh();
     } catch {
       setError("通信エラーが発生しました。時間をおいて再度お試しください。");

@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { getDiagnosisById } from "@/server/db/diagnosisRepository";
@@ -62,7 +62,15 @@ export default async function DiagnosisResultPage({
   if (!diagnosis) notFound();
   // 会員登録済み医院の診断結果は「契約後データ」として所有者以外に見せない
   // (2026-09-21のユーザー指示)。未登録医院の診断は従来どおり匿名閲覧可能。
-  // 存在有無を漏らさないため、通常の未検出と同じnotFound()で返す。
+  //
+  // 2026-09-25修正: 「診断時は匿名で見られたが、その後に会員登録したため
+  // メール内リンクが404になる」という実機不具合への対応。未ログイン状態で
+  // アクセス不可と判定された場合は、404で終わらせず/loginへ誘導し、
+  // ログイン後に同じ診断結果URLへ戻す(next)。これにより、正当な所有者は
+  // メールリンクから直接ログインを経由して閲覧を継続できる。
+  // 一方、既にログイン済みで別クリニックの診断を開こうとした場合(乗っ取り・
+  // 誤誘導等の意図的なクロステナントアクセス)はログインへ誘導しても解決しないため、
+  // 従来どおり存在有無を漏らさないnotFound()のままにする。
   if (
     !isDiagnosisResultAccessible({
       clinicHasAccount: diagnosis.clinicHasAccount,
@@ -70,6 +78,9 @@ export default async function DiagnosisResultPage({
       diagnosisClinicId: diagnosis.clinicId,
     })
   ) {
+    if (!currentContact) {
+      redirect(`/login?next=${encodeURIComponent(`/diagnosis/result/${id}`)}`);
+    }
     notFound();
   }
   const showDashboardReturn = shouldShowDashboardReturnLink(

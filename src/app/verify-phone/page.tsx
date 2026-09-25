@@ -5,6 +5,7 @@ import { canTransitionRegistrationStep, type RegistrationStep } from "@/domain/a
 import { VerifyPhoneForm } from "./VerifyPhoneForm";
 import styles from "../auth.module.css";
 import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
+import { safeNextPath } from "@/domain/auth/safeNextPath";
 
 /**
  * SMS OTP認証ステップ(registrationStep==="sms")。携帯電話番号を必須にし、
@@ -12,14 +13,6 @@ import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
  * 明示エラーにする。ここからDENT SHIFTが営業電話をかけることは一切ない旨を明示する
  * (最重要原則: 営業マン0人・営業電話なし)。
  */
-/**
- * オープンリダイレクト対策: サイト内の絶対パス("/"始まり、"//"は除く)のみ許可する。
- */
-function safeNextPath(next: string | undefined): string | null {
-  if (!next) return null;
-  if (!next.startsWith("/") || next.startsWith("//")) return null;
-  return next;
-}
 
 export default async function VerifyPhonePage({
   searchParams,

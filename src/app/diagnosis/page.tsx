@@ -424,7 +424,7 @@ export default function DiagnosisPage() {
               alt="DENT SHIFT 歯科集患を、AIでシフトする。"
               width={1844}
               height={572}
-              style={{ height: 36 }}
+              style={{ height: 36, width: "auto" }}
             />
           </div>
           <AnalyzingScreen
@@ -739,6 +739,7 @@ export default function DiagnosisPage() {
         }
         .ds-left-logo img {
           height: 36px;
+          width: auto;
         }
         .ds-heading {
           margin: 0;
@@ -816,6 +817,7 @@ export default function DiagnosisPage() {
           }
           .ds-left-logo img {
             height: 42px;
+            width: auto;
           }
           .ds-heading {
             font-size: 34px;
