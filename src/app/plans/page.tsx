@@ -9,6 +9,8 @@ import {
 } from "@/server/config/billingConfig";
 import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
 import { hasExistingSubscription as subscriptionBlocksNewCheckout } from "@/domain/billing/subscriptionStatus";
+import { evaluateUpgrade } from "@/domain/billing/planUpgrade";
+import { UpgradeButton } from "@/components/UpgradeButton";
 import styles from "./plans.module.css";
 import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
 
@@ -35,8 +37,12 @@ function PlanAction({
   authenticated,
   isBillingExempt,
   hasExistingSubscription,
+  currentPlan,
+  upgradeAllowed,
 }: {
   plan: PlanId;
+  currentPlan: PlanId | null;
+  upgradeAllowed: boolean;
   checkoutReady: boolean;
   authenticated: boolean;
   isBillingExempt: boolean;
@@ -52,7 +58,21 @@ function PlanAction({
   // クリニックには新規Checkoutへの導線を出さない(APIも別途ガード済み、画面側だけに
   // 依存しない)。プラン変更・解約はダッシュボードのCustomer Portal導線を案内する。
   if (hasExistingSubscription) {
-    return <span className={styles.disabledAction}>既にご契約中です(ダッシュボードから管理)</span>;
+    if (plan === currentPlan) {
+      return <span className={styles.disabledAction}>現在のプラン</span>;
+    }
+    // 上位プランへのアップグレードのみ。ダウングレードや価格の自由指定は受け付けない。
+    if (upgradeAllowed && (plan === "standard" || plan === "premium")) {
+      return (
+        <UpgradeButton
+          targetPlan={plan}
+          className={styles.action}
+          label="アップグレード"
+          confirmMessage="このプランへアップグレードします。トライアル期間は変わりません。有効な契約の場合は差額が請求されます。よろしいですか?"
+        />
+      );
+    }
+    return <span className={styles.disabledAction}>ご契約中(プラン変更はダッシュボードから)</span>;
   }
   if (!checkoutReady) {
     return <span className={styles.disabledAction}>オンライン契約は準備中</span>;
@@ -155,6 +175,18 @@ export default async function PlansPage({
               authenticated={Boolean(currentContact)}
               isBillingExempt={isBillingExempt}
               hasExistingSubscription={hasExistingSubscription}
+              currentPlan={subscription?.plan ?? null}
+              upgradeAllowed={
+                subscription
+                  ? evaluateUpgrade({
+                      currentPlan: subscription.plan,
+                      status: subscription.status,
+                      billingExempt: subscription.billingExempt,
+                      invited: subscription.inviteId !== null,
+                      targetPlan: plan.id,
+                    }).ok
+                  : false
+              }
             />
           </article>
         ))}

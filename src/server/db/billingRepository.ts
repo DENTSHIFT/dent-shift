@@ -105,7 +105,8 @@ async function findOrCreateWebhookSubscription(
   tx: Prisma.TransactionClient,
   identity: BillingWebhookIdentity,
   initialStatus: SubscriptionStatus | null,
-  eventAt: Date
+  eventAt: Date,
+  planMismatch: "throw" | "update" | "ignore" = "throw"
 ) {
   // Webhook側のclinicId申告値は、DB上に実在するとは限らない(テスト医院の削除後に、Stripe側だけ
   // 契約が残って後日イベントが届く等)。実在しない医院に契約を再作成すると外部キー違反で500になり、
@@ -143,6 +144,13 @@ async function findOrCreateWebhookSubscription(
     throw new BillingRepositoryStateError("Webhook clinic binding does not match.");
   }
   if (identity.plan && subscription.plan !== identity.plan) {
+    // アップグレードAPIがStripe側のmetadata.planを更新したときの署名検証済みsubscriptionイベントだけ、
+    // DBのplanを追随させる(それ以外のイベントは従来どおり不一致をエラーにする)。
+    if (planMismatch === "update") {
+      return tx.subscription.update({ where: { id: subscription.id }, data: { plan: identity.plan } });
+    }
+    // 請求書はプラン変更の前後どちらのmetadataでも届き得るため、planの不一致では失敗させない。
+    if (planMismatch === "ignore") return subscription;
     throw new BillingRepositoryStateError("Webhook plan binding does not match.");
   }
   return subscription;
@@ -222,7 +230,12 @@ async function applyBillingWebhookEventOnce(
         tx,
         input.action.identity,
         initialStatus,
-        input.occurredAt
+        input.occurredAt,
+        input.action.kind === "invoice_status"
+          ? "ignore"
+          : input.eventType === "customer.subscription.updated"
+            ? "update"
+            : "throw"
       );
       if (!subscription) {
         // invoiceイベントが契約作成より先に届いた場合は、医院が実在する限り取りこぼさず再送させる。

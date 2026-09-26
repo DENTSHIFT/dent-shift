@@ -13,6 +13,7 @@ import { buildSubscriptionViewModel, type SubscriptionTone } from "./subscriptio
 import styles from "./dashboard.module.css";
 import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
 import { COMPETITOR_DISPLAY_LIMIT } from "@/domain/billing/planCatalog";
+import { buildUpgradeNotice, evaluateUpgrade, upgradeTargetsFor } from "@/domain/billing/planUpgrade";
 import {
   INSTRUCTION_PDF_ENTITLEMENT_KEY,
   INSTRUCTION_PDF_MONTHLY_QUOTA,
@@ -210,6 +211,40 @@ export default async function DashboardPage() {
     // 設定途中でも画面は表示し、契約準備中として扱う。
   }
   const subscriptionVm = buildSubscriptionViewModel(subscription, checkoutReady);
+  const upgradeCandidate =
+    subscription &&
+    !subscription.externalSubscriptionId?.startsWith("pilot_") &&
+    upgradeTargetsFor(subscription.plan).length > 0 &&
+    evaluateUpgrade({
+      currentPlan: subscription.plan,
+      status: subscription.status,
+      billingExempt: subscription.billingExempt,
+      invited: subscription.inviteId !== null,
+      targetPlan: upgradeTargetsFor(subscription.plan)[0]!,
+    }).ok;
+  const nextPlan = subscription ? upgradeTargetsFor(subscription.plan)[0] : undefined;
+  const upgradeNotices =
+    upgradeCandidate && subscription && nextPlan
+      ? [
+          buildUpgradeNotice({
+            currentPlan: subscription.plan,
+            requiredPlan: nextPlan,
+            featureLabel: "競合医院の比較",
+            gain: `表示できる競合医院が${COMPETITOR_DISPLAY_LIMIT[subscription.plan]}院から${COMPETITOR_DISPLAY_LIMIT[nextPlan]}院になります。`,
+          }),
+          buildUpgradeNotice({
+            currentPlan: subscription.plan,
+            requiredPlan: nextPlan,
+            featureLabel: "制作会社向け修正指示書の無料枠",
+            gain: `月${INSTRUCTION_PDF_MONTHLY_QUOTA[subscription.plan]}件から月${INSTRUCTION_PDF_MONTHLY_QUOTA[nextPlan]}件になります。`,
+          }),
+        ].filter((notice) => notice !== null)
+      : [];
+  const upgradeLabel = upgradeCandidate
+    ? subscription.plan === "light"
+      ? "スタンダード以上にアップグレード"
+      : "プレミアムにアップグレード"
+    : null;
 
   // プラン別表示制御(2026-09-22のユーザー指示): 競合医院の表示件数(診断エンジン側の
   // 探索件数ではなく、既に取得済みの候補から画面へ出す件数のみを絞る)。未契約はlight相当。
@@ -270,6 +305,18 @@ export default async function DashboardPage() {
               <p className={styles.subscriptionEyebrow}>契約状況</p>
               <h2 className={styles.subscriptionPlan}>{subscriptionVm.planName}</h2>
               <p className={styles.subscriptionDescription}>{subscriptionVm.description}</p>
+              {upgradeNotices.length > 0 && (
+                <div aria-label="プラン別の機能">
+                  <p className={styles.subscriptionDescription}>
+                    <strong>上位プランでは、次の内容が拡張されます。</strong>
+                  </p>
+                  <ul>
+                    {upgradeNotices.map((notice) => (
+                      <li key={notice.body} className={styles.subscriptionDescription}>{notice.body}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {instructionPdfQuota && (
                 <p className={styles.subscriptionDescription}>
                   制作会社向け修正指示書の無料枠: 今月あと{instructionPdfQuota.remaining}/
@@ -284,6 +331,11 @@ export default async function DashboardPage() {
               <Link className={styles.subscriptionLink} href={subscriptionVm.actionHref}>
                 {subscriptionVm.actionLabel}
               </Link>
+              {upgradeLabel && (
+                <Link className={styles.subscriptionLink} href="/plans">
+                  {upgradeLabel}
+                </Link>
+              )}
               {subscription &&
                 checkoutReady &&
                 !subscription.billingExempt &&
