@@ -806,7 +806,6 @@ describe("BillingRepository: 契約状態の医院スコープ", () => {
           clinicId: clinic.id,
           plan: "premium" as const,
         },
-        status: "active" as const,
         paymentStatus: "paid" as const,
         externalPaymentId: "in_paid_unique",
       },
@@ -814,13 +813,58 @@ describe("BillingRepository: 契約状態の医院スコープ", () => {
     expect((await billingRepo.applyBillingWebhookEvent(paidCommand)).result).toBe("processed");
     expect((await billingRepo.applyBillingWebhookEvent(paidCommand)).result).toBe("duplicate");
 
-    expect((await billingRepo.getLatestSubscriptionByClinicId(clinic.id))?.status).toBe("active");
+    // invoice.paid(¥0のトライアルinvoice含む)は契約状態を変えない。状態の正本はsubscriptionイベント。
+    expect((await billingRepo.getLatestSubscriptionByClinicId(clinic.id))?.status).toBe("trial");
     expect(await prisma.payment.count({ where: { externalPaymentId: "in_paid_unique" } })).toBe(1);
+
+    const trialStart = new Date("2026-09-10T01:00:00.000Z");
+    const trialEnd = new Date("2026-09-17T01:00:00.000Z");
+    await billingRepo.applyBillingWebhookEvent({
+      providerEventId: "evt_sub_trial_dates",
+      eventType: "customer.subscription.updated",
+      occurredAt: new Date("2026-09-10T01:02:00.000Z"),
+      action: {
+        kind: "subscription_status",
+        identity: {
+          externalSubscriptionId: "sub_webhook_unique",
+          clinicId: clinic.id,
+          plan: "premium",
+        },
+        status: "trial",
+        trialStartedAt: trialStart,
+        trialEndsAt: trialEnd,
+      },
+    });
+    const synced = await billingRepo.getLatestSubscriptionByClinicId(clinic.id);
+    expect(synced?.trialStartedAt?.toISOString()).toBe(trialStart.toISOString());
+    expect(synced?.trialEndsAt?.toISOString()).toBe(trialEnd.toISOString());
+
+    await billingRepo.applyBillingWebhookEvent({
+      providerEventId: "evt_sub_active",
+      eventType: "customer.subscription.updated",
+      occurredAt: new Date("2026-09-17T01:00:00.000Z"),
+      action: {
+        kind: "subscription_status",
+        identity: {
+          externalSubscriptionId: "sub_webhook_unique",
+          clinicId: clinic.id,
+          plan: "premium",
+        },
+        status: "active",
+        trialStartedAt: trialStart,
+        trialEndsAt: trialEnd,
+      },
+    });
+    expect((await billingRepo.getLatestSubscriptionByClinicId(clinic.id))?.status).toBe("active");
     expect(
       await prisma.billingWebhookEvent.count({
-        where: { providerEventId: { in: ["evt_checkout_unique", "evt_paid_unique"] } },
+        where: {
+          providerEventId: {
+            in: ["evt_checkout_unique", "evt_paid_unique", "evt_sub_trial_dates", "evt_sub_active"],
+          },
+        },
       })
-    ).toBe(2);
+    ).toBe(4);
   });
 
   it("同じ契約の初回通知が重なっても契約レコードを一つだけ作る", async () => {
@@ -873,35 +917,31 @@ describe("BillingRepository: 契約状態の医院スコープ", () => {
       data: { name: "通知別医院", url: "https://event-other.example.com" },
     });
     await billingRepo.applyBillingWebhookEvent({
-      providerEventId: "evt_newer_paid",
-      eventType: "invoice.paid",
+      providerEventId: "evt_newer_active",
+      eventType: "customer.subscription.updated",
       occurredAt: new Date("2026-09-10T02:00:00.000Z"),
       action: {
-        kind: "invoice_status",
+        kind: "subscription_status",
         identity: {
           externalSubscriptionId: "sub_order_unique",
           clinicId: clinic.id,
           plan: "standard",
         },
         status: "active",
-        paymentStatus: "paid",
-        externalPaymentId: "in_newer_paid",
       },
     });
     await billingRepo.applyBillingWebhookEvent({
-      providerEventId: "evt_older_failed",
-      eventType: "invoice.payment_failed",
+      providerEventId: "evt_older_past_due",
+      eventType: "customer.subscription.updated",
       occurredAt: new Date("2026-09-10T01:00:00.000Z"),
       action: {
-        kind: "invoice_status",
+        kind: "subscription_status",
         identity: {
           externalSubscriptionId: "sub_order_unique",
           clinicId: clinic.id,
           plan: "standard",
         },
         status: "past_due",
-        paymentStatus: "failed",
-        externalPaymentId: "in_older_failed",
       },
     });
     expect((await billingRepo.getLatestSubscriptionByClinicId(clinic.id))?.status).toBe("active");

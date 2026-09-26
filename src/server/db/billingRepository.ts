@@ -96,25 +96,26 @@ export async function updateSubscriptionPaymentMethodStatus(input: {
   });
 }
 
-export async function setSubscriptionTrialPeriod(input: {
-  subscriptionId: string;
-  trialStartedAt: Date;
-  trialEndsAt: Date;
-}) {
-  return prisma.subscription.update({
-    where: { id: input.subscriptionId },
-    data: { trialStartedAt: input.trialStartedAt, trialEndsAt: input.trialEndsAt },
-  });
-}
-
 async function findOrCreateWebhookSubscription(
   tx: Prisma.TransactionClient,
   identity: BillingWebhookIdentity,
-  initialStatus: SubscriptionStatus,
+  initialStatus: SubscriptionStatus | null,
   eventAt: Date
 ) {
+  // Webhook側のclinicId申告値は、DB上に実在するとは限らない(テスト医院の削除後に、Stripe側だけ
+  // 契約が残って後日イベントが届く等)。実在しない医院に契約を再作成すると外部キー違反で500になり、
+  // Stripeが再送を繰り返すため、契約の新規作成前に医院の実在を確認し、無ければnull(=ignored)を返す。
+  if (identity.clinicId && initialStatus) {
+    const clinic = await tx.clinic.findUnique({
+      where: { id: identity.clinicId },
+      select: { id: true },
+    });
+    if (!clinic) return null;
+  }
+
+  // initialStatus===null(invoiceイベント)は既存の契約を参照するだけで、契約を新規作成しない。
   const subscription =
-    identity.clinicId && identity.plan
+    identity.clinicId && identity.plan && initialStatus
       ? await tx.subscription.upsert({
           where: { externalSubscriptionId: identity.externalSubscriptionId },
           create: {
@@ -185,10 +186,12 @@ export async function applyBillingWebhookEvent(
     if (input.action.kind === "ignored") {
       result = "ignored";
     } else {
-      const initialStatus =
+      const initialStatus: SubscriptionStatus | null =
         input.action.kind === "checkout_completed"
           ? input.action.initialStatus
-          : input.action.status;
+          : input.action.kind === "subscription_status"
+            ? input.action.status
+            : null;
       let subscription = await findOrCreateWebhookSubscription(
         tx,
         input.action.identity,
@@ -200,12 +203,29 @@ export async function applyBillingWebhookEvent(
       } else {
         clinicId = subscription.clinicId;
         const statusBeforeUpdate = subscription.status;
-        subscription = await updateWebhookSubscriptionStatus(
-          tx,
-          subscription,
-          initialStatus,
-          input.occurredAt
-        );
+        if (initialStatus) {
+          subscription = await updateWebhookSubscriptionStatus(
+            tx,
+            subscription,
+            initialStatus,
+            input.occurredAt
+          );
+        }
+        // トライアル期間はStripe Subscriptionのtrial_start/trial_endを正本として同期する。
+        if (
+          input.action.kind === "subscription_status" &&
+          subscription &&
+          input.action.trialStartedAt &&
+          input.action.trialEndsAt
+        ) {
+          subscription = await tx.subscription.update({
+            where: { id: subscription.id },
+            data: {
+              trialStartedAt: input.action.trialStartedAt,
+              trialEndsAt: input.action.trialEndsAt,
+            },
+          });
+        }
         if (
           subscription &&
           subscription.status !== statusBeforeUpdate &&

@@ -32,22 +32,30 @@ export type RegistrationBannerKind = "email" | "payment" | "consent" | "none";
  */
 export function resolveRegistrationBannerKind(
   registrationStep: string,
-  hasActiveSubscription: boolean
+  hasActiveSubscription: boolean,
+  consentAccepted: boolean
 ): RegistrationBannerKind {
   if (registrationStep === "email") return "email";
-  if (registrationStep === "payment") return hasActiveSubscription ? "none" : "payment";
   if (registrationStep === "consent") return "consent";
+  if (registrationStep === "payment") {
+    if (hasActiveSubscription) return "none";
+    // 規約同意前はCheckoutをサーバーが拒否するため、旧フローで"payment"に進んだ未同意ユーザーにも
+    // 同意バナーを出して行き止まりを防ぐ。
+    return consentAccepted ? "payment" : "consent";
+  }
   return "none";
 }
 
 export function RegistrationProgressBanner({
   registrationStep,
   hasActiveSubscription,
+  consentAccepted,
 }: {
   registrationStep: string;
   hasActiveSubscription: boolean;
+  consentAccepted: boolean;
 }) {
-  const kind = resolveRegistrationBannerKind(registrationStep, hasActiveSubscription);
+  const kind = resolveRegistrationBannerKind(registrationStep, hasActiveSubscription, consentAccepted);
   if (kind === "email") return <EmailStepBanner />;
   if (kind === "payment") return <PaymentStepBanner />;
   if (kind === "consent") return <ConsentStepBanner />;
@@ -121,7 +129,7 @@ function PaymentStepBanner() {
         決済方法の登録をお願いします
       </p>
       <p style={{ margin: 0, fontSize: 13, color: "#1E3A8A" }}>
-        7日間無料トライアルの開始には、プラン選択と決済方法の登録が必要です。トライアル中の請求は発生しません。
+        規約への同意ありがとうございます。7日間無料トライアルの開始には、プラン選択と決済方法の登録が必要です。トライアル中の請求は発生しません。
       </p>
       <div>
         <a

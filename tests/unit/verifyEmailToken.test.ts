@@ -77,7 +77,7 @@ describe("verifyEmailToken", () => {
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it("正常系: verifiedを返し、emailVerifiedAt設定・トークン削除・registrationStep前進・Salesforce連携・trial判定を行う", async () => {
+  it("正常系: verifiedを返し、emailVerifiedAt設定・トークン削除・registrationStep前進・Salesforce連携を行う(次は規約同意ステップ)", async () => {
     const result = await verifyEmailToken(RAW_TOKEN);
     expect(result).toEqual({ status: "verified", contactId: "contact-1", email: "owner@example.com" });
     expect(mocks.update).toHaveBeenCalledWith({
@@ -86,12 +86,12 @@ describe("verifyEmailToken", () => {
         emailVerifiedAt: expect.any(Date),
         emailVerificationTokenHash: null,
         emailVerificationExpiresAt: null,
-        registrationStep: "payment",
+        registrationStep: "consent",
       }),
     });
     expect(mocks.enqueueIntegrationEvent).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: "email_verified", contactId: "contact-1" })
     );
-    expect(mocks.activateTrialIfEligible).toHaveBeenCalledWith("contact-1");
+    expect(mocks.activateTrialIfEligible).not.toHaveBeenCalled();
   });
 });

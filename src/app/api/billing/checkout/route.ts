@@ -6,7 +6,11 @@ import {
   resolveBillingConfigFromProcessEnv,
 } from "@/server/config/billingConfig";
 import { createStripeCheckoutSession } from "@/server/providers/billing/stripeCheckoutProvider";
-import { isTrialEligiblePlan, TRIAL_PERIOD_DAYS } from "@/domain/billing/trialActivation";
+import {
+  evaluateCheckoutEligibility,
+  isTrialEligiblePlan,
+  TRIAL_PERIOD_DAYS,
+} from "@/domain/billing/trialActivation";
 import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
 import { hasExistingSubscription } from "@/domain/billing/subscriptionStatus";
 
@@ -14,6 +18,19 @@ export async function POST(request: NextRequest) {
   const currentContact = await getCurrentContact();
   if (!currentContact) {
     return NextResponse.redirect(new URL("/login", request.url), 303);
+  }
+
+  // 2026-09-25: SMS認証・メール確認・規約同意が済むまでStripe Checkoutを作らせない
+  // (Checkout作成時点で7日間無料トライアルが始まるため)。UI非表示に依存せずサーバーで必ず拒否し、
+  // 未完了ステップの案内があるダッシュボードへ戻す。
+  const eligibility = evaluateCheckoutEligibility({
+    phoneVerifiedAt: currentContact.phoneVerifiedAt,
+    smsVerificationExempt: currentContact.smsVerificationExempt,
+    emailVerifiedAt: currentContact.emailVerifiedAt,
+    consentAcceptedAt: currentContact.consentAcceptedAt,
+  });
+  if (!eligibility.ok) {
+    return NextResponse.redirect(new URL("/dashboard", request.url), 303);
   }
 
   let config;

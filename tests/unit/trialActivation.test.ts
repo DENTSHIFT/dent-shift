@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  computeTrialEndsAt,
-  isEligibleForTrialActivation,
+  evaluateCheckoutEligibility,
+  isRegistrationComplete,
   isTrialEligiblePlan,
   TRIAL_PERIOD_DAYS,
 } from "@/domain/billing/trialActivation";
@@ -18,56 +18,71 @@ describe("isTrialEligiblePlan", () => {
   });
 });
 
-const ALL_COMPLETE = {
-  planId: "light",
-  phoneVerifiedAt: new Date("2026-09-01T00:00:00Z"),
-  emailVerifiedAt: new Date("2026-09-01T00:00:00Z"),
-  consentAcceptedAt: new Date("2026-09-01T00:00:00Z"),
-  paymentMethodStatus: "completed",
-  trialStartedAt: null,
+const D = new Date("2026-09-01T00:00:00Z");
+const READY = {
+  phoneVerifiedAt: D,
+  smsVerificationExempt: false,
+  emailVerifiedAt: D,
+  consentAcceptedAt: D,
 };
 
-describe("isEligibleForTrialActivation", () => {
-  it("SMS・メール・規約同意・決済方法がすべて揃った場合のみtrue", () => {
-    expect(isEligibleForTrialActivation(ALL_COMPLETE)).toBe(true);
+describe("evaluateCheckoutEligibility(Checkout開始条件)", () => {
+  it("SMS・メール・規約同意がすべて揃えばok", () => {
+    expect(evaluateCheckoutEligibility(READY)).toEqual({ ok: true });
   });
 
-  it("SMS未認証ならfalse", () => {
-    expect(isEligibleForTrialActivation({ ...ALL_COMPLETE, phoneVerifiedAt: null })).toBe(false);
+  it("SMS未認証ならCheckout不可", () => {
+    expect(evaluateCheckoutEligibility({ ...READY, phoneVerifiedAt: null })).toEqual({
+      ok: false,
+      missing: "sms",
+    });
   });
 
-  it("メール未確認ならfalse", () => {
-    expect(isEligibleForTrialActivation({ ...ALL_COMPLETE, emailVerifiedAt: null })).toBe(false);
-  });
-
-  it("規約未同意ならfalse", () => {
-    expect(isEligibleForTrialActivation({ ...ALL_COMPLETE, consentAcceptedAt: null })).toBe(false);
-  });
-
-  it("決済方法未登録ならfalse", () => {
+  it("SMS未認証でもsmsVerificationExempt(運営の個別例外)ならSMS条件は免除", () => {
     expect(
-      isEligibleForTrialActivation({ ...ALL_COMPLETE, paymentMethodStatus: "pending" })
-    ).toBe(false);
+      evaluateCheckoutEligibility({ ...READY, phoneVerifiedAt: null, smsVerificationExempt: true })
+    ).toEqual({ ok: true });
   });
 
-  it("既にtrial開始済みなら二重設定を防ぐためfalse", () => {
+  it("メール未確認ならCheckout不可", () => {
+    expect(evaluateCheckoutEligibility({ ...READY, emailVerifiedAt: null })).toEqual({
+      ok: false,
+      missing: "email",
+    });
+  });
+
+  it("規約未同意ならCheckout不可", () => {
+    expect(evaluateCheckoutEligibility({ ...READY, consentAcceptedAt: null })).toEqual({
+      ok: false,
+      missing: "consent",
+    });
+  });
+
+  it("smsVerificationExemptでもメール確認・規約同意は免除されない", () => {
     expect(
-      isEligibleForTrialActivation({ ...ALL_COMPLETE, trialStartedAt: new Date("2026-09-01T00:00:00Z") })
-    ).toBe(false);
-  });
-
-  it("スタンダードプランもトライアル対象(Ver3.3仕様)", () => {
-    expect(isEligibleForTrialActivation({ ...ALL_COMPLETE, planId: "standard" })).toBe(true);
-  });
-
-  it("プレミアムプランはトライアル対象外(Ver3.3仕様)", () => {
-    expect(isEligibleForTrialActivation({ ...ALL_COMPLETE, planId: "premium" })).toBe(false);
+      evaluateCheckoutEligibility({
+        ...READY,
+        phoneVerifiedAt: null,
+        smsVerificationExempt: true,
+        consentAcceptedAt: null,
+      })
+    ).toEqual({ ok: false, missing: "consent" });
   });
 });
 
-describe("computeTrialEndsAt", () => {
-  it("開始日時から7日後を返す", () => {
-    const start = new Date("2026-09-01T00:00:00.000Z");
-    expect(computeTrialEndsAt(start).toISOString()).toBe("2026-09-08T00:00:00.000Z");
+describe("isRegistrationComplete", () => {
+  it("Checkout条件に加えて決済方法登録済みでtrue", () => {
+    expect(isRegistrationComplete({ ...READY, paymentMethodStatus: "completed" })).toBe(true);
+  });
+
+  it("決済方法未登録ならfalse", () => {
+    expect(isRegistrationComplete({ ...READY, paymentMethodStatus: "pending" })).toBe(false);
+    expect(isRegistrationComplete({ ...READY, paymentMethodStatus: null })).toBe(false);
+  });
+
+  it("規約未同意ならfalse", () => {
+    expect(
+      isRegistrationComplete({ ...READY, consentAcceptedAt: null, paymentMethodStatus: "completed" })
+    ).toBe(false);
   });
 });

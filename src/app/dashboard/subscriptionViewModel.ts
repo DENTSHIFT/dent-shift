@@ -26,12 +26,12 @@ const STATUS_PRESENTATION: Record<
 > = {
   trial: {
     statusLabel: "お試し期間中",
-    description: "現在のお試し期間とプラン内容を確認できます。",
+    description: "7日間無料トライアル中です。期間中の請求は発生しません。",
     tone: "info",
   },
   active: {
     statusLabel: "利用中",
-    description: "契約中のプランが有効です。",
+    description: "ご契約のプランをご利用中です。",
     tone: "positive",
   },
   past_due: {

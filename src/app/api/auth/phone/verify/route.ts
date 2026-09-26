@@ -8,7 +8,6 @@ import {
 } from "@/server/providers/sms/twilioVerifySmsProvider";
 import { canTransitionRegistrationStep, type RegistrationStep } from "@/domain/auth/registrationStep";
 import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
-import { activateTrialIfEligible } from "@/server/services/activateTrial";
 
 const MAX_ATTEMPT_COUNT = 5;
 
@@ -110,10 +109,6 @@ export async function POST(request: NextRequest) {
     payload: { registration_step: updatedStep },
   }).catch((error) => {
     console.error("[POST /api/auth/phone/verify] Salesforce sync enqueue failed:", error);
-  });
-
-  await activateTrialIfEligible(contact.id).catch((error) => {
-    console.error("[POST /api/auth/phone/verify] activateTrialIfEligible failed:", error);
   });
 
   return NextResponse.json({ status: "verified" }, { status: 200 });

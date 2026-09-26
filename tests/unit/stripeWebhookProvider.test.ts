@@ -167,13 +167,68 @@ describe("Stripe billing event normalization", () => {
         inviteId: null,
         inviteCode: null,
       },
-      status: "active",
       paymentStatus: "paid",
       externalPaymentId: "in_1",
     });
   });
 
-  it("支払い失敗はpast_dueへ変換する", () => {
+  it("invoice.paidは契約状態(status)を持たない(¥0のトライアルinvoiceでtrial→activeにしない)", () => {
+    const command = normalizeStripeBillingEvent(
+      event("invoice.paid", {
+        id: "in_trial_zero",
+        amount_paid: 0,
+        parent: {
+          subscription_details: {
+            subscription: "sub_1",
+            metadata: { clinic_id: "clinic-1", plan: "light" },
+          },
+        },
+      })
+    );
+    expect(command.action).not.toHaveProperty("status");
+  });
+
+  it("customer.subscription.created(trialing)はtrialへ変換し、Stripeのtrial_start/trial_endを引き継ぐ", () => {
+    const command = normalizeStripeBillingEvent(
+      event("customer.subscription.created", {
+        id: "sub_trial",
+        status: "trialing",
+        trial_start: 1790000000,
+        trial_end: 1790604800,
+        metadata: { clinic_id: "clinic-1", plan: "light" },
+      })
+    );
+    expect(command.action).toEqual(
+      expect.objectContaining({
+        kind: "subscription_status",
+        status: "trial",
+        trialStartedAt: new Date(1790000000 * 1000),
+        trialEndsAt: new Date(1790604800 * 1000),
+      })
+    );
+  });
+
+  it("customer.subscription.updated(active)はactiveへ変換する(trial_endが無ければnull)", () => {
+    const command = normalizeStripeBillingEvent(
+      event("customer.subscription.updated", {
+        id: "sub_premium",
+        status: "active",
+        trial_start: null,
+        trial_end: null,
+        metadata: { clinic_id: "clinic-1", plan: "premium" },
+      })
+    );
+    expect(command.action).toEqual(
+      expect.objectContaining({
+        kind: "subscription_status",
+        status: "active",
+        trialStartedAt: null,
+        trialEndsAt: null,
+      })
+    );
+  });
+
+  it("支払い失敗はPayment履歴のみ記録し、契約状態は変えない(状態はsubscription.updatedが正本)", () => {
     const command = normalizeStripeBillingEvent(
       event("invoice.payment_failed", {
         id: "in_failed",
@@ -188,7 +243,6 @@ describe("Stripe billing event normalization", () => {
     expect(command.action).toEqual(
       expect.objectContaining({
         kind: "invoice_status",
-        status: "past_due",
         paymentStatus: "failed",
       })
     );

@@ -2,16 +2,16 @@ export type RegistrationStep =
   | "profile"
   | "sms"
   | "email"
-  | "payment"
   | "consent"
+  | "payment"
   | "completed";
 
 const STEP_ORDER: RegistrationStep[] = [
   "profile",
   "sms",
   "email",
-  "payment",
   "consent",
+  "payment",
   "completed",
 ];
 

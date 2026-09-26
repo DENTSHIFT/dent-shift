@@ -204,4 +204,83 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
     );
     expect(cancelResult.notify).toEqual({ clinicId: clinic.id, toStatus: "cancelled" });
   });
+
+  describe("実在しない医院へのWebhook(orphan webhook)", () => {
+    // テスト医院のDB削除後に、Stripe側だけ契約が残って後日イベントが届くケース。
+    // 契約を再作成しようとして外部キー違反→500→Stripeの無限再送になってはならない。
+    const MISSING_CLINIC_ID = "clinic_deleted_before_event";
+
+    it("subscription.updated/deletedは契約を作らず、ignoredとして正常終了する", async () => {
+      for (const status of ["active", "past_due", "cancelled"] as const) {
+        const providerEventId = `evt_orphan_sub_${status}`;
+        const result = await billingRepository.applyBillingWebhookEvent(
+          subscriptionStatusCommand({
+            providerEventId,
+            externalSubscriptionId: `sub_orphan_${status}`,
+            clinicId: MISSING_CLINIC_ID,
+            status,
+            occurredAt: new Date("2026-10-02T00:00:00Z"),
+          })
+        );
+        expect(result).toEqual({ result: "ignored", notify: null });
+        expect(await prisma.subscription.count({ where: { clinicId: MISSING_CLINIC_ID } })).toBe(0);
+        // 存在しないclinicIdを外部キー付きで保存せず、通知の再送は重複としても扱える形で記録する。
+        const recorded = await prisma.billingWebhookEvent.findUnique({ where: { providerEventId } });
+        expect(recorded).toEqual(
+          expect.objectContaining({ status: "ignored", clinicId: null })
+        );
+      }
+    });
+
+    it("checkout.session.completedも契約を作らずignoredになる", async () => {
+      const result = await billingRepository.applyBillingWebhookEvent({
+        providerEventId: "evt_orphan_checkout",
+        eventType: "checkout.session.completed",
+        occurredAt: new Date("2026-10-02T00:00:00Z"),
+        action: {
+          kind: "checkout_completed",
+          identity: {
+            externalSubscriptionId: "sub_orphan_checkout",
+            clinicId: MISSING_CLINIC_ID,
+            plan: "light",
+          },
+          initialStatus: "trial",
+        },
+      });
+      expect(result.result).toBe("ignored");
+      expect(await prisma.subscription.count({ where: { clinicId: MISSING_CLINIC_ID } })).toBe(0);
+    });
+
+    it("invoice.paidも契約が無ければignored(契約の新規作成も、Paymentの保存もしない)", async () => {
+      const result = await billingRepository.applyBillingWebhookEvent({
+        providerEventId: "evt_orphan_invoice",
+        eventType: "invoice.paid",
+        occurredAt: new Date("2026-10-02T00:00:00Z"),
+        action: {
+          kind: "invoice_status",
+          identity: {
+            externalSubscriptionId: "sub_orphan_invoice",
+            clinicId: MISSING_CLINIC_ID,
+            plan: "light",
+          },
+          paymentStatus: "paid",
+          externalPaymentId: "in_orphan_invoice",
+        },
+      });
+      expect(result.result).toBe("ignored");
+      expect(await prisma.payment.count({ where: { externalPaymentId: "in_orphan_invoice" } })).toBe(0);
+    });
+
+    it("同じorphanイベントの再送は重複として扱われ、常に正常終了する", async () => {
+      const command = subscriptionStatusCommand({
+        providerEventId: "evt_orphan_sub_cancelled",
+        externalSubscriptionId: "sub_orphan_cancelled",
+        clinicId: MISSING_CLINIC_ID,
+        status: "cancelled",
+        occurredAt: new Date("2026-10-02T00:00:00Z"),
+      });
+      const result = await billingRepository.applyBillingWebhookEvent(command);
+      expect(result.result).toBe("duplicate");
+    });
+  });
 });

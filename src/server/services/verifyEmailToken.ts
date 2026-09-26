@@ -3,7 +3,6 @@ import { prisma } from "@/server/db/prismaClient";
 import { hashEmailVerificationToken } from "@/server/auth/emailVerificationToken";
 import { canTransitionRegistrationStep, type RegistrationStep } from "@/domain/auth/registrationStep";
 import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
-import { activateTrialIfEligible } from "@/server/services/activateTrial";
 
 export type VerifyEmailTokenResult =
   | { status: "verified"; contactId: string; email: string }
@@ -37,7 +36,8 @@ export async function verifyEmailToken(token: string): Promise<VerifyEmailTokenR
     };
   }
 
-  const nextStep: RegistrationStep = "payment";
+  // 2026-09-25: メール確認の次は規約同意(その後にプラン選択・決済方法登録)。
+  const nextStep: RegistrationStep = "consent";
   const currentStep = contact.registrationStep as RegistrationStep;
   const updatedStep = canTransitionRegistrationStep(currentStep, nextStep) ? nextStep : currentStep;
 
@@ -58,10 +58,6 @@ export async function verifyEmailToken(token: string): Promise<VerifyEmailTokenR
     payload: { registration_step: updatedStep },
   }).catch((error) => {
     console.error("[verifyEmailToken] Salesforce sync enqueue failed:", error);
-  });
-
-  await activateTrialIfEligible(contact.id).catch((error) => {
-    console.error("[verifyEmailToken] activateTrialIfEligible failed:", error);
   });
 
   return { status: "verified", contactId: contact.id, email: contact.email };

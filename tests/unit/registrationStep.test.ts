@@ -5,9 +5,9 @@ describe("canTransitionRegistrationStep", () => {
   it("順番通りの前進を許可する", () => {
     expect(canTransitionRegistrationStep("profile", "sms")).toBe(true);
     expect(canTransitionRegistrationStep("sms", "email")).toBe(true);
-    expect(canTransitionRegistrationStep("email", "payment")).toBe(true);
-    expect(canTransitionRegistrationStep("payment", "consent")).toBe(true);
-    expect(canTransitionRegistrationStep("consent", "completed")).toBe(true);
+    expect(canTransitionRegistrationStep("email", "consent")).toBe(true);
+    expect(canTransitionRegistrationStep("consent", "payment")).toBe(true);
+    expect(canTransitionRegistrationStep("payment", "completed")).toBe(true);
   });
 
   it("ステップを飛ばした前進も許可する(冪等な再送・リトライのため)", () => {
@@ -20,6 +20,7 @@ describe("canTransitionRegistrationStep", () => {
 
   it("後退は許可しない", () => {
     expect(canTransitionRegistrationStep("payment", "sms")).toBe(false);
+    expect(canTransitionRegistrationStep("payment", "consent")).toBe(false);
     expect(canTransitionRegistrationStep("completed", "profile")).toBe(false);
   });
 

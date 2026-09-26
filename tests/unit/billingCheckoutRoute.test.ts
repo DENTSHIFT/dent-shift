@@ -34,12 +34,19 @@ function request(plan = "standard", origin = "https://dent-shift.example.com") {
   });
 }
 
+const D = new Date("2026-09-01T00:00:00Z");
+const READY_CONTACT = {
+  clinicId: "clinic-1",
+  email: "owner@example.com",
+  phoneVerifiedAt: D,
+  smsVerificationExempt: false,
+  emailVerifiedAt: D,
+  consentAcceptedAt: D,
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.currentContact.mockResolvedValue({
-    clinicId: "clinic-1",
-    email: "owner@example.com",
-  });
+  mocks.currentContact.mockResolvedValue(READY_CONTACT);
   mocks.resolveConfig.mockReturnValue({
     provider: "disabled",
     priceLabels: { light: null, standard: null, premium: null },
@@ -114,6 +121,58 @@ describe("POST /api/billing/checkout", () => {
       contactEmail: "owner@example.com",
       appBaseUrl: "https://dent-shift.example.com",
       trialPeriodDays: undefined,
+    });
+  });
+
+  describe("Checkout開始前のサーバー側ガード(SMS・メール・規約同意)", () => {
+    function ready() {
+      mocks.resolveConfig.mockReturnValue({
+        provider: "stripe",
+        apiKey: "sk_test_secret",
+        webhookSecret: "whsec_test_secret",
+        taxRateId: "txr_japan_10_percent",
+        appBaseUrl: "https://dent-shift.example.com",
+        priceLabels: { light: "L", standard: "S", premium: "P" },
+        stripePriceIds: { light: "price_l", standard: "price_s", premium: "price_p" },
+      });
+    }
+
+    it.each([
+      ["SMS未認証", { phoneVerifiedAt: null }],
+      ["メール未確認", { emailVerifiedAt: null }],
+      ["規約未同意", { consentAcceptedAt: null }],
+    ])("%sならCheckoutを作成せずダッシュボードへ戻す", async (_label, override) => {
+      ready();
+      mocks.currentContact.mockResolvedValue({ ...READY_CONTACT, ...override });
+
+      const response = await POST(request("light"));
+      expect(response.status).toBe(303);
+      expect(response.headers.get("location")).toBe("https://dent-shift.example.com/dashboard");
+      expect(mocks.createCheckout).not.toHaveBeenCalled();
+    });
+
+    it("3条件が揃っていればCheckout可能(ライト・スタンダードは7日トライアル)", async () => {
+      ready();
+      for (const plan of ["light", "standard"] as const) {
+        mocks.createCheckout.mockClear();
+        const response = await POST(request(plan));
+        expect(response.status).toBe(303);
+        expect(mocks.createCheckout).toHaveBeenCalledWith(
+          expect.objectContaining({ plan, trialPeriodDays: 7 })
+        );
+      }
+    });
+
+    it("smsVerificationExempt(運営の個別例外)のContactはSMS未認証でもCheckout可能", async () => {
+      ready();
+      mocks.currentContact.mockResolvedValue({
+        ...READY_CONTACT,
+        phoneVerifiedAt: null,
+        smsVerificationExempt: true,
+      });
+      const response = await POST(request("light"));
+      expect(response.status).toBe(303);
+      expect(mocks.createCheckout).toHaveBeenCalled();
     });
   });
 

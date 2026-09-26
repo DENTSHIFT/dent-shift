@@ -14,6 +14,8 @@ export interface OnboardingStep {
 }
 
 export interface OnboardingViewModel {
+  // Checkout完了直後(?checkout=success)の案内文。契約情報(Webhook)の反映前後で切り替える。
+  checkoutBannerMessage: string;
   steps: OnboardingStep[];
   completedCount: number;
   totalCount: number;
@@ -35,7 +37,7 @@ function buildContractStep(
     return {
       key: "contract",
       title: "契約内容の反映",
-      description: "お申し込みを受け付けました。契約情報の反映には数秒かかることがあります。",
+      description: "お申し込みを受け付けました。ご契約情報を確認しています。通常は数秒で反映されます。",
       state: "pending",
       stateLabel: "反映を確認中",
       actionLabel: "更新して確認する",
@@ -60,7 +62,10 @@ function buildContractStep(
     return {
       key: "contract",
       title: "契約内容の確認",
-      description: `${planName ?? subscription.plan}が反映されています。`,
+      description:
+        subscription.status === "trial"
+          ? `${planName ?? subscription.plan}の7日間無料トライアルを開始しました。`
+          : `${planName ?? subscription.plan}をご利用中です。`,
       state: "complete",
       stateLabel: "完了",
       actionLabel: "プラン内容を見る",
@@ -121,7 +126,19 @@ export function buildOnboardingViewModel(input: {
   ];
   const completedCount = steps.filter((step) => step.state === "complete").length;
 
+  const subscription = input.subscription;
+  const planName = subscription
+    ? (PLAN_SUMMARIES.find((plan) => plan.id === subscription.plan)?.name ?? subscription.plan)
+    : null;
+  const checkoutBannerMessage =
+    subscription && USABLE_STATUSES.includes(subscription.status)
+      ? subscription.status === "trial"
+        ? `お申し込みが完了しました。${planName}の7日間無料トライアルを開始しました。`
+        : `お申し込みが完了しました。${planName}をご利用いただけます。`
+      : "お申し込みを受け付けました。ご契約情報を確認しています。通常は数秒で反映されます。";
+
   return {
+    checkoutBannerMessage,
     steps,
     completedCount,
     totalCount: steps.length,

@@ -262,6 +262,7 @@ export default async function DashboardPage() {
           <RegistrationProgressBanner
             registrationStep={contact.registrationStep}
             hasActiveSubscription={subscription?.status === "active" || subscription?.status === "trial"}
+            consentAccepted={contact.consentAcceptedAt !== null}
           />
 
           <section className={styles.subscriptionCard} id="subscription" aria-label="契約状況">

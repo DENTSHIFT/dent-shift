@@ -60,7 +60,9 @@ export default async function OnboardingPage({
 
       {checkout === "success" && (
         <div className={styles.successBanner}>
-          お申し込みを受け付けました。カード情報はDENT SHIFTでは保存しません。
+          {vm.checkoutBannerMessage}
+          <br />
+          カード情報はStripeで安全に管理され、DENT SHIFTには保存されません。
         </div>
       )}
 

@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => ({
   resolveSmsConfig: vi.fn(),
   checkVerification: vi.fn(),
   enqueueIntegrationEvent: vi.fn(),
-  activateTrialIfEligible: vi.fn(),
 }));
 
 vi.mock("@/server/auth/session", () => ({ getCurrentContact: mocks.currentContact }));
@@ -31,9 +30,6 @@ vi.mock("@/server/providers/sms/twilioVerifySmsProvider", async () => {
 });
 vi.mock("@/server/db/integrationEventRepository", () => ({
   enqueueIntegrationEvent: mocks.enqueueIntegrationEvent,
-}));
-vi.mock("@/server/services/activateTrial", () => ({
-  activateTrialIfEligible: mocks.activateTrialIfEligible,
 }));
 
 import { POST } from "@/app/api/auth/phone/verify/route";
@@ -66,7 +62,6 @@ beforeEach(() => {
   mocks.checkVerification.mockResolvedValue("approved");
   mocks.update.mockResolvedValue({});
   mocks.enqueueIntegrationEvent.mockResolvedValue(undefined);
-  mocks.activateTrialIfEligible.mockResolvedValue(undefined);
 });
 
 describe("POST /api/auth/phone/verify: 外部障害時のエラーハンドリング", () => {

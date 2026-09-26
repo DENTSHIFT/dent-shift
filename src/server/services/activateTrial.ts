@@ -1,18 +1,21 @@
 import "server-only";
 import { prisma } from "@/server/db/prismaClient";
-import { setSubscriptionTrialPeriod } from "@/server/db/billingRepository";
-import { isEligibleForTrialActivation, computeTrialEndsAt } from "@/domain/billing/trialActivation";
+import { isRegistrationComplete } from "@/domain/billing/trialActivation";
 import { canTransitionRegistrationStep } from "@/domain/auth/registrationStep";
 import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
 
 /**
- * SMS認証・メール確認・規約同意・決済方法登録の4条件を確認し、すべて揃った時だけ
- * trialStartedAtを設定する(指示書4章)。各条件が更新されるたびに呼び出す想定のため、
- * 未充足の場合は何もせず正常終了する(呼び出し元をエラーにしない)。
+ * Stripe Checkout完了(決済方法登録済み)後に呼び、SMS・メール・規約同意がすべて済んでいれば
+ * registrationStepを"completed"へ進める。冪等(既にcompletedなら何もしない)。
+ *
+ * 2026-09-25: トライアルの開始/終了日時(trialStartedAt/trialEndsAt)はここで独自算出せず、
+ * Stripe Subscriptionのtrial_start/trial_endをcustomer.subscription.*Webhookから同期する
+ * (billingRepository.applyBillingWebhookEvent)。StripeとDENT SHIFTの終了日時のずれを防ぐ。
  */
 export async function activateTrialIfEligible(contactId: string): Promise<void> {
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
   if (!contact) return;
+  if (contact.registrationStep === "completed") return;
 
   const subscription = await prisma.subscription.findFirst({
     where: { clinicId: contact.clinicId },
@@ -20,38 +23,30 @@ export async function activateTrialIfEligible(contactId: string): Promise<void> 
   });
   if (!subscription) return;
 
-  const eligible = isEligibleForTrialActivation({
-    planId: subscription.plan,
+  const complete = isRegistrationComplete({
     phoneVerifiedAt: contact.phoneVerifiedAt,
+    smsVerificationExempt: contact.smsVerificationExempt,
     emailVerifiedAt: contact.emailVerifiedAt,
     consentAcceptedAt: contact.consentAcceptedAt,
     paymentMethodStatus: subscription.paymentMethodStatus,
-    trialStartedAt: subscription.trialStartedAt,
   });
-  if (!eligible) return;
-
-  const trialStartedAt = new Date();
-  const trialEndsAt = computeTrialEndsAt(trialStartedAt);
-  await setSubscriptionTrialPeriod({
-    subscriptionId: subscription.id,
-    trialStartedAt,
-    trialEndsAt,
-  });
+  if (!complete) return;
 
   const currentStep = contact.registrationStep as Parameters<typeof canTransitionRegistrationStep>[0];
-  const updatedStep = canTransitionRegistrationStep(currentStep, "completed")
-    ? "completed"
-    : currentStep;
+  if (!canTransitionRegistrationStep(currentStep, "completed")) return;
   await prisma.contact.update({
     where: { id: contact.id },
-    data: { registrationStep: updatedStep },
+    data: { registrationStep: "completed" },
   });
 
   await enqueueIntegrationEvent({
     eventType: "trial_started",
     clinicId: contact.clinicId,
     contactId: contact.id,
-    payload: { registration_step: updatedStep, trial_ends_at: trialEndsAt.toISOString() },
+    payload: {
+      registration_step: "completed",
+      trial_ends_at: subscription.trialEndsAt ? subscription.trialEndsAt.toISOString() : null,
+    },
   }).catch((error) => {
     console.error("[activateTrial] Salesforce sync enqueue failed:", error);
   });

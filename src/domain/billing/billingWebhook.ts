@@ -22,11 +22,16 @@ export type BillingWebhookAction =
       kind: "subscription_status";
       identity: BillingWebhookIdentity;
       status: SubscriptionStatus;
+      // Stripe Subscriptionのtrial_start/trial_end(2026-09-25)。トライアルの正本はStripe。
+      // トライアルが無い契約(プレミアム等)ではnull。
+      trialStartedAt?: Date | null;
+      trialEndsAt?: Date | null;
     }
+  // 2026-09-25: invoiceイベントはPayment履歴の記録専用。契約状態(status)の正本には使わない
+  // (¥0のトライアル開始invoiceでもinvoice.paidが発火し、trialing→activeへ誤上書きされていた)。
   | {
       kind: "invoice_status";
       identity: BillingWebhookIdentity;
-      status: "active" | "past_due";
       paymentStatus: "paid" | "failed";
       externalPaymentId: string;
     }

@@ -96,6 +96,11 @@ function mapStripeSubscriptionStatus(value: unknown): SubscriptionStatus | null 
   }
 }
 
+function epochSecondsToDate(value: unknown): Date | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
+  return new Date(value * 1000);
+}
+
 function ignored(event: Stripe.Event): BillingWebhookCommand {
   return {
     providerEventId: event.id,
@@ -160,6 +165,8 @@ export function normalizeStripeBillingEvent(event: Stripe.Event): BillingWebhook
         kind: "subscription_status",
         identity: subscriptionIdentity,
         status,
+        trialStartedAt: epochSecondsToDate(object.trial_start),
+        trialEndsAt: epochSecondsToDate(object.trial_end),
       },
     };
   }
@@ -179,7 +186,6 @@ export function normalizeStripeBillingEvent(event: Stripe.Event): BillingWebhook
       action: {
         kind: "invoice_status",
         identity: invoiceIdentity,
-        status: paid ? "active" : "past_due",
         paymentStatus: paid ? "paid" : "failed",
         externalPaymentId,
       },

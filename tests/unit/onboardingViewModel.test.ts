@@ -26,7 +26,7 @@ describe("onboarding view model", () => {
 
     expect(vm.steps[1]).toEqual(expect.objectContaining({
       state: "complete",
-      description: "スタンダードプランが反映されています。",
+      description: "スタンダードプランをご利用中です。",
     }));
     expect(vm.steps[2]).toEqual(expect.objectContaining({
       state: "current",
@@ -63,5 +63,30 @@ describe("onboarding view model", () => {
       stateLabel: "要確認",
     }));
     expect(vm.isComplete).toBe(false);
+  });
+});
+
+describe("Checkout完了直後の案内文", () => {
+  it("契約情報の反映前は「確認しています」を表示する", () => {
+    const vm = buildOnboardingViewModel({
+      subscription: null,
+      hasDiagnosis: false,
+      checkoutJustCompleted: true,
+    });
+    expect(vm.checkoutBannerMessage).toBe(
+      "お申し込みを受け付けました。ご契約情報を確認しています。通常は数秒で反映されます。"
+    );
+  });
+
+  it("トライアル反映後は7日間無料トライアル開始を表示する", () => {
+    const vm = buildOnboardingViewModel({
+      subscription: { plan: "light", status: "trial" },
+      hasDiagnosis: false,
+      checkoutJustCompleted: true,
+    });
+    expect(vm.checkoutBannerMessage).toBe(
+      "お申し込みが完了しました。ライトプランの7日間無料トライアルを開始しました。"
+    );
+    expect(vm.steps[1]?.description).toBe("ライトプランの7日間無料トライアルを開始しました。");
   });
 });
