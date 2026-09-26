@@ -88,7 +88,7 @@ describe("sendOperatorPasswordResetEmail", () => {
     expect(call.message.html).toContain("https://dentshift.jp/ops/reset-password?token=");
   });
 
-  it("2026-09-24: 本文にDENT SHIFTロゴヘッダーを含める", async () => {
+  it("ロゴ画像を含めない", async () => {
     mocks.resolveResultEmailConfig.mockReturnValue({
       provider: "resend",
       apiKey: "existing-diagnosis-key-should-not-be-used",
@@ -99,9 +99,6 @@ describe("sendOperatorPasswordResetEmail", () => {
 
     await sendOperatorPasswordResetEmail({ operatorId: "operator-1", email: "ops@example.com" });
     const call = mocks.sendWithResend.mock.calls[0]![0];
-    expect(call.message.html).toContain(
-      "https://dentshift.jp/brand/logo/DENT_SHIFT_email_official.png"
-    );
-    expect(call.message.html).toContain('alt="DENT SHIFT"');
+    expect(call.message.html).not.toContain("<img");
   });
 });
