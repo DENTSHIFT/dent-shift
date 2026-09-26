@@ -79,4 +79,18 @@ describe("POST /api/auth/phone/verify: 外部障害時のエラーハンドリ�
     const response = await POST(request({ code: "123456" }));
     expect(response.status).toBe(200);
   });
+
+  it("電話番号のような入力はTwilioを呼ばず、案内付きの400を返す(失敗回数も増やさない)", async () => {
+    const response = await POST(request({ code: "090-1234-5678" }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain("電話番号ではなく");
+    expect(mocks.checkVerification).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("形式が不正な入力もTwilioを呼ばず400", async () => {
+    const response = await POST(request({ code: "abc" }));
+    expect(response.status).toBe(400);
+    expect(mocks.checkVerification).not.toHaveBeenCalled();
+  });
 });

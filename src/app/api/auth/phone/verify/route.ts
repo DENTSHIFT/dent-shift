@@ -7,6 +7,11 @@ import {
   SmsDeliveryError,
 } from "@/server/providers/sms/twilioVerifySmsProvider";
 import { canTransitionRegistrationStep, type RegistrationStep } from "@/domain/auth/registrationStep";
+import {
+  OTP_INVALID_FORMAT_MESSAGE,
+  OTP_LOOKS_LIKE_PHONE_MESSAGE,
+  validateOtpCode,
+} from "@/domain/auth/otpCode";
 import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
 
 const MAX_ATTEMPT_COUNT = 5;
@@ -30,6 +35,13 @@ export async function POST(request: NextRequest) {
   if (typeof code !== "string" || !code.trim()) {
     return NextResponse.json({ error: "確認コードを入力してください" }, { status: 400 });
   }
+  const validated = validateOtpCode(code);
+  if (!validated.ok) {
+    return NextResponse.json(
+      { error: validated.reason === "phone_like" ? OTP_LOOKS_LIKE_PHONE_MESSAGE : OTP_INVALID_FORMAT_MESSAGE },
+      { status: 400 }
+    );
+  }
 
   let config;
   try {
@@ -48,7 +60,7 @@ export async function POST(request: NextRequest) {
   const provider = createTwilioVerifySmsProvider(config);
   let result;
   try {
-    result = await provider.checkVerification(contact.phoneNumber, code.trim());
+    result = await provider.checkVerification(contact.phoneNumber, validated.code);
   } catch (error) {
     if (error instanceof SmsDeliveryError) {
       console.error("[POST /api/auth/phone/verify] SMS verification check failed:", error.message);

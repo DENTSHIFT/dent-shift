@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { OTP_CODE_HINT, OTP_CODE_MAX_LENGTH, OTP_INVALID_FORMAT_MESSAGE, OTP_LOOKS_LIKE_PHONE_MESSAGE, validateOtpCode } from "@/domain/auth/otpCode";
 import styles from "../auth.module.css";
 
 type Method = "email" | "sms";
@@ -49,6 +50,11 @@ export function ForgotPasswordForm() {
 
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
+    const checked = validateOtpCode(code);
+    if (!checked.ok) {
+      setError(checked.reason === "phone_like" ? OTP_LOOKS_LIKE_PHONE_MESSAGE : OTP_INVALID_FORMAT_MESSAGE);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -98,7 +104,8 @@ export function ForgotPasswordForm() {
         {notice && <p className={styles.description}>{notice}</p>}
         <label className={styles.field}>
           <span>認証コード</span>
-          <input className={styles.input} required inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} />
+          <input className={styles.input} required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={OTP_CODE_MAX_LENGTH} placeholder="123456" value={code} onChange={(e) => setCode(e.target.value)} />
+          <span className={styles.fieldHelper}>{OTP_CODE_HINT}</span>
         </label>
         {error && <p className={styles.error}>{error}</p>}
         <button className={styles.primaryButton} type="submit" disabled={submitting}>

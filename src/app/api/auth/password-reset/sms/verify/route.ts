@@ -3,6 +3,7 @@ import { prisma } from "@/server/db/prismaClient";
 import { resolveSmsConfigFromProcessEnv } from "@/server/config/smsConfig";
 import { createTwilioVerifySmsProvider } from "@/server/providers/sms/twilioVerifySmsProvider";
 import { generateContactPasswordResetToken } from "@/server/auth/contactPasswordResetToken";
+import { validateOtpCode } from "@/domain/auth/otpCode";
 import { canCheckSmsCode, PASSWORD_RESET_SMS_INVALID_CODE_MESSAGE } from "@/domain/auth/passwordReset";
 
 // アカウントなし・送信前・期限切れ・誤コード・試行上限はすべて同一の400にする。
@@ -21,6 +22,10 @@ export async function POST(request: NextRequest) {
     return invalid();
   }
 
+  // 形式が不正な入力(電話番号の取り違えなど)は、Twilioへ送らずに同一の応答で返す。
+  const validated = validateOtpCode(code);
+  if (!validated.ok) return invalid();
+
   const contact = await prisma.contact.findUnique({ where: { email: email.trim() } });
   if (!contact || !contact.phoneNumber || !canCheckSmsCode(contact, new Date())) return invalid();
 
@@ -28,7 +33,7 @@ export async function POST(request: NextRequest) {
   try {
     const config = resolveSmsConfigFromProcessEnv();
     if (config.provider === "disabled") return invalid();
-    result = await createTwilioVerifySmsProvider(config).checkVerification(contact.phoneNumber, code.trim());
+    result = await createTwilioVerifySmsProvider(config).checkVerification(contact.phoneNumber, validated.code);
   } catch {
     console.error("[POST /api/auth/password-reset/sms/verify] verification check failed");
     return invalid();

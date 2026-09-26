@@ -101,6 +101,15 @@ describe("SMS再設定 verify", () => {
     expect(wj).toEqual(nj);
     expect(contactUpdate.mock.calls[0]![0].data.passwordResetSmsAttemptCount).toEqual({ increment: 1 });
   });
+  it("電話番号のような入力はTwilioを呼ばず、他の失敗と同一の400を返す", async () => {
+    const { POST } = await import("@/app/api/auth/password-reset/sms/verify/route");
+    const phoneLike = await POST(req({ email: "a@example.com", code: "09012345678" }));
+    contactFindUnique.mockResolvedValueOnce(null);
+    const none = await POST(req({ email: "x@example.com", code: "000000" }));
+    expect(phoneLike.status).toBe(400);
+    expect(await phoneLike.json()).toEqual(await none.json());
+    expect(checkVerification).not.toHaveBeenCalled();
+  });
   it("電話番号未認証のContactはTwilioを呼ばず400", async () => {
     const { POST } = await import("@/app/api/auth/password-reset/sms/verify/route");
     contactFindUnique.mockResolvedValueOnce({ ...pending, phoneVerifiedAt: null });
