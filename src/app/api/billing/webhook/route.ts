@@ -176,7 +176,8 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(
       "[POST /api/billing/webhook] processing failed:",
-      error instanceof Error ? error.name : "UnknownError"
+      error instanceof Error ? error.name : "UnknownError",
+      (error as { code?: unknown } | null)?.code ?? ""
     );
     return NextResponse.json({ error: "決済通知を処理できませんでした。" }, { status: 500 });
   }

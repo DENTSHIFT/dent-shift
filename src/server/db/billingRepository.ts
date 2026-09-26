@@ -25,9 +25,9 @@ const NOTIFY_ON_STATUSES: readonly SubscriptionStatus[] = [
 
 export class BillingRepositoryStateError extends Error {}
 
-// Prismaの対話型トランザクションは既定5秒でタイムアウトする(P2028)。VercelのFunctionと
-// Neonの地理的距離により、Webhook処理(複数クエリ)が5秒を超えて500になり、Stripeが再送を
-// 繰り返す事象を2026-09-26のtest E2Eで確認したため、余裕を持たせる。
+// Prismaの対話型トランザクションは既定5秒でタイムアウトする(P2028)。2026-09-26のtest E2Eで
+// Webhookが遅延・500になる事象があり、原因は未確定(P2028やリージョン間遅延の可能性)だが、
+// 余裕を持たせるためtimeoutを延長した。
 const WEBHOOK_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 30_000 } as const;
 
 export async function createSubscriptionRecord(input: {
@@ -175,6 +175,27 @@ async function updateWebhookSubscriptionStatus(
  * providerEventIdの一意制約により再送を二重処理せず、生の通知本文は保存しない。
  */
 export async function applyBillingWebhookEvent(
+  input: BillingWebhookCommand
+): Promise<BillingWebhookApplyOutcome> {
+  return retryOnConcurrentWrite(() => applyBillingWebhookEventOnce(input));
+}
+
+// Stripeはsubscription.created / checkout.session.completedをほぼ同時に送るため、両者が同時に
+// Subscriptionをupsertして一意制約違反(P2002)や書き込み競合(P2034)になり得る。
+// 敗者側は再実行すれば先行トランザクションの結果を読めるので、数回だけ再試行する。
+export async function retryOnConcurrentWrite<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await run();
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code;
+      if ((code !== "P2002" && code !== "P2034") || attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
+    }
+  }
+}
+
+async function applyBillingWebhookEventOnce(
   input: BillingWebhookCommand
 ): Promise<BillingWebhookApplyOutcome> {
   return prisma.$transaction(async (tx) => {
