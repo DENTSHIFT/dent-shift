@@ -7,6 +7,11 @@ import { validatePassword } from "@/domain/auth/passwordPolicy";
 const INVALID_TOKEN_MESSAGE =
   "このリンクは無効か、有効期限が切れています。もう一度パスワード再設定をお試しください。";
 
+// 再設定の結果だけを記録する(トークン・パスワード・メールアドレスは含めない)。
+function logResetOutcome(outcome: "invalid_token" | "weak_password" | "same_password" | "success") {
+  console.info(JSON.stringify({ event: "password_reset_submit", outcome }));
+}
+
 export async function POST(request: NextRequest) {
   let body: unknown;
   try {
@@ -26,14 +31,17 @@ export async function POST(request: NextRequest) {
     where: { passwordResetTokenHash: hashContactPasswordResetToken(token) },
   });
   if (!contact || !contact.passwordResetExpiresAt || contact.passwordResetExpiresAt.getTime() < Date.now()) {
+    logResetOutcome("invalid_token");
     return NextResponse.json({ error: INVALID_TOKEN_MESSAGE }, { status: 400 });
   }
 
   const validation = validatePassword(newPassword);
   if (!validation.valid) {
+    logResetOutcome("weak_password");
     return NextResponse.json({ error: validation.reason }, { status: 400 });
   }
   if (await verifyPassword(newPassword, contact.passwordHash)) {
+    logResetOutcome("same_password");
     return NextResponse.json({ error: "現在のパスワードと異なるパスワードを設定してください" }, { status: 400 });
   }
 
@@ -51,5 +59,6 @@ export async function POST(request: NextRequest) {
     }),
     prisma.session.deleteMany({ where: { contactId: contact.id } }),
   ]);
+  logResetOutcome("success");
   return NextResponse.json({ ok: true }, { status: 200 });
 }
