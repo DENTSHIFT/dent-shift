@@ -23,12 +23,37 @@ describe("twilioVerifySmsProvider", () => {
     const provider = createTwilioVerifySmsProvider(CONFIG);
     const result = await provider.sendVerification("+819012345678");
 
-    expect(result).toEqual({ status: "sent" });
+    expect(result).toEqual({ status: "sent", requestSid: undefined, providerStatus: undefined });
     const [url, options] = fetchMock.mock.calls[0]!;
     expect(url).toBe(
       "https://verify.twilio.com/v2/Services/VA_test_service/Verifications"
     );
     expect(options.headers.Authorization).toMatch(/^Basic /);
+  });
+
+  it("受理時はVerification SIDとstatusを返す(端末到達は保証しない)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ sid: "VE123", status: "pending" }), { status: 201 }))
+    );
+    const provider = createTwilioVerifySmsProvider(CONFIG);
+    expect(await provider.sendVerification("+819012345678")).toEqual({
+      status: "sent",
+      requestSid: "VE123",
+      providerStatus: "pending",
+    });
+  });
+
+  it("Twilioのエラー応答からHTTPステータスとエラーコードだけを取り出す", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 60203, message: "Max send attempts reached" }), { status: 429 }))
+    );
+    const provider = createTwilioVerifySmsProvider(CONFIG);
+    const caught = await provider.sendVerification("+819012345678").catch((e) => e);
+    expect(caught).toBeInstanceOf(SmsDeliveryError);
+    expect(caught.details).toEqual({ httpStatus: 429, providerCode: 60203 });
+    expect(caught.message).not.toContain("+8190");
   });
 
   it("送信失敗時はauthTokenを例外へ含めない", async () => {

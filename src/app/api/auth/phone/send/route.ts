@@ -8,6 +8,7 @@ import {
   SmsDeliveryError,
 } from "@/server/providers/sms/twilioVerifySmsProvider";
 import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
+import { logSmsEvent } from "@/server/providers/sms/smsLog";
 
 const RESEND_MIN_INTERVAL_MS = 1000 * 60; // 1分
 const MAX_RESEND_COUNT = 5; // 1登録あたりの送信上限
@@ -93,9 +94,21 @@ export async function POST(request: NextRequest) {
 
   const provider = createTwilioVerifySmsProvider(config);
   try {
-    await provider.sendVerification(normalizedPhone);
+    const sent = await provider.sendVerification(normalizedPhone);
+    logSmsEvent({
+      purpose: "phone_verify_send",
+      result: "accepted",
+      requestSid: sent?.requestSid,
+      providerStatus: sent?.providerStatus,
+    });
   } catch (error) {
     if (error instanceof SmsDeliveryError) {
+      logSmsEvent({
+        purpose: "phone_verify_send",
+        result: "failed",
+        httpStatus: error.details?.httpStatus,
+        errorCode: error.details?.providerCode,
+      });
       console.error("[POST /api/auth/phone/send] SMS delivery failed:", error.message);
       return NextResponse.json(
         { error: "SMSを送信できませんでした。時間をおいて再度お試しください" },

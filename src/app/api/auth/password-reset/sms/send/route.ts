@@ -2,6 +2,8 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prismaClient";
 import { resolveSmsConfigFromProcessEnv } from "@/server/config/smsConfig";
 import { createTwilioVerifySmsProvider } from "@/server/providers/sms/twilioVerifySmsProvider";
+import { logSmsEvent } from "@/server/providers/sms/smsLog";
+import { SmsDeliveryError } from "@/server/providers/sms/twilioVerifySmsProvider";
 import { decideSmsSend, PASSWORD_RESET_SMS_GENERIC_MESSAGE } from "@/domain/auth/passwordReset";
 
 // 電話番号はユーザーに入力させない。登録メールアドレスで指定されたContactの、
@@ -20,16 +22,28 @@ export async function POST(request: NextRequest) {
 
   // 応答時間の差(SMS送信の有無)で状態を推測されないよう、送信・DB更新は応答後に実行する。
   const contact = await prisma.contact.findUnique({ where: { email: email.trim() } });
+  if (!contact || !contact.phoneNumber) {
+    logSmsEvent({ purpose: "password_reset_sms_send", result: "skipped", reason: contact ? "no_phone" : "no_account" });
+  }
   if (contact && contact.phoneNumber) {
     const phoneNumber = contact.phoneNumber;
     after(async () => {
       const now = new Date();
       const decision = decideSmsSend(contact, now);
-      if (!decision.allowed) return;
+      if (!decision.allowed) {
+        logSmsEvent({ purpose: "password_reset_sms_send", result: "skipped", reason: "not_eligible_or_throttled" });
+        return;
+      }
       try {
         const config = resolveSmsConfigFromProcessEnv();
         if (config.provider === "disabled") return;
-        await createTwilioVerifySmsProvider(config).sendVerification(phoneNumber);
+        const sent = await createTwilioVerifySmsProvider(config).sendVerification(phoneNumber);
+        logSmsEvent({
+          purpose: "password_reset_sms_send",
+          result: "accepted",
+          requestSid: sent?.requestSid,
+          providerStatus: sent?.providerStatus,
+        });
         await prisma.contact.update({
           where: { id: contact.id },
           data: {
@@ -39,7 +53,13 @@ export async function POST(request: NextRequest) {
             passwordResetSmsAttemptCount: 0,
           },
         });
-      } catch {
+      } catch (error) {
+        logSmsEvent({
+          purpose: "password_reset_sms_send",
+          result: "failed",
+          httpStatus: error instanceof SmsDeliveryError ? error.details?.httpStatus : undefined,
+          errorCode: error instanceof SmsDeliveryError ? error.details?.providerCode : undefined,
+        });
         console.error("[POST /api/auth/password-reset/sms/send] delivery failed");
       }
     });

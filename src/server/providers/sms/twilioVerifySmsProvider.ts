@@ -6,7 +6,14 @@ import type {
 } from "./types";
 import type { TwilioVerifySmsConfig } from "@/server/config/smsConfig";
 
-export class SmsDeliveryError extends Error {}
+export class SmsDeliveryError extends Error {
+  constructor(
+    message: string,
+    readonly details: { httpStatus?: number; providerCode?: number } = {}
+  ) {
+    super(message);
+  }
+}
 
 /**
  * Twilio Verify REST APIをSDK不使用で直叩きする(resend/stripe providerと同じ方針)。
@@ -34,9 +41,19 @@ export function createTwilioVerifySmsProvider(config: TwilioVerifySmsConfig): Sm
       }
 
       if (!response.ok) {
-        throw new SmsDeliveryError(`SMS provider returned HTTP ${response.status}.`);
+        const errorBody = (await response.json().catch(() => null)) as { code?: unknown } | null;
+        const providerCode = typeof errorBody?.code === "number" ? errorBody.code : undefined;
+        throw new SmsDeliveryError(
+          `SMS provider returned HTTP ${response.status}${providerCode ? ` (code ${providerCode})` : ""}.`,
+          { httpStatus: response.status, providerCode }
+        );
       }
-      return { status: "sent" };
+      const body = (await response.json().catch(() => null)) as { sid?: unknown; status?: unknown } | null;
+      return {
+        status: "sent",
+        requestSid: typeof body?.sid === "string" ? body.sid : undefined,
+        providerStatus: typeof body?.status === "string" ? body.status : undefined,
+      };
     },
 
     async checkVerification(phoneNumberE164: string, code: string): Promise<CheckVerificationResult> {
