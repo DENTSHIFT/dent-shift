@@ -104,9 +104,16 @@ export function ForgotPasswordForm() {
         <button className={styles.primaryButton} type="submit" disabled={submitting}>
           {submitting ? "確認中..." : "認証コードを確認"}
         </button>
+        <p className={styles.helper}>
+          SMSが届かない場合は、登録済みの携帯電話番号がないか、受信できない状態の可能性があります。メールでの再設定もご利用いただけます。
+        </p>
         <p className={styles.switchLink}>
           <a href="#" onClick={(e) => { e.preventDefault(); setCodeStage(false); setNotice(null); setCode(""); setError(null); }}>
             認証コードを再送する
+          </a>
+          {" / "}
+          <a href="#" onClick={(e) => { e.preventDefault(); setMethod("email"); setCodeStage(false); setNotice(null); setCode(""); setError(null); }}>
+            メールで再設定する
           </a>
         </p>
       </form>
