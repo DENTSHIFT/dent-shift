@@ -102,6 +102,14 @@ model Contact {
   smsResendCount   Int       @default(0)
   smsVerificationExempt Boolean @default(false)
 
+  passwordResetTokenHash          String?
+  passwordResetExpiresAt          DateTime?
+  passwordResetEmailRequestedAt   DateTime?
+  passwordResetSmsSentAt          DateTime?
+  passwordResetSmsWindowStartedAt DateTime?
+  passwordResetSmsSendCount       Int       @default(0)
+  passwordResetSmsAttemptCount    Int       @default(0)
+
   emailVerifiedAt             DateTime?
   emailVerificationTokenHash  String?
   emailVerificationExpiresAt  DateTime?

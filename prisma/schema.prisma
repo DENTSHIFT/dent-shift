@@ -192,6 +192,14 @@ model Contact {
   // /verify-phoneのSMSフォームをスキップし、registrationStepを"email"へ進める。
   smsVerificationExempt Boolean @default(false)
 
+  passwordResetTokenHash          String?
+  passwordResetExpiresAt          DateTime?
+  passwordResetEmailRequestedAt   DateTime?
+  passwordResetSmsSentAt          DateTime?
+  passwordResetSmsWindowStartedAt DateTime?
+  passwordResetSmsSendCount       Int       @default(0)
+  passwordResetSmsAttemptCount    Int       @default(0)
+
   // 会員本人(Contact)のメールアドレス確認。トークン平文は保存せずハッシュのみ保持する。
   emailVerifiedAt             DateTime?
   emailVerificationTokenHash  String?

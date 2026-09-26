@@ -43,6 +43,9 @@ export function LoginForm({ next }: { next?: string }) {
       <Field label="パスワード">
         <input className={styles.input} required type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
       </Field>
+      <p className={styles.switchLink}>
+        <a href="/forgot-password">パスワードを忘れた方へ</a>
+      </p>
 
       {error && <p className={styles.error}>{error}</p>}
 
