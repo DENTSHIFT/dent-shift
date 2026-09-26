@@ -8,6 +8,17 @@ const transaction = vi.fn();
 const sendVerification = vi.fn();
 const checkVerification = vi.fn();
 
+const afterTasks: Array<() => unknown> = [];
+vi.mock("next/server", async (orig) => ({
+  ...(await orig<typeof import("next/server")>()),
+  after: (task: () => unknown) => {
+    afterTasks.push(task);
+  },
+}));
+const flushAfter = async () => {
+  while (afterTasks.length) await afterTasks.shift()!();
+};
+
 vi.mock("@/server/db/prismaClient", () => ({
   prisma: {
     contact: { findUnique: contactFindUnique, findFirst: contactFindFirst, update: contactUpdate },
@@ -46,6 +57,8 @@ describe("SMS再設定 send", () => {
     const { POST } = await import("@/app/api/auth/password-reset/sms/send/route");
     contactFindUnique.mockResolvedValueOnce(eligible);
     const a = await POST(req({ email: "a@example.com" }));
+    expect(sendVerification).not.toHaveBeenCalled();
+    await flushAfter();
     expect(sendVerification).toHaveBeenCalledWith("+819012345678");
 
     sendVerification.mockClear();
@@ -53,6 +66,7 @@ describe("SMS再設定 send", () => {
     const b = await POST(req({ email: "a@example.com" }));
     contactFindUnique.mockResolvedValueOnce(null);
     const c = await POST(req({ email: "none@example.com" }));
+    await flushAfter();
     expect(sendVerification).not.toHaveBeenCalled();
     const [aj, bj, cj] = [await a.json(), await b.json(), await c.json()];
     expect(bj).toEqual(aj);

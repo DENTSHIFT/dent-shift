@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prismaClient";
 import { sendContactPasswordResetEmail } from "@/server/services/sendContactPasswordResetEmail";
 import {
@@ -19,21 +19,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "メールアドレスを入力してください" }, { status: 400 });
   }
 
+  // 応答時間でアカウントの有無を推測されないよう、DB検索(存在有無に関わらず1回)だけ
+  // 済ませて先に同一レスポンスを返し、更新・メール送信は応答後に実行する。
   const contact = await prisma.contact.findUnique({ where: { email: email.trim() } });
-  const now = new Date();
-  const throttled =
-    contact?.passwordResetEmailRequestedAt &&
-    now.getTime() - contact.passwordResetEmailRequestedAt.getTime() < PASSWORD_RESET_EMAIL_MIN_INTERVAL_MS;
-  if (contact && !throttled) {
-    try {
-      await prisma.contact.update({
-        where: { id: contact.id },
-        data: { passwordResetEmailRequestedAt: now },
-      });
-      await sendContactPasswordResetEmail({ contactId: contact.id, email: contact.email });
-    } catch {
-      console.error("[POST /api/auth/password-reset/email] delivery failed");
-    }
+  if (contact) {
+    after(async () => {
+      const now = new Date();
+      const throttled =
+        contact.passwordResetEmailRequestedAt &&
+        now.getTime() - contact.passwordResetEmailRequestedAt.getTime() < PASSWORD_RESET_EMAIL_MIN_INTERVAL_MS;
+      if (throttled) return;
+      try {
+        await prisma.contact.update({
+          where: { id: contact.id },
+          data: { passwordResetEmailRequestedAt: now },
+        });
+        await sendContactPasswordResetEmail({ contactId: contact.id, email: contact.email });
+      } catch {
+        console.error("[POST /api/auth/password-reset/email] delivery failed");
+      }
+    });
   }
   return NextResponse.json({ message: PASSWORD_RESET_EMAIL_GENERIC_MESSAGE }, { status: 200 });
 }

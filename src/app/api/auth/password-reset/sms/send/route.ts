@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prismaClient";
 import { resolveSmsConfigFromProcessEnv } from "@/server/config/smsConfig";
 import { createTwilioVerifySmsProvider } from "@/server/providers/sms/twilioVerifySmsProvider";
@@ -18,29 +18,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "メールアドレスを入力してください" }, { status: 400 });
   }
 
+  // 応答時間の差(SMS送信の有無)で状態を推測されないよう、送信・DB更新は応答後に実行する。
   const contact = await prisma.contact.findUnique({ where: { email: email.trim() } });
   if (contact && contact.phoneNumber) {
-    const now = new Date();
-    const decision = decideSmsSend(contact, now);
-    if (decision.allowed) {
+    const phoneNumber = contact.phoneNumber;
+    after(async () => {
+      const now = new Date();
+      const decision = decideSmsSend(contact, now);
+      if (!decision.allowed) return;
       try {
         const config = resolveSmsConfigFromProcessEnv();
-        if (config.provider !== "disabled") {
-          await createTwilioVerifySmsProvider(config).sendVerification(contact.phoneNumber);
-          await prisma.contact.update({
-            where: { id: contact.id },
-            data: {
-              passwordResetSmsSentAt: now,
-              passwordResetSmsWindowStartedAt: decision.windowStartedAt,
-              passwordResetSmsSendCount: decision.sendCount,
-              passwordResetSmsAttemptCount: 0,
-            },
-          });
-        }
+        if (config.provider === "disabled") return;
+        await createTwilioVerifySmsProvider(config).sendVerification(phoneNumber);
+        await prisma.contact.update({
+          where: { id: contact.id },
+          data: {
+            passwordResetSmsSentAt: now,
+            passwordResetSmsWindowStartedAt: decision.windowStartedAt,
+            passwordResetSmsSendCount: decision.sendCount,
+            passwordResetSmsAttemptCount: 0,
+          },
+        });
       } catch {
         console.error("[POST /api/auth/password-reset/sms/send] delivery failed");
       }
-    }
+    });
   }
   return NextResponse.json({ message: PASSWORD_RESET_SMS_GENERIC_MESSAGE }, { status: 200 });
 }
