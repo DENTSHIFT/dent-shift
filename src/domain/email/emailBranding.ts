@@ -3,18 +3,37 @@
 // 同じ正式ロゴファイルを、メールクライアントが読み込める公開HTTPS URLとして使う
 // (相対パスはメールクライアントで解決できないため必ず絶対URLにする)。
 // TimeRexの予約通知メールはTimeRex管理画面側の設定であり、このモジュールの対象外。
-export const DENT_SHIFT_EMAIL_LOGO_URL =
-  "https://dentshift.jp/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png";
+// メール用の正式ロゴ: 正式ロゴ(DENT_SHIFT_horizontal_tagline_transparent.png)を白背景に
+// 合成しただけのコピー(デザイン・色・縦横比は変更しない)。透過PNGのままだと、ダークモードの
+// メールクライアントで濃紺の文字が背景に溶けて黒く見えるため、不透明な白背景で固定する。
+const EMAIL_LOGO_PATH = "/brand/logo/DENT_SHIFT_email_official.png";
+const PRODUCTION_ORIGIN = "https://dentshift.jp";
+
+// アプリ自身のオリジン(APP_BASE_URL)から配信する。test環境ではtest側の同一アセットを参照でき、
+// 本番では既定のdentshift.jpになる。未設定・不正な値は本番オリジンにフォールバックする。
+export function getEmailLogoUrl(env: Record<string, string | undefined> = process.env): string {
+  let origin = PRODUCTION_ORIGIN;
+  const configured = env.APP_BASE_URL?.trim();
+  if (configured) {
+    try {
+      const url = new URL(configured);
+      if (url.protocol === "https:") origin = url.origin;
+    } catch {
+      // 不正な値は既定のオリジンを使う。
+    }
+  }
+  return `${origin}${EMAIL_LOGO_PATH}`;
+}
 
 /**
  * 全メールテンプレート共通のロゴヘッダーHTML。
- * alt="DENT SHIFT"により、画像非表示設定のメールクライアントでもテキストで
- * 送信元が分かる(公開ガイドpublic/brand/logo/README_使用ガイド.mdの「縦横比を
- * 変更しない」に従い、width/heightは元画像比率(1844:572)を保つ)。
+ * ロゴ周辺は白背景を明示し(bgcolor + background)、ダークモードでも不自然に見えないようにする。
+ * alt="DENT SHIFT"により、画像非表示のメールクライアントでも送信元が分かる。
+ * width/heightは元画像比率(640:199)を保つ。
  */
 export function buildEmailLogoHeaderHtml(): string {
-  return `<div style="margin-bottom:20px;">
-          <img src="${DENT_SHIFT_EMAIL_LOGO_URL}" alt="DENT SHIFT" width="160" height="50" style="display:block;width:160px;max-width:100%;height:auto;border:0;outline:none;text-decoration:none;">
+  return `<div bgcolor="#ffffff" style="margin-bottom:20px;background:#ffffff;padding:4px 0;">
+          <img src="${getEmailLogoUrl()}" alt="DENT SHIFT" width="160" height="50" style="display:block;width:160px;max-width:100%;height:auto;border:0;outline:none;text-decoration:none;background:#ffffff;">
         </div>`;
 }
 

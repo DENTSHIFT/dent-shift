@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  DENT_SHIFT_EMAIL_LOGO_URL,
+  getEmailLogoUrl,
   buildEmailLogoHeaderHtml,
   wrapEmailBodyHtml,
 } from "@/domain/email/emailBranding";
@@ -14,17 +14,20 @@ import { buildEmailVerificationMessage } from "@/domain/email/emailVerification"
  * TimeRexの予約通知メールはこのモジュールの対象外(TimeRex管理画面側の設定)。
  */
 describe("emailBranding", () => {
-  it("ロゴURLは絶対HTTPS URLで、LPヘッダーと同じ正式ロゴファイルを指す", () => {
-    expect(DENT_SHIFT_EMAIL_LOGO_URL).toBe(
-      "https://dentshift.jp/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
+  it("ロゴURLは絶対HTTPS URLで、既定は本番オリジンの白背景の正式ロゴ", () => {
+    expect(getEmailLogoUrl({})).toBe("https://dentshift.jp/brand/logo/DENT_SHIFT_email_official.png");
+    expect(getEmailLogoUrl({ APP_BASE_URL: "https://test.dentshift.jp" })).toBe(
+      "https://test.dentshift.jp/brand/logo/DENT_SHIFT_email_official.png"
     );
-    expect(DENT_SHIFT_EMAIL_LOGO_URL).toMatch(/^https:\/\//);
+    expect(getEmailLogoUrl({ APP_BASE_URL: "http://insecure.example" })).toMatch(/^https:\/\/dentshift\.jp\//);
+    expect(getEmailLogoUrl({ APP_BASE_URL: "not a url" })).toMatch(/^https:\/\/dentshift\.jp\//);
   });
 
   it("buildEmailLogoHeaderHtmlはalt=\"DENT SHIFT\"と適切な表示サイズを持つimgタグを返す", () => {
     const html = buildEmailLogoHeaderHtml();
-    expect(html).toContain(`src="${DENT_SHIFT_EMAIL_LOGO_URL}"`);
+    expect(html).toContain(`src="${getEmailLogoUrl()}"`);
     expect(html).toContain('alt="DENT SHIFT"');
+    expect(html).toContain('background:#ffffff');
     expect(html).toContain('width="160"');
     expect(html).toContain('height="50"');
   });
@@ -33,7 +36,7 @@ describe("emailBranding", () => {
     const body = "<p>本文テスト</p>";
     const wrapped = wrapEmailBodyHtml(body);
     expect(wrapped).toContain(body);
-    expect(wrapped).toContain(DENT_SHIFT_EMAIL_LOGO_URL);
+    expect(wrapped).toContain(getEmailLogoUrl());
     expect(wrapped).toContain("<!doctype html>");
   });
 });
@@ -49,7 +52,7 @@ describe("各メールテンプレートにロゴヘッダーが含まれる", (
       isSample: false,
       improvements: [],
     });
-    expect(message.html).toContain(DENT_SHIFT_EMAIL_LOGO_URL);
+    expect(message.html).toContain(getEmailLogoUrl());
     expect(message.html).toContain('alt="DENT SHIFT"');
   });
 
@@ -58,7 +61,7 @@ describe("各メールテンプレートにロゴヘッダーが含まれる", (
       clinicName: "テスト歯科",
       verifyUrl: "https://dentshift.jp/verify-email?token=abc",
     });
-    expect(message.html).toContain(DENT_SHIFT_EMAIL_LOGO_URL);
+    expect(message.html).toContain(getEmailLogoUrl());
     expect(message.html).toContain('alt="DENT SHIFT"');
   });
 });

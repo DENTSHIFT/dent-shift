@@ -100,7 +100,7 @@ describe("sendOperatorPasswordResetEmail", () => {
     await sendOperatorPasswordResetEmail({ operatorId: "operator-1", email: "ops@example.com" });
     const call = mocks.sendWithResend.mock.calls[0]![0];
     expect(call.message.html).toContain(
-      "https://dentshift.jp/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
+      "https://dentshift.jp/brand/logo/DENT_SHIFT_email_official.png"
     );
     expect(call.message.html).toContain('alt="DENT SHIFT"');
   });
