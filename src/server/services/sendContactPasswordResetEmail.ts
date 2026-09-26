@@ -8,13 +8,9 @@ import {
 } from "@/server/auth/contactPasswordResetToken";
 import { wrapEmailBodyHtml } from "@/domain/email/emailBranding";
 
-const RESET_EMAIL_FROM = "support@dentshift.jp";
-
 export async function sendContactPasswordResetEmail(input: { contactId: string; email: string }) {
   const config = resolveResultEmailConfigFromProcessEnv();
   if (config.provider === "disabled") return "disabled" as const;
-  const apiKey = process.env.RESEND_API_KEY_DENTSHIFT?.trim();
-  if (!apiKey) throw new Error("RESEND_API_KEY_DENTSHIFT is not configured.");
 
   const { token, tokenHash, expiresAt } = generateContactPasswordResetToken();
   await prisma.contact.update({
@@ -43,8 +39,9 @@ export async function sendContactPasswordResetEmail(input: { contactId: string; 
     <p>このリクエストに心当たりがない場合は、このメールを無視してください。</p>
   `);
   await sendWithResend({
-    apiKey,
-    from: RESET_EMAIL_FROM,
+    // 確認メールと同じ送信設定(RESEND_API_KEY / RESULT_EMAIL_FROM)を使う。
+    apiKey: config.apiKey,
+    from: config.from,
     to: input.email,
     message: { subject: "【DENT SHIFT】パスワード再設定のご案内", text, html },
   });
