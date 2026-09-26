@@ -198,6 +198,8 @@ export async function retryOnConcurrentWrite<T>(run: () => Promise<T>, attempts 
     } catch (error) {
       const code = (error as { code?: unknown } | null)?.code;
       if ((code !== "P2002" && code !== "P2034") || attempt >= attempts) throw error;
+      // 競合が実際に起きた頻度と種類を運用ログで確認できるよう、再試行のたびに記録する。
+      console.warn(`[billing webhook] concurrent write conflict (${String(code)}), retry ${attempt}/${attempts - 1}`);
       await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
     }
   }
