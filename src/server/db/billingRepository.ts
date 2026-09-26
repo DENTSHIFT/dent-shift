@@ -25,6 +25,11 @@ const NOTIFY_ON_STATUSES: readonly SubscriptionStatus[] = [
 
 export class BillingRepositoryStateError extends Error {}
 
+// Prismaの対話型トランザクションは既定5秒でタイムアウトする(P2028)。VercelのFunctionと
+// Neonの地理的距離により、Webhook処理(複数クエリ)が5秒を超えて500になり、Stripeが再送を
+// 繰り返す事象を2026-09-26のtest E2Eで確認したため、余裕を持たせる。
+const WEBHOOK_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 30_000 } as const;
+
 export async function createSubscriptionRecord(input: {
   clinicId: string;
   plan: PlanId;
@@ -199,6 +204,15 @@ export async function applyBillingWebhookEvent(
         input.occurredAt
       );
       if (!subscription) {
+        // invoiceイベントが契約作成より先に届いた場合は、医院が実在する限り取りこぼさず再送させる。
+        // 医院が実在しない(orphan)場合は従来どおりignored(再送させない)。
+        if (input.action.kind === "invoice_status" && input.action.identity.clinicId) {
+          const clinic = await tx.clinic.findUnique({
+            where: { id: input.action.identity.clinicId },
+            select: { id: true },
+          });
+          if (clinic) return { result: "retry", notify: null };
+        }
         result = "ignored";
       } else {
         clinicId = subscription.clinicId;
@@ -275,5 +289,5 @@ export async function applyBillingWebhookEvent(
       },
     });
     return { result, notify };
-  });
+  }, WEBHOOK_TRANSACTION_OPTIONS);
 }

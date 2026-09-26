@@ -45,7 +45,7 @@ function subscriptionStatusCommand(input: {
   providerEventId: string;
   externalSubscriptionId: string;
   clinicId: string | null;
-  status: "active" | "past_due" | "restricted" | "suspended" | "cancelled";
+  status: "trial" | "active" | "past_due" | "restricted" | "suspended" | "cancelled";
   occurredAt: Date;
 }): BillingWebhookCommand {
   return {
@@ -269,6 +269,46 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
       });
       expect(result.result).toBe("ignored");
       expect(await prisma.payment.count({ where: { externalPaymentId: "in_orphan_invoice" } })).toBe(0);
+    });
+
+    it("医院は実在するが契約がまだ無い段階のinvoice.paidはretry(記録せず再送させる)、契約作成後の再送でPaymentが記録される", async () => {
+      const clinic = await createClinic("invoice-race");
+      const invoiceCommand = {
+        providerEventId: "evt_invoice_before_sub",
+        eventType: "invoice.paid",
+        occurredAt: new Date("2026-09-26T12:37:05Z"),
+        action: {
+          kind: "invoice_status" as const,
+          identity: {
+            externalSubscriptionId: "sub_invoice_race",
+            clinicId: clinic.id,
+            plan: "light" as const,
+          },
+          paymentStatus: "paid" as const,
+          externalPaymentId: "in_invoice_race",
+        },
+      };
+      const first = await billingRepository.applyBillingWebhookEvent(invoiceCommand);
+      expect(first).toEqual({ result: "retry", notify: null });
+      expect(await prisma.payment.count({ where: { externalPaymentId: "in_invoice_race" } })).toBe(0);
+      expect(
+        await prisma.billingWebhookEvent.count({ where: { providerEventId: "evt_invoice_before_sub" } })
+      ).toBe(0);
+
+      await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: "evt_sub_created_race",
+          externalSubscriptionId: "sub_invoice_race",
+          clinicId: clinic.id,
+          status: "trial",
+          occurredAt: new Date("2026-09-26T12:37:06Z"),
+        })
+      );
+      const retried = await billingRepository.applyBillingWebhookEvent(invoiceCommand);
+      expect(retried.result).toBe("processed");
+      expect(await prisma.payment.count({ where: { externalPaymentId: "in_invoice_race" } })).toBe(1);
+      // ¥0のトライアルinvoiceでもstatusはtrialのまま(activeに上書きしない)
+      expect((await billingRepository.getLatestSubscriptionByClinicId(clinic.id))?.status).toBe("trial");
     });
 
     it("同じorphanイベントの再送は重複として扱われ、常に正常終了する", async () => {

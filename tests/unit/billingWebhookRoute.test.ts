@@ -61,6 +61,21 @@ beforeEach(() => {
 });
 
 describe("POST /api/billing/webhook", () => {
+  it("契約作成前に先着したinvoiceイベント(retry)は非2xxを返し、Stripeに再送させる", async () => {
+    mocks.apply.mockResolvedValue({ result: "retry", notify: null });
+    const response = await POST(request());
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ received: false, result: "retry" });
+    expect(mocks.sendBillingStatusChangeEmail).not.toHaveBeenCalled();
+  });
+
+  it("orphan(存在しない医院)のイベントはignoredで200を返し、Stripeに再送させない", async () => {
+    mocks.apply.mockResolvedValue({ result: "ignored", notify: null });
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ received: true, result: "ignored" });
+  });
+
   it("決済無効時は通知本文を処理しない", async () => {
     mocks.resolveConfig.mockReturnValue({
       provider: "disabled",

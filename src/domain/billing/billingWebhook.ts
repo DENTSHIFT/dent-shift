@@ -44,7 +44,10 @@ export interface BillingWebhookCommand {
   action: BillingWebhookAction;
 }
 
-export type BillingWebhookApplyResult = "processed" | "ignored" | "duplicate";
+// "retry": 契約がまだ作られていない段階でinvoiceイベントが先着した場合(Stripeは
+// invoice.paidをsubscription.createdとほぼ同時に送る)。イベントを処理済みとして記録せず、
+// Webhookにエラー応答を返してStripeに再送させる(Payment履歴を取りこぼさないため)。
+export type BillingWebhookApplyResult = "processed" | "ignored" | "duplicate" | "retry";
 
 /**
  * 2026-09-23: 契約状態が実際に悪化方向へ遷移した場合のみ、呼び出し側(webhook route)へ

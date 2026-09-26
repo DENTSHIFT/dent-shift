@@ -101,6 +101,11 @@ export async function POST(request: Request) {
     const command = normalizeStripeBillingEvent(event);
     const { result, notify } = await applyBillingWebhookEvent(command);
 
+    // 契約作成前に先着したinvoiceイベント。処理済みにせず、Stripeの再送で取りこぼしなく反映する。
+    if (result === "retry") {
+      return NextResponse.json({ received: false, result }, { status: 409 });
+    }
+
     // 契約状態が悪化方向(past_due/restricted/suspended)または解約(cancelled)へ
     // 実際に遷移した場合のみ通知メールを送る(applyBillingWebhookEvent側で
     // 状態変化の有無を判定済み。Webhook再送による重複送信はここに来ない)。
