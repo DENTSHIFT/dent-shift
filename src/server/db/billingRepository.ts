@@ -214,11 +214,12 @@ async function applyBillingWebhookEventOnce(
       where: { providerEventId: input.providerEventId },
       select: { id: true },
     });
-    if (alreadyProcessed) return { result: "duplicate", notify: null };
+    if (alreadyProcessed) return { result: "duplicate", notify: null, trialActivated: null };
 
     let result: Exclude<BillingWebhookApplyResult, "duplicate"> = "processed";
     let clinicId: string | null = null;
     let notify: BillingStatusNotification | null = null;
+    let trialActivated: { clinicId: string } | null = null;
 
     if (input.action.kind === "ignored") {
       result = "ignored";
@@ -229,6 +230,22 @@ async function applyBillingWebhookEventOnce(
           : input.action.kind === "subscription_status"
             ? input.action.status
             : null;
+      // 2026-09-27追加(PO承認、第1段階の計測強化): trialActivated判定専用に、
+      // Subscriptionの「本当の更新前ステータス」を先に読んでおく(既存のnotify判定に
+      // 使うstatusBeforeUpdateには手を加えない)。理由: 初回Webhookでは
+      // findOrCreateWebhookSubscription()がupsertでtrial状態のまま新規作成するため、
+      // その後のstatusBeforeUpdate(=作成直後の値)と比較しても遷移として検知できない
+      // (行がまだ無かった=既定でnullとして扱う)。
+      const priorSubscriptionForTrial = await tx.subscription.findUnique({
+        where: { externalSubscriptionId: input.action.identity.externalSubscriptionId },
+        select: { status: true },
+      });
+      const statusBeforeTrialCheck: SubscriptionStatus | null = priorSubscriptionForTrial
+        ? isSubscriptionStatus(priorSubscriptionForTrial.status)
+          ? priorSubscriptionForTrial.status
+          : null
+        : null;
+
       let subscription = await findOrCreateWebhookSubscription(
         tx,
         input.action.identity,
@@ -248,7 +265,7 @@ async function applyBillingWebhookEventOnce(
             where: { id: input.action.identity.clinicId },
             select: { id: true },
           });
-          if (clinic) return { result: "retry", notify: null };
+          if (clinic) return { result: "retry", notify: null, trialActivated: null };
         }
         result = "ignored";
       } else {
@@ -284,6 +301,20 @@ async function applyBillingWebhookEventOnce(
           NOTIFY_ON_STATUSES.includes(subscription.status)
         ) {
           notify = { clinicId: subscription.clinicId, toStatus: subscription.status };
+        }
+        // 2026-09-27追加(PO承認、第1段階の計測強化): Stripeからのcustomer.subscription.*
+        // Webhookで、statusが実際に(trial以外、または未作成)→trialへ遷移した瞬間だけを
+        // 検知する。ブラウザの自己申告ではなくStripeの確定情報が根拠。
+        // statusBeforeTrialCheck(このWebhook処理が始まる前の実際の状態、行が無ければnull)
+        // と比較するため、同一Webhookイベントの再送(このtx到達前にproviderEventIdの
+        // 一意制約で"duplicate"として弾かれる)や、既にtrial状態のSubscriptionへの
+        // 他イベント適用では発火しない。
+        if (
+          subscription &&
+          subscription.status === "trial" &&
+          statusBeforeTrialCheck !== "trial"
+        ) {
+          trialActivated = { clinicId: subscription.clinicId };
         }
         if (input.action.kind === "invoice_status" && subscription) {
           await tx.payment.upsert({
@@ -325,6 +356,6 @@ async function applyBillingWebhookEventOnce(
         occurredAt: input.occurredAt,
       },
     });
-    return { result, notify };
+    return { result, notify, trialActivated };
   }, WEBHOOK_TRANSACTION_OPTIONS);
 }

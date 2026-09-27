@@ -65,4 +65,10 @@ export interface BillingStatusNotification {
 export interface BillingWebhookApplyOutcome {
   result: BillingWebhookApplyResult;
   notify: BillingStatusNotification | null;
+  // 2026-09-27追加(PO承認、第1段階の計測強化): Stripe Webhookの確定情報により、
+  // このイベント処理でSubscription.statusが(trial以外)→trialへ実際に遷移した場合のみ
+  // true。ブラウザからの自己申告ではなく、Stripeからのサーバー間通知を根拠とする。
+  // 同一Webhookイベントの再送はproviderEventIdの一意制約で"duplicate"として弾かれ、
+  // 別イベントでも遷移が起きていなければfalseになるため、二重発火しない。
+  trialActivated: { clinicId: string } | null;
 }

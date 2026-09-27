@@ -18,6 +18,7 @@ import { consumeInviteForClinic, getInviteById } from "@/server/db/inviteReposit
 import { computeInviteCancelAtEpochSeconds } from "@/domain/invite/inviteCode";
 import { scheduleStripeSubscriptionCancellation } from "@/server/providers/billing/stripeCheckoutProvider";
 import { sendBillingStatusChangeEmail } from "@/server/services/sendBillingStatusChangeEmail";
+import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
 
 export const runtime = "nodejs";
 
@@ -99,11 +100,29 @@ export async function POST(request: Request) {
     }
 
     const command = normalizeStripeBillingEvent(event);
-    const { result, notify } = await applyBillingWebhookEvent(command);
+    const { result, notify, trialActivated } = await applyBillingWebhookEvent(command);
 
     // 契約作成前に先着したinvoiceイベント。処理済みにせず、Stripeの再送で取りこぼしなく反映する。
     if (result === "retry") {
       return NextResponse.json({ received: false, result }, { status: 409 });
+    }
+
+    // 2026-09-27追加(PO承認、第1段階の計測強化): Stripe Webhookの確定情報により
+    // Subscription.statusが実際に(trial以外)→trialへ遷移した場合のみ"trial_activated"を
+    // 記録する(applyBillingWebhookEvent側でstatusBeforeUpdateとの比較により判定済み。
+    // 同一Webhookイベントの再送はproviderEventIdの一意制約でここへ到達しないため
+    // 二重記録は起きない)。既存のSubscription同期処理(status反映・通知メール)は変更しない。
+    if (trialActivated) {
+      await enqueueIntegrationEvent({
+        eventType: "trial_activated",
+        clinicId: trialActivated.clinicId,
+        payload: {},
+      }).catch((error) => {
+        console.error(
+          "[POST /api/billing/webhook] trial_activated event enqueue failed:",
+          error instanceof Error ? error.name : "UnknownError"
+        );
+      });
     }
 
     // 契約状態が悪化方向(past_due/restricted/suspended)または解約(cancelled)へ

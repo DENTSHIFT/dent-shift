@@ -205,6 +205,65 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
     expect(cancelResult.notify).toEqual({ clinicId: clinic.id, toStatus: "cancelled" });
   });
 
+  it("2026-09-27: (trial以外)→trialへ実際に遷移した場合のみtrialActivatedを返す(Stripe Webhook確定情報が根拠)", async () => {
+    const clinic = await createClinic("trial1");
+    const externalSubscriptionId = `sub_trial_${clinic.id}`;
+
+    const createResult = await billingRepository.applyBillingWebhookEvent(
+      subscriptionStatusCommand({
+        providerEventId: `evt_trial_create_${clinic.id}`,
+        externalSubscriptionId,
+        clinicId: clinic.id,
+        status: "trial",
+        occurredAt: new Date("2026-09-27T00:00:00Z"),
+      })
+    );
+    expect(createResult.trialActivated).toEqual({ clinicId: clinic.id });
+
+    // 同じstatus(trial)を繰り返し報告する再送・別イベントでは再発火しない。
+    const repeatResult = await billingRepository.applyBillingWebhookEvent(
+      subscriptionStatusCommand({
+        providerEventId: `evt_trial_repeat_${clinic.id}`,
+        externalSubscriptionId,
+        clinicId: clinic.id,
+        status: "trial",
+        occurredAt: new Date("2026-09-27T01:00:00Z"),
+      })
+    );
+    expect(repeatResult.trialActivated).toBeNull();
+
+    // trial→activeへの遷移(トライアル終了・有料化)ではtrialActivatedを返さない。
+    const activateResult = await billingRepository.applyBillingWebhookEvent(
+      subscriptionStatusCommand({
+        providerEventId: `evt_trial_to_active_${clinic.id}`,
+        externalSubscriptionId,
+        clinicId: clinic.id,
+        status: "active",
+        occurredAt: new Date("2026-09-27T02:00:00Z"),
+      })
+    );
+    expect(activateResult.trialActivated).toBeNull();
+  });
+
+  it("同一providerEventIdの再送(duplicate)はtrialActivatedも返さない(二重記録防止)", async () => {
+    const clinic = await createClinic("trial2");
+    const externalSubscriptionId = `sub_trial_dup_${clinic.id}`;
+    const command = subscriptionStatusCommand({
+      providerEventId: `evt_trial_dup_${clinic.id}`,
+      externalSubscriptionId,
+      clinicId: clinic.id,
+      status: "trial",
+      occurredAt: new Date("2026-09-27T00:00:00Z"),
+    });
+
+    const first = await billingRepository.applyBillingWebhookEvent(command);
+    expect(first.trialActivated).toEqual({ clinicId: clinic.id });
+
+    const resent = await billingRepository.applyBillingWebhookEvent(command);
+    expect(resent.result).toBe("duplicate");
+    expect(resent.trialActivated).toBeNull();
+  });
+
   describe("実在しない医院へのWebhook(orphan webhook)", () => {
     // テスト医院のDB削除後に、Stripe側だけ契約が残って後日イベントが届くケース。
     // 契約を再作成しようとして外部キー違反→500→Stripeの無限再送になってはならない。
@@ -222,7 +281,7 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
             occurredAt: new Date("2026-10-02T00:00:00Z"),
           })
         );
-        expect(result).toEqual({ result: "ignored", notify: null });
+        expect(result).toEqual({ result: "ignored", notify: null, trialActivated: null });
         expect(await prisma.subscription.count({ where: { clinicId: MISSING_CLINIC_ID } })).toBe(0);
         // 存在しないclinicIdを外部キー付きで保存せず、通知の再送は重複としても扱える形で記録する。
         const recorded = await prisma.billingWebhookEvent.findUnique({ where: { providerEventId } });
@@ -289,7 +348,7 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
         },
       };
       const first = await billingRepository.applyBillingWebhookEvent(invoiceCommand);
-      expect(first).toEqual({ result: "retry", notify: null });
+      expect(first).toEqual({ result: "retry", notify: null, trialActivated: null });
       expect(await prisma.payment.count({ where: { externalPaymentId: "in_invoice_race" } })).toBe(0);
       expect(
         await prisma.billingWebhookEvent.count({ where: { providerEventId: "evt_invoice_before_sub" } })

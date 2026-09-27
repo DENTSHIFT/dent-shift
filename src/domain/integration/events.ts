@@ -4,6 +4,14 @@
 // 計測要件(診断結果→プラン比較→Checkout→トライアル開始)のうち、既存基盤(この
 // IntegrationEvent仕組み)で追加できる「Checkoutへ進んだ/トライアル対象プランを
 // 選択した」を1イベントで表す(新しい外部分析サービスは追加していない)。
+// "trial_activated"は同じ導線の最終ステップ「無料トライアルを実際に開始した」を表す。
+// 既存の"trial_started"(activateTrial.ts、SMS/メール/規約同意/決済方法登録の
+// 4条件がすべて揃った"registrationStep=completed"到達を根拠とし、トライアル対象外の
+// プレミアム即時課金でもtrial_ends_at=nullのまま発火し得る)とは発火根拠が異なるため、
+// 混同を避けて別名にした。"trial_activated"はStripeのcustomer.subscription.*Webhookで
+// Subscription.statusが実際に(trial以外)→trialへ遷移した瞬間のみ発火する
+// (billingRepository.ts applyBillingWebhookEventOnce()のtrialActivated判定、
+// ブラウザの自己申告ではなくStripeの確定情報が根拠)。
 export const INTEGRATION_EVENT_TYPES = [
   "diagnosis_started",
   "diagnosis_completed",
@@ -18,6 +26,7 @@ export const INTEGRATION_EVENT_TYPES = [
   "email_verified",
   "payment_method_completed",
   "trial_started",
+  "trial_activated",
   "online_consultation_clicked",
   "online_consultation_booked",
   "online_consultation_completed",
