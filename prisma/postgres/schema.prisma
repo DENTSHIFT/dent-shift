@@ -32,6 +32,40 @@ model Clinic {
   entitlementUsages    PlanEntitlementUsage[]
   clinicAuditLogs      ClinicAuditLog[]
   selfServeMarks       ImprovementActionSelfServeMark[]
+  trialEntitlements    TrialEntitlement[]
+
+  // 2026-09-27追加(PO承認、P0): 無料トライアルを実際に開始した確定日時(Stripe
+  // WebhookでSubscription.statusが実際に"trial"へ遷移した瞬間のみ設定、
+  // billingRepository.ts参照)。null→非nullの一方向のみで、Checkout作成時点では
+  // 設定しない(TrialEntitlement側の予約状態と役割を分離する)。
+  trialConsumedAt DateTime?
+}
+
+// 2026-09-27追加(PO承認、P0): 無料トライアルの「予約→消費/解放」ライフサイクルを
+// 医院単位で管理する。Clinic.trialConsumedAtが恒久的な正本(消費済みかどうか)を
+// 保持するのに対し、このテーブルは実際の遷移過程(Checkout試行ごとの1行)を保持する
+// 監査ログの役割を持つ。
+model TrialEntitlement {
+  id     String @id @default(cuid())
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+
+  // "reserved" | "consumed" | "released"。他の値は既存のSubscriptionStatus等と同じ方針
+  // (SQLite/Postgres両対応のためPrisma純正enumではなくString+アプリ側検証関数を使う)で
+  // 許可し、Postgres側にはCHECK制約(migration SQLで追加)も設ける。
+  status String @default("reserved")
+
+  reservedAt           DateTime  @default(now())
+  reservationExpiresAt DateTime
+  checkoutSessionId    String?   @unique
+  externalSubscriptionId String? @unique
+  consumedAt           DateTime?
+  releasedAt           DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clinicId])
 }
 
 model Diagnosis {
