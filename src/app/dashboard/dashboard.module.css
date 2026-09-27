@@ -1,6 +1,9 @@
 .shell { min-height: 100vh; color: #0f1b2d; background: #f5f7fa; }
 .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 10; width: 236px; box-sizing: border-box; padding: 24px 18px 20px; background: #fff; border-right: 1px solid #e5e9f0; display: flex; flex-direction: column; }
-.logo { width: 180px; height: auto; display: block; margin: 0 auto 24px; }
+/* 2026-09-27: 横型(1844x572)から正方形(1254x1254)の正式ロゴへ変更。ロゴ自体の
+   比率は変えず、旧: 幅180px(実効高さ約56px)と同程度のfootprintになるよう
+   高さ基準の表示枠に調整する。 */
+.logo { height: 56px; width: auto; display: block; margin: 0 auto 24px; }
 .nav { display: grid; gap: 4px; }
 .navLink, .navMuted { min-height: 42px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; color: #40506a; font-size: 14px; font-weight: 600; text-decoration: none; }
 .navLink:hover { background: #eff6ff; color: #1d4ed8; }
@@ -108,7 +111,7 @@
 @media (max-width:1050px) {
   .sidebar { width: 204px; }
   .main { margin-left: 204px; }
-  .logo { width: 164px; }
+  .logo { height: 51px; }
   .metricsGrid { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .twoColumn { grid-template-columns: 1fr; }
 }

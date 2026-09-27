@@ -420,10 +420,10 @@ export default function DiagnosisPage() {
           <div style={{ textAlign: "center", marginBottom: 28 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
+              src="/brand/logo/DENT_SHIFT_official_2026-09-24.png"
               alt="DENT SHIFT 歯科集患を、AIでシフトする。"
-              width={1844}
-              height={572}
+              width={1254}
+              height={1254}
               style={{ height: 36, width: "auto" }}
             />
           </div>
@@ -454,10 +454,10 @@ export default function DiagnosisPage() {
                 (DESIGN_SYSTEM.md「ロゴ」節の禁止事項)。 */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
+              src="/brand/logo/DENT_SHIFT_official_2026-09-24.png"
               alt="DENT SHIFT 歯科集患を、AIでシフトする。"
-              width={1844}
-              height={572}
+              width={1254}
+              height={1254}
             />
           </header>
 

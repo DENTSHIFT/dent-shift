@@ -2,7 +2,10 @@
 .card { width: min(100%, 440px); box-sizing: border-box; padding: 32px; border: 1px solid #e5e9f0; border-radius: 18px; background: #fff; box-shadow: 0 12px 32px rgba(15,27,45,.08); }
 .cardWide { width: min(100%, 500px); }
 .brand { margin-bottom: 26px; }
-.logo { width: 176px; height: auto; display: block; }
+/* 2026-09-27: 横型(1844x572)から正方形(1254x1254)の正式ロゴへ変更。ロゴ自体の
+   比率は変えず、旧: 幅176px(実効高さ約55px)と同程度のfootprintになるよう
+   高さ基準の表示枠に調整する。 */
+.logo { height: 55px; width: auto; display: block; }
 .title { margin: 0; color: #0f1b2d; font-size: 23px; letter-spacing: -.01em; }
 .description { margin: 8px 0 0; color: #6b7280; font-size: 12px; line-height: 1.65; }
 .form { display: flex; flex-direction: column; gap: 16px; margin-top: 24px; }
@@ -26,6 +29,6 @@
   .shell { padding: 20px 14px; place-items: start center; }
   .card { margin-top: 16px; padding: 25px 20px; border-radius: 16px; }
   .brand { margin-bottom: 22px; }
-  .logo { width: 164px; }
+  .logo { height: 51px; }
   .title { font-size: 21px; }
 }
