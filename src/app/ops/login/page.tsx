@@ -14,7 +14,7 @@ export default function OpsLoginPage() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             className={styles.loginLogo}
-            src="/brand/logo/DENT_SHIFT_official_2026-09-24.png"
+            src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
             alt="DENT SHIFT 歯科集患を、AIでシフトする。"
           />
           <span className={styles.adminBadge}>管理者用</span>

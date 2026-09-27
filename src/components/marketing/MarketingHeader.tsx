@@ -36,14 +36,11 @@ export function MarketingHeader() {
         <Link href="/" style={{ display: "inline-flex", minWidth: 0, flexShrink: 1 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/brand/logo/DENT_SHIFT_official_2026-09-24.png"
+            src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
             alt="DENT SHIFT 歯科集患を、AIでシフトする。"
-            width={1254}
-            height={1254}
-            // 2026-09-27: ロゴが横型(1844x572)から正方形(1254x1254)の正式版へ変更。
-            // ロゴ自体の比率・配置は変更せず、スティッキーヘッダーの高さに収まるよう
-            // 表示枠(高さ基準)だけ調整する(旧: 幅120px基準で実効高さ約37px相当)。
-            style={{ height: 40, width: "auto", display: "block" }}
+            width={1844}
+            height={572}
+            style={{ height: "auto", maxWidth: 120, width: "100%" }}
           />
         </Link>
         <nav style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>

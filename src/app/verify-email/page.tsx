@@ -91,7 +91,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             className={styles.logo}
-            src="/brand/logo/DENT_SHIFT_official_2026-09-24.png"
+            src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
             alt="DENT SHIFT 歯科集患を、AIでシフトする。"
           />
         </div>

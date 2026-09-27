@@ -82,10 +82,10 @@ function DashboardNav({ bookingUrl }: { bookingUrl: string | undefined }) {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         className={styles.logo}
-        src="/brand/logo/DENT_SHIFT_official_2026-09-24.png"
+        src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
         alt="DENT SHIFT 歯科集患を、AIでシフトする。"
-        width={1254}
-        height={1254}
+        width={1844}
+        height={572}
       />
       <nav className={styles.nav} aria-label="ダッシュボードメニュー">
         {NAV_ITEMS.map((item) => (

@@ -219,14 +219,11 @@ export default async function DiagnosisResultPage({
               (DESIGN_SYSTEM.md「ロゴ」節の禁止事項)。 */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/brand/logo/DENT_SHIFT_official_2026-09-24.png"
+            src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
             alt="DENT SHIFT 歯科集患を、AIでシフトする。"
-            width={1254}
-            height={1254}
-            // 2026-09-27: 横型(1844x572)から正方形(1254x1254)の正式版へ変更。
-            // 旧: 幅172px基準(実効高さ約53px)と同程度の表示footprintになるよう、
-            // 高さ基準に切り替える(ロゴ自体の比率は変更しない)。
-            style={{ height: 53, width: "auto", display: "block" }}
+            width={1844}
+            height={572}
+            style={{ width: 172, height: "auto", display: "block" }}
           />
           {showDashboardReturn && (
             <Link

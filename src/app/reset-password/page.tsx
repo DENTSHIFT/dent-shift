@@ -14,7 +14,7 @@ export default async function ResetPasswordPage({
         <section className={styles.card}>
           <div className={styles.brand}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className={styles.logo} src="/brand/logo/DENT_SHIFT_official_2026-09-24.png" alt="DENT SHIFT 歯科集患を、AIでシフトする。" />
+            <img className={styles.logo} src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png" alt="DENT SHIFT 歯科集患を、AIでシフトする。" />
           </div>
           <h1 className={styles.title}>新しいパスワードの設定</h1>
           <ResetPasswordForm token={token ?? null} />

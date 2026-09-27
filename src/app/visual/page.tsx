@@ -42,11 +42,11 @@ function VisualHeader() {
       <Link href="/" style={{ display: "inline-flex" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/brand/logo/DENT_SHIFT_official_2026-09-24.png"
+          src="/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png"
           alt="DENT SHIFT 歯科集患を、AIでシフトする。"
-          width={1254}
-          height={1254}
-          style={{ height: 40, width: "auto", display: "block" }}
+          width={1844}
+          height={572}
+          style={{ maxWidth: 120, height: "auto", display: "block" }}
         />
       </Link>
     </header>

@@ -1,8 +1,6 @@
 .page { min-height: 100vh; box-sizing: border-box; padding: 0 24px 64px; color: #0f1b2d; background: #f5f7fa; }
 .header { max-width: 920px; min-height: 72px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-/* 2026-09-27: 横型(1844x572)から正方形(1254x1254)の正式ロゴへ変更。旧: 幅182px
-   (実効高さ約56px)と同程度のfootprintになるよう高さ基準に調整する。 */
-.logo { height: 56px; width: auto; display: block; }
+.logo { width: 182px; height: auto; display: block; }
 .headerLink { color: #2563eb; font-size: 13px; font-weight: 700; text-decoration: none; }
 .hero { max-width: 920px; box-sizing: border-box; margin: 18px auto 16px; padding: 30px; border-radius: 20px; color: #fff; background: linear-gradient(135deg,#1d4ed8,#2563eb 55%,#3b82f6); }
 .eyebrow { margin: 0 0 6px; color: #dbeafe; font-size: 12px; font-weight: 750; letter-spacing: .08em; }
@@ -35,7 +33,7 @@
 @media (max-width:640px) {
   .page { padding-inline: 14px; }
   .header { min-height: 64px; }
-  .logo { height: 49px; }
+  .logo { width: 158px; }
   .hero { margin-top: 10px; padding: 24px 20px; border-radius: 16px; }
   .step { grid-template-columns: 34px minmax(0,1fr); padding: 16px; }
   .stepNumber { width: 32px; height: 32px; }
