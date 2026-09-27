@@ -13,6 +13,7 @@ import { buildSubscriptionViewModel, type SubscriptionTone } from "./subscriptio
 import styles from "./dashboard.module.css";
 import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
 import { COMPETITOR_DISPLAY_LIMIT } from "@/domain/billing/planCatalog";
+import { buildHttpsAdvisory } from "@/domain/clinic/httpsAdvisory";
 import { buildUpgradeNotice, evaluateUpgrade, upgradeTargetsFor } from "@/domain/billing/planUpgrade";
 import {
   INSTRUCTION_PDF_ENTITLEMENT_KEY,
@@ -240,6 +241,7 @@ export default async function DashboardPage() {
           }),
         ].filter((notice) => notice !== null)
       : [];
+  const httpsAdvisory = buildHttpsAdvisory(contact.clinic.url);
   const upgradeLabel = upgradeCandidate
     ? subscription.plan === "light"
       ? "スタンダード以上にアップグレード"
@@ -348,6 +350,16 @@ export default async function DashboardPage() {
                 )}
             </div>
           </section>
+
+          {httpsAdvisory && (
+            <section className={styles.httpsAdvisory} aria-labelledby="https-advisory-title">
+              <h2 id="https-advisory-title" className={styles.httpsAdvisoryTitle}>{httpsAdvisory.title}</h2>
+              <p className={styles.httpsAdvisoryText}>{httpsAdvisory.description}</p>
+              <Link className={styles.subscriptionLink} href={httpsAdvisory.actionHref}>
+                {httpsAdvisory.actionLabel}
+              </Link>
+            </section>
+          )}
 
           {!vm.hasDiagnosis ? (
             <section className={styles.emptyCard}>
