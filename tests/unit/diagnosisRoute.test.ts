@@ -224,3 +224,92 @@ describe("POST /api/diagnosis: 再診断の医院スコープ", () => {
     );
   });
 });
+
+/**
+ * 2026-09-27追加(PO承認): canonical AI計測providerのfail-closed回帰テスト。
+ * 設定不備・mock指定のいずれでも、診断リクエスト全体を500で失敗させず、
+ * canonical計測だけを無効(aiMeasurementProvider=undefined)にして診断を続行する
+ * (2026-09-08時点は設定不備を500にしていたが、今回可用性よりデータの正確性を優先する
+ * よう変更した)。
+ */
+describe("POST /api/diagnosis: canonical AI計測providerのfail-closed", () => {
+  function anonymousRequest() {
+    mocks.currentContact.mockResolvedValue(null);
+    return request({
+      clinicName: "fail-closed検証歯科",
+      clinicUrl: "https://failclosed.example.com",
+      contactEmail: "owner@example.com",
+      contactPhone: "03-1234-5678",
+    });
+  }
+
+  it("AI_MEASUREMENT_PROVIDER未設定(設定エラー)でも診断は成功し、canonicalは無効(undefined)で呼ばれる", async () => {
+    class TestConfigError extends Error {}
+    mocks.resolveConfig.mockImplementation(() => {
+      throw new TestConfigError("AI_MEASUREMENT_PROVIDER is not set.");
+    });
+    // vi.mockで再定義したAiMeasurementConfigErrorをinstanceof判定に使うため、
+    // route.ts側がimportするクラスと同一である必要がある。ここではモジュールモックの
+    // AiMeasurementConfigErrorをそのまま使う。
+    const { AiMeasurementConfigError } = await import("@/server/config/aiMeasurementConfig");
+    mocks.resolveConfig.mockImplementation(() => {
+      throw new AiMeasurementConfigError("AI_MEASUREMENT_PROVIDER is not set.");
+    });
+
+    const response = await POST(anonymousRequest());
+
+    expect(response.status).toBe(201);
+    expect(mocks.createProvider).not.toHaveBeenCalled();
+    expect(mocks.runFreeDiagnosis).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ aiMeasurementProvider: undefined })
+    );
+  });
+
+  it("未知のprovider値(設定エラー)でも診断は成功し、canonicalは無効になる", async () => {
+    const { AiMeasurementConfigError } = await import("@/server/config/aiMeasurementConfig");
+    mocks.resolveConfig.mockImplementation(() => {
+      throw new AiMeasurementConfigError("AI_MEASUREMENT_PROVIDER has an invalid value.");
+    });
+
+    const response = await POST(anonymousRequest());
+
+    expect(response.status).toBe(201);
+    expect(mocks.createProvider).not.toHaveBeenCalled();
+    expect(mocks.runFreeDiagnosis).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ aiMeasurementProvider: undefined })
+    );
+  });
+
+  it("AI_MEASUREMENT_PROVIDER='mock'は警告ログを出しつつ診断を続行する(公開APIでmockをcanonicalとして使わない)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mocks.resolveConfig.mockReturnValue({ provider: "mock" });
+    mocks.createProvider.mockReturnValue(undefined); // 実装(factory)どおりmock指定はundefinedを返す
+
+    const response = await POST(anonymousRequest());
+
+    expect(response.status).toBe(201);
+    expect(mocks.createProvider).toHaveBeenCalledWith({ provider: "mock" });
+    expect(mocks.runFreeDiagnosis).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ aiMeasurementProvider: undefined })
+    );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("mock"));
+    warnSpy.mockRestore();
+  });
+
+  it("OpenAI設定済みの場合はcanonical providerがそのまま渡される(fail-closedの対象外)", async () => {
+    const fakeProvider = { name: "fake-openai-measurement-provider" };
+    mocks.resolveConfig.mockReturnValue({ provider: "openai", apiKey: "sk-test", model: "test-model" });
+    mocks.createProvider.mockReturnValue(fakeProvider);
+
+    const response = await POST(anonymousRequest());
+
+    expect(response.status).toBe(201);
+    expect(mocks.runFreeDiagnosis).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ aiMeasurementProvider: fakeProvider })
+    );
+  });
+});

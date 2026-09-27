@@ -94,28 +94,43 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // canonical AI計測provider(OpenAI実測overlay)のcomposition(2026-09-08の
-  // ユーザー指示: Phase 3、composition root接続)。
+  // canonical AI計測provider(OpenAI実測overlay)のcomposition。
   //
-  // 【重要】ここでのconfig解決・provider構築はrequestごとに行う(module load時では
-  // ない)。AI_MEASUREMENT_PROVIDER未設定・不正値・(openai選択時の)API key/model
-  // 欠落は、mockへのsilent fallbackにはせず、この request自体を明示的にerror
-  // response(500)として終わらせる。API key文字列そのものはレスポンス・ログの
-  // いずれにも出さない(AiMeasurementConfigErrorのmessageは元々key値を含まない
-  // 設計だが、念のためログ出力もmessageのみに限定する)。
+  // 2026-09-27修正(PO承認、P0優先): 2026-09-08時点ではAI_MEASUREMENT_PROVIDER未設定・
+  // 不正値・API key/model欠落を診断リクエスト全体の500失敗にしていたが、これは
+  // 「設定不備時は診断自体を止める」という可用性優先の設計だった。今回、公開診断APIは
+  // 設定不備時も診断自体は継続し、canonical計測だけを「未測定」として扱う
+  // fail-closed(データの正確性優先)へ変更する。
+  // - 未設定・不正値・API key/model欠落: canonical無効(aiMeasurementProvider=undefined)
+  //   として診断を続行し、秘密情報を含まない警告のみサーバーログへ出す。
+  // - AI_MEASUREMENT_PROVIDER="mock": 公開診断APIではcanonicalの「mock」モードを
+  //   実測として使わない。createAiMeasurementProviderFromConfig()はmock指定時
+  //   undefinedを返す実装だが(canonical mock providerクラス自体が存在しない)、
+  //   ここでも明示的に警告ログを残し、意図せぬmock有効化に気づけるようにする。
+  // - スコアへは今回も一切接続しない(2026-09-08承認の分離を維持、
+  //   tests/unit/runFreeDiagnosisCanonicalScoringIsolation.test.ts)。
   let aiMeasurementProvider;
   try {
     const aiMeasurementConfig = resolveAiMeasurementConfigFromProcessEnv();
+    if (aiMeasurementConfig.provider === "mock") {
+      console.warn(
+        "[POST /api/diagnosis] AI_MEASUREMENT_PROVIDER='mock' is set; canonical measurement " +
+          "is disabled for this request (mock is never used as canonical/live data on the " +
+          "public diagnosis API)."
+      );
+    }
     aiMeasurementProvider = createAiMeasurementProviderFromConfig(aiMeasurementConfig);
   } catch (err) {
     if (err instanceof AiMeasurementConfigError) {
-      console.error("[POST /api/diagnosis] AI measurement config error:", err.message);
-      return NextResponse.json(
-        { error: "AI計測providerの設定が不正です。管理者にお問い合わせください。" },
-        { status: 500 }
+      console.warn(
+        "[POST /api/diagnosis] AI measurement config error, continuing with canonical " +
+          "measurement disabled (not falling back to mock):",
+        err.message
       );
+      aiMeasurementProvider = undefined;
+    } else {
+      throw err;
     }
-    throw err;
   }
 
   try {
