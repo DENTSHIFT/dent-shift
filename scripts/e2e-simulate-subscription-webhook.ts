@@ -66,6 +66,7 @@ async function main() {
         plan,
       },
       initialStatus: session.payment_status === "paid" ? "active" : "trial",
+      checkoutSessionId: session.id,
     },
   });
   console.log("applyBillingWebhookEvent(checkout_completed) result:", result);

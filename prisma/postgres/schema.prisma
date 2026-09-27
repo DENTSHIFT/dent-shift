@@ -59,6 +59,11 @@ model TrialEntitlement {
   reservationExpiresAt DateTime
   checkoutSessionId    String?   @unique
   externalSubscriptionId String? @unique
+  // 2026-09-27追加(PO承認、P0-Checkout接続): Checkout Session作成処理の「所有者」を
+  // 識別する推測困難な一時トークン。reserveTrialEntitlement()呼び出しごとに新規生成し、
+  // 以降のattach/release更新はこのトークンとの一致を条件にする(WHERE句に含める)ことで、
+  // 別リクエストが同じ予約行を誤って更新・解放できないようにする(trialEntitlementRepository.ts参照)。
+  reservationOwnerToken String?
   consumedAt           DateTime?
   releasedAt           DateTime?
 
@@ -232,6 +237,14 @@ model IntegrationEvent {
   createdAt    DateTime  @default(now())
   processedAt  DateTime?
   lastAttemptedAt DateTime?
+
+  // 2026-09-28追加(PO再指摘、P0-Checkout接続): 「同じ実世界の出来事」を表すイベントの
+  // 重複記録を防ぐための冪等キー。例: "trial_activated:<externalSubscriptionId>"。
+  // trial_activatedはStripe Webhookの2つの独立した経路(TrialEntitlement消費確定/
+  // Subscription状態遷移検知)のどちらが先に到達しても、DBのユニーク制約により
+  // 最終的に1件だけになることを保証する(enqueueIntegrationEvent参照)。
+  // dedupeKeyを使わない既存イベント種別は従来どおりnullのまま。
+  dedupeKey String? @unique
 
   @@index([status])
   @@index([createdAt])

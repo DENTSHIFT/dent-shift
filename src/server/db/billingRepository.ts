@@ -12,6 +12,7 @@ import type {
   BillingWebhookApplyResult,
   BillingWebhookCommand,
   BillingWebhookIdentity,
+  TrialActivatedSignal,
 } from "@/domain/billing/billingWebhook";
 import { confirmAttributionForClinic } from "./ambassadorRepository";
 
@@ -219,7 +220,7 @@ async function applyBillingWebhookEventOnce(
     let result: Exclude<BillingWebhookApplyResult, "duplicate"> = "processed";
     let clinicId: string | null = null;
     let notify: BillingStatusNotification | null = null;
-    let trialActivated: { clinicId: string } | null = null;
+    let trialActivated: TrialActivatedSignal | null = null;
 
     if (input.action.kind === "ignored") {
       result = "ignored";
@@ -312,9 +313,13 @@ async function applyBillingWebhookEventOnce(
         if (
           subscription &&
           subscription.status === "trial" &&
-          statusBeforeTrialCheck !== "trial"
+          statusBeforeTrialCheck !== "trial" &&
+          subscription.externalSubscriptionId
         ) {
-          trialActivated = { clinicId: subscription.clinicId };
+          trialActivated = {
+            clinicId: subscription.clinicId,
+            externalSubscriptionId: subscription.externalSubscriptionId,
+          };
         }
         if (input.action.kind === "invoice_status" && subscription) {
           await tx.payment.upsert({

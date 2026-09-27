@@ -10,6 +10,11 @@ export interface BillingWebhookIdentity {
   // トレーサビリティ専用。既存の呼び出し元を壊さないようoptionalにする。
   inviteId?: string | null;
   inviteCode?: string | null;
+  // 2026-09-27追加(PO承認、P0-Checkout接続): トライアル対象Checkoutでのみ設定される
+  // (通常のsubscription_status/invoiceイベントには含まれない)。TrialEntitlementの
+  // 消費確定(webhook route参照)を、clinicIdだけでなくこのIDとcheckoutSessionIdの
+  // 3-way突合で行う。
+  trialEntitlementId?: string | null;
 }
 
 export type BillingWebhookAction =
@@ -17,6 +22,10 @@ export type BillingWebhookAction =
       kind: "checkout_completed";
       identity: BillingWebhookIdentity;
       initialStatus: "trial" | "active";
+      // 2026-09-27追加(PO承認、P0-Checkout接続): このCheckout Session自身のID。
+      // TrialEntitlement消費の3-way突合(trialEntitlementId・clinicId・
+      // checkoutSessionId)に使う。
+      checkoutSessionId: string;
     }
   | {
       kind: "subscription_status";
@@ -62,6 +71,16 @@ export interface BillingStatusNotification {
   toStatus: SubscriptionStatus;
 }
 
+// 2026-09-28修正(PO再指摘): trial_activatedイベントのdedupeキーに使うため
+// externalSubscriptionIdを併せて返す。TrialEntitlement消費経路(webhook route)側の
+// trial_activated記録も同じdedupeキー(`trial_activated:${externalSubscriptionId}`)を
+// 使うことで、どちらのWebhookが先に到達しても最終的にイベントが1件だけになる
+// (IntegrationEvent.dedupeKeyのDB一意制約が最終防衛線)。
+export interface TrialActivatedSignal {
+  clinicId: string;
+  externalSubscriptionId: string;
+}
+
 export interface BillingWebhookApplyOutcome {
   result: BillingWebhookApplyResult;
   notify: BillingStatusNotification | null;
@@ -70,5 +89,5 @@ export interface BillingWebhookApplyOutcome {
   // true。ブラウザからの自己申告ではなく、Stripeからのサーバー間通知を根拠とする。
   // 同一Webhookイベントの再送はproviderEventIdの一意制約で"duplicate"として弾かれ、
   // 別イベントでも遷移が起きていなければfalseになるため、二重発火しない。
-  trialActivated: { clinicId: string } | null;
+  trialActivated: TrialActivatedSignal | null;
 }

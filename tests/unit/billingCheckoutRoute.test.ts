@@ -5,7 +5,12 @@ const mocks = vi.hoisted(() => ({
   currentContact: vi.fn(),
   resolveConfig: vi.fn(),
   createCheckout: vi.fn(),
+  retrieveCheckout: vi.fn(),
   getLatestSubscription: vi.fn(),
+  getClinicTrialState: vi.fn(),
+  reserveTrialEntitlement: vi.fn(),
+  attachStripeSessionToReservation: vi.fn(),
+  releaseOwnReservation: vi.fn(),
 }));
 
 vi.mock("@/server/auth/session", () => ({ getCurrentContact: mocks.currentContact }));
@@ -15,9 +20,19 @@ vi.mock("@/server/config/billingConfig", () => ({
 }));
 vi.mock("@/server/providers/billing/stripeCheckoutProvider", () => ({
   createStripeCheckoutSession: mocks.createCheckout,
+  retrieveStripeCheckoutSession: mocks.retrieveCheckout,
 }));
 vi.mock("@/server/db/billingRepository", () => ({
   getLatestSubscriptionByClinicId: mocks.getLatestSubscription,
+}));
+vi.mock("@/server/db/trialEntitlementRepository", () => ({
+  getClinicTrialState: mocks.getClinicTrialState,
+  reserveTrialEntitlement: mocks.reserveTrialEntitlement,
+  attachStripeSessionToReservation: mocks.attachStripeSessionToReservation,
+  releaseOwnReservation: mocks.releaseOwnReservation,
+}));
+vi.mock("@/server/db/integrationEventRepository", () => ({
+  enqueueIntegrationEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { POST } from "@/app/api/billing/checkout/route";
@@ -53,8 +68,19 @@ beforeEach(() => {
   });
   mocks.createCheckout.mockResolvedValue({
     url: "https://checkout.stripe.com/c/pay/test-session",
+    id: "cs_test_session",
+    expiresAtEpochSeconds: null,
   });
   mocks.getLatestSubscription.mockResolvedValue(null);
+  // 既定: この医院はまだトライアルを消費していない(=ライト/スタンダードでトライアル対象)。
+  mocks.getClinicTrialState.mockResolvedValue({ trialConsumedAt: null });
+  mocks.reserveTrialEntitlement.mockResolvedValue({
+    outcome: "reserved",
+    entitlementId: "entitlement-1",
+    ownerToken: "owner-token-1",
+  });
+  mocks.attachStripeSessionToReservation.mockResolvedValue(true);
+  mocks.releaseOwnReservation.mockResolvedValue(undefined);
 });
 
 describe("POST /api/billing/checkout", () => {
@@ -96,6 +122,13 @@ describe("POST /api/billing/checkout", () => {
       contactEmail: "owner@example.com",
       appBaseUrl: "https://dent-shift.example.com",
       trialPeriodDays: 7,
+      trialEntitlementId: "entitlement-1",
+    });
+    expect(mocks.attachStripeSessionToReservation).toHaveBeenCalledWith({
+      entitlementId: "entitlement-1",
+      ownerToken: "owner-token-1",
+      checkoutSessionId: "cs_test_session",
+      expiresAt: expect.any(Date),
     });
   });
 
@@ -260,5 +293,99 @@ describe("POST /api/billing/checkout", () => {
     const response = await POST(request("light"));
     expect(response.status).toBe(303);
     expect(mocks.createCheckout).toHaveBeenCalledTimes(1);
+  });
+
+  describe("2026-09-27追加(PO承認、P0-Checkout接続): TrialEntitlement予約フロー", () => {
+    it("トライアル消費済みの医院はライト/スタンダードでもトライアル無しでCheckoutできる", async () => {
+      stripeReadyConfig();
+      mocks.getClinicTrialState.mockResolvedValue({ trialConsumedAt: new Date("2026-09-01T00:00:00Z") });
+
+      const response = await POST(request("light"));
+      expect(response.status).toBe(303);
+      expect(mocks.reserveTrialEntitlement).not.toHaveBeenCalled();
+      expect(mocks.createCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ plan: "light", trialPeriodDays: undefined })
+      );
+      expect(mocks.createCheckout.mock.calls[0]?.[0]).not.toHaveProperty("trialEntitlementId");
+    });
+
+    it("既に別リクエストがSession作成中(reservation_in_progress)の場合は409を返しSessionを作らない", async () => {
+      stripeReadyConfig();
+      mocks.reserveTrialEntitlement.mockResolvedValue({ outcome: "reservation_in_progress" });
+
+      const response = await POST(request("light"));
+      expect(response.status).toBe(409);
+      expect(mocks.createCheckout).not.toHaveBeenCalled();
+    });
+
+    it("同じ処理の安全な再試行(existing_session)は既存Stripe Sessionを再利用し新規Sessionを作らない", async () => {
+      stripeReadyConfig();
+      mocks.reserveTrialEntitlement.mockResolvedValue({
+        outcome: "existing_session",
+        entitlementId: "entitlement-1",
+        checkoutSessionId: "cs_existing",
+      });
+      mocks.retrieveCheckout.mockResolvedValue({
+        id: "cs_existing",
+        status: "open",
+        url: "https://checkout.stripe.com/c/pay/existing-session",
+      });
+
+      const response = await POST(request("light"));
+      expect(response.status).toBe(303);
+      expect(response.headers.get("location")).toBe(
+        "https://checkout.stripe.com/c/pay/existing-session"
+      );
+      expect(mocks.createCheckout).not.toHaveBeenCalled();
+    });
+
+    it("既存Sessionが既に期限切れ・完了済み(open以外)の場合は425で再試行を促す", async () => {
+      stripeReadyConfig();
+      mocks.reserveTrialEntitlement.mockResolvedValue({
+        outcome: "existing_session",
+        entitlementId: "entitlement-1",
+        checkoutSessionId: "cs_existing",
+      });
+      mocks.retrieveCheckout.mockResolvedValue({
+        id: "cs_existing",
+        status: "expired",
+        url: null,
+      });
+
+      const response = await POST(request("light"));
+      expect(response.status).toBe(425);
+      expect(mocks.createCheckout).not.toHaveBeenCalled();
+    });
+
+    it("予約直前に消費済みへ変わっていた(already_consumed)場合はトライアル無しで契約できる", async () => {
+      stripeReadyConfig();
+      mocks.reserveTrialEntitlement.mockResolvedValue({ outcome: "already_consumed" });
+
+      const response = await POST(request("light"));
+      expect(response.status).toBe(303);
+      expect(mocks.createCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ plan: "light", trialPeriodDays: undefined })
+      );
+    });
+
+    it("Stripe Session作成が失敗した場合、自分の予約だけをreleaseする", async () => {
+      stripeReadyConfig();
+      mocks.createCheckout.mockRejectedValue(new Error("stripe down"));
+
+      const response = await POST(request("light"));
+      expect(response.status).toBe(502);
+      expect(mocks.releaseOwnReservation).toHaveBeenCalledWith({
+        entitlementId: "entitlement-1",
+        ownerToken: "owner-token-1",
+      });
+    });
+
+    it("Session作成成功後に予約の所有権が失われていた(attach失敗)場合はSessionを返さない", async () => {
+      stripeReadyConfig();
+      mocks.attachStripeSessionToReservation.mockResolvedValue(false);
+
+      const response = await POST(request("light"));
+      expect(response.status).toBe(502);
+    });
   });
 });

@@ -71,6 +71,7 @@ async function main() {
         inviteCode: session.metadata.invite_code ?? null,
       },
       initialStatus: session.amount_total > 0 ? "active" : "trial",
+      checkoutSessionId: session.id,
     },
   });
   console.log("applyBillingWebhookEvent result:", result);

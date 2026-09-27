@@ -15,21 +15,42 @@ export async function enqueueIntegrationEvent(input: {
   clinicId?: string | null;
   contactId?: string | null;
   payload: Record<string, unknown>;
+  // 2026-09-28追加(PO再指摘): 「同じ実世界の出来事」を表す複数の独立した経路から
+  // 同じイベントが記録されうる場合に指定する冪等キー(例: "trial_activated:<sub_id>")。
+  // 指定された場合、DBのユニーク制約(IntegrationEvent.dedupeKey)により、同じキーの
+  // 行が既にあれば新規作成をスキップし(P2002)、既存行に対して再度同期を試行しない
+  // (=イベントは最終的に必ず1件だけになる)。
+  dedupeKey?: string | null;
 }): Promise<void> {
   if (!isIntegrationEventType(input.eventType)) {
     throw new IntegrationEventRepositoryError(`Unknown integration event type: ${input.eventType}`);
   }
   assertNoForbiddenPayloadKeys(input.payload);
 
-  const event = await prisma.integrationEvent.create({
-    data: {
-      eventType: input.eventType,
-      clinicId: input.clinicId ?? null,
-      contactId: input.contactId ?? null,
-      payloadJson: JSON.stringify(input.payload),
-      status: "pending",
-    },
-  });
+  let event;
+  try {
+    event = await prisma.integrationEvent.create({
+      data: {
+        eventType: input.eventType,
+        clinicId: input.clinicId ?? null,
+        contactId: input.contactId ?? null,
+        payloadJson: JSON.stringify(input.payload),
+        status: "pending",
+        dedupeKey: input.dedupeKey ?? null,
+      },
+    });
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
+    if (input.dedupeKey && code === "P2002") {
+      // 既に同じ出来事のイベントが(このパスまたは別のWebhook経路から)記録済み。
+      // 二重記録・二重同期を避けるため、ここで静かに終える(再試行ジョブも不要)。
+      console.info(
+        `[integrationEventRepository] duplicate event skipped via dedupeKey: ${input.eventType}`
+      );
+      return;
+    }
+    throw error;
+  }
 
   // enqueue呼び出し元(signup/diagnosis/webhook等)をSalesforce障害で失敗させないよう、
   // 同期試行の例外はここで握りつぶし、pendingのままDBに残す(再試行ジョブが処理)。

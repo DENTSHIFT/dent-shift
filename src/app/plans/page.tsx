@@ -11,6 +11,8 @@ import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
 import { hasExistingSubscription as subscriptionBlocksNewCheckout } from "@/domain/billing/subscriptionStatus";
 import { evaluateUpgrade } from "@/domain/billing/planUpgrade";
 import { isTrialEligiblePlan } from "@/domain/billing/trialActivation";
+import { resolveTrialCtaLabel, type TrialCtaLabel } from "@/domain/billing/trialEntitlement";
+import { getClinicTrialCheckoutSnapshot } from "@/server/db/trialEntitlementRepository";
 import { UpgradeButton } from "@/components/UpgradeButton";
 import styles from "./plans.module.css";
 import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
@@ -40,6 +42,7 @@ function PlanAction({
   hasExistingSubscription,
   currentPlan,
   upgradeAllowed,
+  ctaLabel,
 }: {
   plan: PlanId;
   currentPlan: PlanId | null;
@@ -48,6 +51,12 @@ function PlanAction({
   authenticated: boolean;
   isBillingExempt: boolean;
   hasExistingSubscription: boolean;
+  // 2026-09-27追加、2026-09-28拡張(PO再指摘、CTA判定を先送りしない): サーバー側の
+  // 実判定(resolveTrialCtaLabel、DB保存済みのTrialEntitlement/Clinic.trialConsumedAtの
+  // 状態のみで判定、Stripe APIは呼ばない)に基づくCTA文言。「未契約」の中でも
+  // 新規利用可能/有効なSessionあり/Session作成中/利用済みを区別する。
+  // 最終的な真偽はCheckout API(reserveTrialEntitlement)側で必ず再検証される。
+  ctaLabel: TrialCtaLabel;
 }) {
   // 2026-09-24: 永久無料の特別アカウント(billingExempt)には、Stripe決済へ進む
   // CTAを一切出さない(すでに無期限で有効な契約があり、購入操作自体が不要かつ
@@ -85,16 +94,15 @@ function PlanAction({
       </Link>
     );
   }
-  // 2026-09-27追加(PO承認、第1段階): 新規契約(既存契約なし)の場合のみ、トライアル対象
-  // プラン(ライト/スタンダード)は「7日間無料で試す」、プレミアム(トライアル対象外)は
-  // 「このプランで契約する」とCTA文言を分ける。既存契約者・アップグレード・
+  // 2026-09-27追加、2026-09-28拡張(PO再指摘): 新規契約(既存契約なし)の場合のみ、
+  // サーバー側で実際に判定したctaLabelをそのまま表示する。既存契約者・アップグレード・
   // billingExemptの各分岐(上記)は元々この分岐を通らないため、誤ってトライアル対象と
   // 表示することはない。
   return (
     <form action="/api/billing/checkout" method="post">
       <input type="hidden" name="plan" value={plan} />
       <button className={styles.action} type="submit">
-        {isTrialEligiblePlan(plan) ? "7日間無料で試す" : "このプランで契約する"}
+        {ctaLabel}
       </button>
     </form>
   );
@@ -113,6 +121,11 @@ export default async function PlansPage({
     : null;
   const isBillingExempt = subscription?.billingExempt === true;
   const hasExistingSubscription = !isBillingExempt && subscriptionBlocksNewCheckout(subscription);
+  // 2026-09-27追加、2026-09-28拡張(PO再指摘、CTA判定を先送りしない): CTA文言を
+  // プラン種別だけでなく、この医院の実際のトライアル消費状態・有効な予約の有無で判定する。
+  const clinicTrialSnapshot = currentContact
+    ? await getClinicTrialCheckoutSnapshot(currentContact.clinicId)
+    : null;
 
   return (
     <main className={styles.page}>
@@ -175,32 +188,59 @@ export default async function PlansPage({
             <ul>
               {plan.highlights.map((highlight) => <li key={highlight}>{highlight}</li>)}
             </ul>
-            {!isBillingExempt && !hasExistingSubscription && (
-              <p className={styles.trialNote}>
-                {isTrialEligiblePlan(plan.id)
-                  ? "7日間無料トライアル対象・カード登録が必要です・トライアル中は請求されません・キャンセルしない場合はトライアル終了後にこのプランの料金が発生します"
-                  : "トライアル対象外のプランです・ご契約と同時に料金が発生します"}
-              </p>
-            )}
-            <PlanAction
-              plan={plan.id}
-              checkoutReady={checkoutReady}
-              authenticated={Boolean(currentContact)}
-              isBillingExempt={isBillingExempt}
-              hasExistingSubscription={hasExistingSubscription}
-              currentPlan={subscription?.plan ?? null}
-              upgradeAllowed={
-                subscription
-                  ? evaluateUpgrade({
-                      currentPlan: subscription.plan,
-                      status: subscription.status,
-                      billingExempt: subscription.billingExempt,
-                      invited: subscription.inviteId !== null,
-                      targetPlan: plan.id,
-                    }).ok
-                  : false
-              }
-            />
+            {(() => {
+              // 2026-09-28修正(PO再指摘): 既存Subscriptionがある場合はresolveTrialCtaLabel
+              // 自体がisBillingExempt/hasExistingSubscriptionによらず常に「このプランで
+              // 契約する」を返す(関数内の必須引数として保証、単一のテスト対象)。
+              const ctaLabel: TrialCtaLabel = clinicTrialSnapshot
+                ? resolveTrialCtaLabel({
+                    plan: plan.id,
+                    clinic: clinicTrialSnapshot,
+                    hasExistingSubscription: isBillingExempt || hasExistingSubscription,
+                  })
+                : isBillingExempt || hasExistingSubscription
+                  ? "このプランで契約する"
+                  : isTrialEligiblePlan(plan.id)
+                    ? "7日間無料で試す"
+                    : "このプランで契約する";
+              return (
+                <>
+                  {!isBillingExempt && !hasExistingSubscription && (
+                    <p className={styles.trialNote}>
+                      {ctaLabel === "7日間無料で試す"
+                        ? "7日間無料トライアル対象・カード登録が必要です・トライアル中は請求されません・キャンセルしない場合はトライアル終了後にこのプランの料金が発生します"
+                        : ctaLabel === "無料トライアルの手続きを続ける"
+                          ? "トライアルの手続きが完了していません・続きから再開できます"
+                          : ctaLabel === "手続きを準備中"
+                            ? "お手続きの準備をしています・少し待って再度お試しください"
+                            : isTrialEligiblePlan(plan.id)
+                              ? "無料トライアルは既に利用済みのため、ご契約と同時に料金が発生します"
+                              : "トライアル対象外のプランです・ご契約と同時に料金が発生します"}
+                    </p>
+                  )}
+                  <PlanAction
+                    plan={plan.id}
+                    checkoutReady={checkoutReady}
+                    authenticated={Boolean(currentContact)}
+                    isBillingExempt={isBillingExempt}
+                    hasExistingSubscription={hasExistingSubscription}
+                    ctaLabel={ctaLabel}
+                    currentPlan={subscription?.plan ?? null}
+                    upgradeAllowed={
+                      subscription
+                        ? evaluateUpgrade({
+                            currentPlan: subscription.plan,
+                            status: subscription.status,
+                            billingExempt: subscription.billingExempt,
+                            invited: subscription.inviteId !== null,
+                            targetPlan: plan.id,
+                          }).ok
+                        : false
+                    }
+                  />
+                </>
+              );
+            })()}
           </article>
         ))}
       </section>

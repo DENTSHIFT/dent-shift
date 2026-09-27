@@ -16,9 +16,15 @@ import { activateTrialIfEligible } from "@/server/services/activateTrial";
 import { generateInstructionPdfArtifact } from "@/server/services/optionOrders/generateInstructionPdfArtifact";
 import { consumeInviteForClinic, getInviteById } from "@/server/db/inviteRepository";
 import { computeInviteCancelAtEpochSeconds } from "@/domain/invite/inviteCode";
-import { scheduleStripeSubscriptionCancellation } from "@/server/providers/billing/stripeCheckoutProvider";
+import {
+  retrieveStripeSubscription,
+  scheduleStripeSubscriptionCancellation,
+} from "@/server/providers/billing/stripeCheckoutProvider";
 import { sendBillingStatusChangeEmail } from "@/server/services/sendBillingStatusChangeEmail";
 import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
+import { consumeTrialEntitlementFromWebhook } from "@/server/db/trialEntitlementRepository";
+import { isVerifiedTrialingSubscriptionForConsumption } from "@/domain/billing/trialEntitlement";
+import { syncIntegrationEvent } from "@/server/services/salesforceSync";
 
 export const runtime = "nodejs";
 
@@ -107,16 +113,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ received: false, result }, { status: 409 });
     }
 
-    // 2026-09-27追加(PO承認、第1段階の計測強化): Stripe Webhookの確定情報により
-    // Subscription.statusが実際に(trial以外)→trialへ遷移した場合のみ"trial_activated"を
-    // 記録する(applyBillingWebhookEvent側でstatusBeforeUpdateとの比較により判定済み。
-    // 同一Webhookイベントの再送はproviderEventIdの一意制約でここへ到達しないため
-    // 二重記録は起きない)。既存のSubscription同期処理(status反映・通知メール)は変更しない。
+    // 2026-09-27追加、2026-09-28修正(PO再指摘): Stripe Webhookの確定情報により
+    // Subscription.statusが実際に(trial以外)→trialへ遷移した場合に"trial_activated"を
+    // 記録する。dedupeKey(`trial_activated:${externalSubscriptionId}`)を必ず指定し、
+    // 下のTrialEntitlement消費経路(同じdedupeKeyを使用)とどちらが先に到達しても、
+    // DBのユニーク制約により最終的にイベントが1件だけになるようにする(二重計上防止。
+    // 同一Webhookイベント自体の再送はproviderEventIdの一意制約で"duplicate"となり
+    // trialActivatedがnullになるため、そもそもここへ到達しない)。
     if (trialActivated) {
       await enqueueIntegrationEvent({
         eventType: "trial_activated",
         clinicId: trialActivated.clinicId,
         payload: {},
+        dedupeKey: `trial_activated:${trialActivated.externalSubscriptionId}`,
       }).catch((error) => {
         console.error(
           "[POST /api/billing/webhook] trial_activated event enqueue failed:",
@@ -138,6 +147,109 @@ export async function POST(request: Request) {
           emailError instanceof Error ? emailError.name : "UnknownError"
         );
       });
+    }
+
+    // 2026-09-27追加、2026-09-28全面修正(PO再指摘): metadataにtrial_entitlement_idが
+    // 含まれる(=無料トライアル対象として予約済みの)checkout.session.completedについて、
+    // TrialEntitlementの消費確定を試みる。**同一providerEventIdの重複排除(billingWebhookEvent
+    // の一意制約によるresult==="duplicate")とは独立に**、command.action自体がcheckout_completed
+    // かつtrialEntitlementIdを持つ限り毎回実行する。理由: Stripe側の一時的な取得失敗で
+    // 消費できなかった場合、このWebhookイベントが再送されてきたときにresultは"duplicate"に
+    // なるが、消費自体はまだ済んでいないため、ここは"processed"限定にしてはならない
+    // (消費側の冪等性はTrialEntitlement.status条件付き更新自体が担保する)。
+    if (command.action?.kind === "checkout_completed" && command.action.identity.clinicId) {
+      const identity = command.action.identity;
+      const clinicId = identity.clinicId as string;
+      if (identity.trialEntitlementId) {
+        const trialEntitlementId = identity.trialEntitlementId;
+        // checkout.session.completedのmetadataだけを消費の根拠にしない(PO再指摘)。
+        // Stripe上のSubscriptionの実データ(status="trialing"・trial_start/trial_end・
+        // metadataの再照合)を取得して検証してから消費する。
+        let verifiedSubscription: Awaited<ReturnType<typeof retrieveStripeSubscription>> | "fetch_failed";
+        try {
+          verifiedSubscription = await retrieveStripeSubscription({
+            apiKey: config.apiKey,
+            subscriptionId: identity.externalSubscriptionId,
+          });
+        } catch (fetchError) {
+          verifiedSubscription = "fetch_failed";
+          console.error(
+            "[POST /api/billing/webhook] retrieveStripeSubscription failed (transient), returning non-2xx so Stripe retries:",
+            fetchError instanceof Error ? fetchError.name : "UnknownError"
+          );
+        }
+
+        if (verifiedSubscription === "fetch_failed") {
+          // Stripe APIの一時障害を200で握り潰すと永久に未消費になるため、ここで
+          // 非2xxを返してStripeにこのイベントを再送させる(消費自体は冪等なので
+          // 再送で二重消費にはならない)。
+          return NextResponse.json(
+            { error: "決済状態を確認できませんでした。" },
+            { status: 502 }
+          );
+        }
+
+        if (verifiedSubscription === null) {
+          // Subscriptionが(まだ)存在しない。一時的レースの可能性はあるが、
+          // 無限リトライにはしない(genuine not-foundを再試行し続けるのは危険)。
+          console.warn(
+            "[POST /api/billing/webhook] TrialEntitlement consumption skipped: Subscription not found",
+            { trialEntitlementId, clinicId }
+          );
+        } else if (
+          !isVerifiedTrialingSubscriptionForConsumption({
+            subscription: verifiedSubscription,
+            expectedClinicId: clinicId,
+            expectedTrialEntitlementId: trialEntitlementId,
+            plan: identity.plan,
+          })
+        ) {
+          // metadataの自己申告と実際のSubscription状態が一致しない(例: 既にactiveへ
+          // 遷移済み、metadata不一致等)。消費しない。これも無限リトライ対象ではない
+          // (genuineな不一致であり、Stripe側の障害ではないため)。
+          console.warn(
+            "[POST /api/billing/webhook] TrialEntitlement consumption skipped: subscription not verified as trialing",
+            { trialEntitlementId, clinicId, subscriptionStatus: verifiedSubscription.status }
+          );
+        } else {
+          // 2026-09-28修正(PO再指摘): DB一時障害(接続エラー・タイムアウト・deadlock・
+          // serialization failure・IntegrationEvent作成失敗・commit失敗)を"例外をログに
+          // 出して200"で握り潰さない。ここでは意図的にcatchしない — 例外はこのブロックの
+          // 外側にある関数全体のtry/catch(下記)まで伝播させ、Stripeに再送させる非2xxを
+          // 返す。consumeTrialEntitlementFromWebhook自体が正常に解決して返す結果
+          // (not_found_or_mismatch/already_consumed_idempotent/consumed)はすべて
+          // 「意図した分岐」であり、これらはDB例外ではないため200のままでよい
+          // (metadata不一致・対象外・重複到達はいずれもno-opとして正常応答するのが正しい)。
+          const { result: consumeResult, integrationEventId } = await consumeTrialEntitlementFromWebhook({
+            trialEntitlementId,
+            clinicId,
+            checkoutSessionId: command.action.checkoutSessionId,
+            externalSubscriptionId: identity.externalSubscriptionId,
+            occurredAt: command.occurredAt,
+          });
+          if (consumeResult === "not_found_or_mismatch") {
+            // PII/秘密値を含まないIDのみログに残す。運用上の異常として監視対象にする。
+            console.warn(
+              "[POST /api/billing/webhook] TrialEntitlement consumption mismatch",
+              { trialEntitlementId, clinicId }
+            );
+          } else if (integrationEventId) {
+            // "trial_activated"はconsumeTrialEntitlementFromWebhook内の同一トランザクションで
+            // 既にDBへ記録済み(dedupeKeyにより二重記録されない、ON CONFLICT DO NOTHING)。
+            // 2026-09-28修正(PO再指摘、外部同期失敗とDB記録の分離): ここから先の
+            // Salesforce同期はベストエフォートであり、その成否はこのWebhookの成功応答に
+            // 影響させない。DB記録(outbox)は既に確定しているため、同期が失敗しても
+            // status="failed"のままDBに残り、既存の再試行ジョブ(retryPendingIntegrationEvents)
+            // が後から再処理する。よってここだけは意図的にcatchしてログに留める。
+            await syncIntegrationEvent(integrationEventId).catch((syncError) => {
+              console.error(
+                "[POST /api/billing/webhook] trial_activated event sync failed (will retry via pending-event job):",
+                syncError
+              );
+            });
+          }
+        }
+      }
     }
 
     // 決済方法登録完了(checkout完了)を契機に、他の3条件(SMS/メール/規約同意)が

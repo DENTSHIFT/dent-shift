@@ -218,7 +218,7 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
         occurredAt: new Date("2026-09-27T00:00:00Z"),
       })
     );
-    expect(createResult.trialActivated).toEqual({ clinicId: clinic.id });
+    expect(createResult.trialActivated).toEqual({ clinicId: clinic.id, externalSubscriptionId });
 
     // 同じstatus(trial)を繰り返し報告する再送・別イベントでは再発火しない。
     const repeatResult = await billingRepository.applyBillingWebhookEvent(
@@ -257,7 +257,7 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
     });
 
     const first = await billingRepository.applyBillingWebhookEvent(command);
-    expect(first.trialActivated).toEqual({ clinicId: clinic.id });
+    expect(first.trialActivated).toEqual({ clinicId: clinic.id, externalSubscriptionId });
 
     const resent = await billingRepository.applyBillingWebhookEvent(command);
     expect(resent.result).toBe("duplicate");
@@ -304,6 +304,7 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
             plan: "light",
           },
           initialStatus: "trial",
+          checkoutSessionId: "cs_orphan_checkout",
         },
       });
       expect(result.result).toBe("ignored");

@@ -6,7 +6,7 @@ export class StripeCheckoutProviderError extends Error {}
 async function postCheckoutSession(
   apiKey: string,
   params: URLSearchParams
-): Promise<{ url: string; id: string }> {
+): Promise<{ url: string; id: string; expiresAtEpochSeconds: number | null }> {
   let response: Response;
   try {
     response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
@@ -55,7 +55,10 @@ async function postCheckoutSession(
     throw new StripeCheckoutProviderError("Stripe Checkout returned an untrusted URL.");
   }
 
-  return { url: checkoutUrl.toString(), id: idValue };
+  const expiresAtValue = (body as { expires_at?: unknown }).expires_at;
+  const expiresAtEpochSeconds = typeof expiresAtValue === "number" ? expiresAtValue : null;
+
+  return { url: checkoutUrl.toString(), id: idValue, expiresAtEpochSeconds };
 }
 
 export async function createStripeCheckoutSession(input: {
@@ -70,7 +73,12 @@ export async function createStripeCheckoutSession(input: {
   // 呼び出し側(billing/checkout/route.ts)がtrialActivation.tsのisTrialEligiblePlan()
   // で判定した値を渡す(対象プラン一覧をここで再定義しない)。
   trialPeriodDays?: number;
-}): Promise<{ url: string; id: string }> {
+  // 2026-09-27追加(PO承認、P0-Checkout接続): トライアル対象Checkoutの場合のみ設定する。
+  // Stripe Webhook側(stripeWebhookProvider.ts)がこのmetadataからTrialEntitlement行を
+  // 一意に特定し、reserved→consumedへの消費を照合する(clinicIdだけでは探さない、
+  // PO指示3・4)。トライアル対象外(プレミアム等)のCheckoutにはこのmetadataを付けない。
+  trialEntitlementId?: string;
+}): Promise<{ url: string; id: string; expiresAtEpochSeconds: number | null }> {
   const params = new URLSearchParams();
   params.set("mode", "subscription");
   params.set("line_items[0][price]", input.priceId);
@@ -84,6 +92,10 @@ export async function createStripeCheckoutSession(input: {
   params.set("metadata[plan]", input.plan);
   params.set("subscription_data[metadata][clinic_id]", input.clinicId);
   params.set("subscription_data[metadata][plan]", input.plan);
+  if (input.trialEntitlementId) {
+    params.set("metadata[trial_entitlement_id]", input.trialEntitlementId);
+    params.set("subscription_data[metadata][trial_entitlement_id]", input.trialEntitlementId);
+  }
   if (input.trialPeriodDays) {
     params.set("subscription_data[trial_period_days]", String(input.trialPeriodDays));
     // トライアル中でもカード登録を必須にする(仕様: 8日目に自動課金するため)。
@@ -92,6 +104,128 @@ export async function createStripeCheckoutSession(input: {
   }
 
   return postCheckoutSession(input.apiKey, params);
+}
+
+/**
+ * 既存のCheckout Sessionを取得する(PO指示2: 同じ処理の安全な再試行では、新規Session
+ * を作らず既存Sessionを再利用する)。statusが"open"の場合のみ再利用可能とみなす
+ * (呼び出し側でチェックする)。
+ */
+export async function retrieveStripeCheckoutSession(input: {
+  apiKey: string;
+  sessionId: string;
+}): Promise<{ url: string | null; id: string; status: string } | null> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(input.sessionId)}`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${input.apiKey}` },
+        signal: AbortSignal.timeout(10_000),
+      }
+    );
+  } catch {
+    throw new StripeCheckoutProviderError("Stripe Checkout Session retrieval request failed.");
+  }
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new StripeCheckoutProviderError(
+      `Stripe Checkout Session retrieval returned HTTP ${response.status}.`
+    );
+  }
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new StripeCheckoutProviderError("Stripe Checkout Session retrieval returned invalid JSON.");
+  }
+  const record = body as { id?: unknown; url?: unknown; status?: unknown };
+  if (typeof record.id !== "string" || typeof record.status !== "string") {
+    throw new StripeCheckoutProviderError("Stripe Checkout Session retrieval response is malformed.");
+  }
+  return {
+    id: record.id,
+    status: record.status,
+    url: typeof record.url === "string" ? record.url : null,
+  };
+}
+
+/**
+ * 2026-09-28追加(PO再指摘、P0-Checkout接続): TrialEntitlementの消費確定前に、
+ * Stripe上のSubscriptionの実データ(status・trial_start/trial_end・metadata)を
+ * 取得して検証するために使う。checkout.session.completedのmetadataだけを
+ * 根拠に消費してはならない(それはSession作成時点の「意図」であり、Stripe側で
+ * 実際にtrialingになった証明にはならない)。
+ * 404(Subscriptionが存在しない)はnullを返す(呼び出し側で「消費しない」扱いにする、
+ * 再試行不要)。それ以外の失敗(ネットワーク断・5xx等)は例外を投げ、呼び出し元
+ * (webhook route)がStripeに再送させる一時的な障害として扱う。
+ */
+export async function retrieveStripeSubscription(input: {
+  apiKey: string;
+  subscriptionId: string;
+}): Promise<{
+  id: string;
+  status: string;
+  trialStart: Date | null;
+  trialEnd: Date | null;
+  metadataClinicId: string | null;
+  metadataTrialEntitlementId: string | null;
+} | null> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://api.stripe.com/v1/subscriptions/${encodeURIComponent(input.subscriptionId)}`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${input.apiKey}` },
+        signal: AbortSignal.timeout(10_000),
+      }
+    );
+  } catch {
+    throw new StripeCheckoutProviderError("Stripe Subscription retrieval request failed.");
+  }
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new StripeCheckoutProviderError(
+      `Stripe Subscription retrieval returned HTTP ${response.status}.`
+    );
+  }
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new StripeCheckoutProviderError("Stripe Subscription retrieval returned invalid JSON.");
+  }
+  const record = body as {
+    id?: unknown;
+    status?: unknown;
+    trial_start?: unknown;
+    trial_end?: unknown;
+    metadata?: unknown;
+  };
+  if (typeof record.id !== "string" || typeof record.status !== "string") {
+    throw new StripeCheckoutProviderError("Stripe Subscription retrieval response is malformed.");
+  }
+  const toDate = (value: unknown): Date | null =>
+    typeof value === "number" && Number.isFinite(value) && value > 0
+      ? new Date(value * 1000)
+      : null;
+  const metadata =
+    record.metadata !== null && typeof record.metadata === "object"
+      ? (record.metadata as Record<string, unknown>)
+      : null;
+  const metadataString = (value: unknown): string | null =>
+    typeof value === "string" && value.trim() ? value.trim() : null;
+
+  return {
+    id: record.id,
+    status: record.status,
+    trialStart: toDate(record.trial_start),
+    trialEnd: toDate(record.trial_end),
+    metadataClinicId: metadataString(metadata?.clinic_id),
+    metadataTrialEntitlementId: metadataString(metadata?.trial_entitlement_id),
+  };
 }
 
 /**

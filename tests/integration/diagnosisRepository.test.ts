@@ -791,6 +791,7 @@ describe("BillingRepository: 契約状態の医院スコープ", () => {
             plan: "premium",
           },
           initialStatus: "trial",
+          checkoutSessionId: "cs_webhook_unique",
         },
       })).result
     ).toBe("processed");
@@ -882,7 +883,7 @@ describe("BillingRepository: 契約状態の医院スコープ", () => {
         providerEventId: "evt_checkout_race_unique",
         eventType: "checkout.session.completed",
         occurredAt: new Date("2026-09-10T04:00:00.000Z"),
-        action: { kind: "checkout_completed", identity, initialStatus: "active" },
+        action: { kind: "checkout_completed", identity, initialStatus: "active", checkoutSessionId: "cs_webhook_race_unique" },
       }),
       billingRepo.applyBillingWebhookEvent({
         providerEventId: "evt_subscription_race_unique",

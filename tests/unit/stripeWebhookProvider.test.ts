@@ -77,8 +77,10 @@ describe("Stripe billing event normalization", () => {
         plan: "premium",
         inviteId: null,
         inviteCode: null,
+        trialEntitlementId: null,
       },
       initialStatus: "active",
+      checkoutSessionId: "cs_test_1",
     });
   });
 
@@ -101,8 +103,10 @@ describe("Stripe billing event normalization", () => {
         plan: "light",
         inviteId: null,
         inviteCode: null,
+        trialEntitlementId: null,
       },
       initialStatus: "trial",
+      checkoutSessionId: "cs_test_trial",
     });
   });
 
@@ -125,8 +129,10 @@ describe("Stripe billing event normalization", () => {
         plan: "standard",
         inviteId: "invite-1",
         inviteCode: "ABC123",
+        trialEntitlementId: null,
       },
       initialStatus: "active",
+      checkoutSessionId: "cs_test_invite",
     });
   });
 
@@ -166,6 +172,7 @@ describe("Stripe billing event normalization", () => {
         plan: "standard",
         inviteId: null,
         inviteCode: null,
+        trialEntitlementId: null,
       },
       paymentStatus: "paid",
       externalPaymentId: "in_1",

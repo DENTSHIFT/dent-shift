@@ -55,6 +55,7 @@ function readMetadata(value: unknown): {
   plan: PlanId | null;
   inviteId: string | null;
   inviteCode: string | null;
+  trialEntitlementId: string | null;
 } {
   const metadata = asRecord(value);
   const clinicId = nonEmptyString(metadata?.clinic_id);
@@ -64,6 +65,7 @@ function readMetadata(value: unknown): {
     plan: planValue && isPlanId(planValue) ? planValue : null,
     inviteId: nonEmptyString(metadata?.invite_id),
     inviteCode: nonEmptyString(metadata?.invite_code),
+    trialEntitlementId: nonEmptyString(metadata?.trial_entitlement_id),
   };
 }
 
@@ -138,12 +140,15 @@ export function normalizeStripeBillingEvent(event: Stripe.Event): BillingWebhook
     // amount_total(今回の請求額)が0かどうかで判定する方が、trial_period_daysの有無と
     // 直接対応し確実(プレミアムは即時課金のためamount_total>0)。
     const amountTotal = typeof object.amount_total === "number" ? object.amount_total : null;
+    const sessionId = nonEmptyString(object.id);
+    if (!sessionId) return ignored(event);
     return {
       ...base,
       action: {
         kind: "checkout_completed",
         identity: checkoutIdentity,
         initialStatus: amountTotal !== null && amountTotal > 0 ? "active" : "trial",
+        checkoutSessionId: sessionId,
       },
     };
   }
