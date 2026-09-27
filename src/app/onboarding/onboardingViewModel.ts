@@ -106,7 +106,9 @@ export function buildOnboardingViewModel(input: {
     : {
         key: "diagnosis",
         title: "最初のAI集患診断",
-        description: "6領域の現在地と、優先して改善する内容を確認します。",
+        // 2026-09-28修正(PO再指摘): 「6領域の現在地」を必ず確認できるかのような
+        // 断定を避ける(測定根拠が不足する項目は未測定として表示されるため)。
+        description: "実際に取得できた範囲で、AI表示状況や改善のヒントを確認します。",
         state: contractStep.state === "complete" ? "current" : "pending",
         stateLabel: contractStep.state === "complete" ? "次に進む" : "契約確認後",
         actionLabel: contractStep.state === "complete" ? "診断を始める" : undefined,

@@ -28,10 +28,15 @@ import { TrialCtaBanner } from "./TrialCtaBanner";
 import { resolveFeatureAccessNotice } from "./featureAccessNotice";
 import { resolveNavHref, LOCKED_DIAGNOSIS_HREF } from "./navSections";
 
+// 2026-09-28修正(PO再指摘): 「競合医院」はサイドメニューから非表示にする。
+// 実在の競合医院データ取得・比較機能は未実装(UnavailableCompetitorProvider、
+// 常に空)であり、診断完了後に利用できる実装済み機能であるかのように
+// (「診断完了後に利用できます」ロック表示・#competitorsセクションへのリンク)
+// 見せていたため。#competitorsセクション自体(準備中である旨を正直に表示)は
+// ページ内に残すが、ナビゲーションからは案内しない。
 const NAV_ITEMS = [
   { label: "経営サマリー", icon: "⌂", href: "/dashboard", active: true },
   { label: "AI検索", icon: "✦", href: "#ai-search", active: false },
-  { label: "競合医院", icon: "◎", href: "#competitors", active: false },
   { label: "改善アクション", icon: "✓", href: "#improvements", active: false },
   { label: "診断履歴", icon: "▤", href: "#history", active: false },
   { label: "契約状況", icon: "◇", href: "#subscription", active: false },
@@ -428,7 +433,11 @@ export default async function DashboardPage() {
               <div className={styles.emptyIcon} aria-hidden="true">✦</div>
               <h2 className={styles.emptyTitle}>まずはAI集患診断を始めましょう</h2>
               <p className={styles.emptyText}>
-                診断すると、6領域のスコアと患者質問ごとのAI表示状況、今月の優先改善がここに表示されます。
+                {/* 2026-09-28修正(PO再指摘): 「6領域のスコアが必ず出る」「今月の優先改善が
+                    必ず出る」と受け取れる断定を避ける。6領域スコア・改善TOP3はいずれも
+                    測定根拠(実測データ)が揃わない場合は未測定/データ不足として表示され、
+                    必ず算出されるものではないため。 */}
+                無料診断では、実際に取得できた範囲で患者質問ごとのAI表示状況を確認できます。測定根拠が不足する項目は「未測定」と表示します。
               </p>
               <Link className={styles.newDiagnosisLink} href="/diagnosis">
                 無料でAI集患診断する
