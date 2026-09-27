@@ -193,8 +193,8 @@ export default async function PlansPage({
       </section>
 
       <section className={styles.comparison}>
-        <h2>機能比較</h2>
-        <p>具体的な質問数・測定頻度は、API原価と実医院テスト後に最終決定します。</p>
+        <h2>プラン別機能一覧</h2>
+        <p>各プランで利用できる機能をご確認いただけます。</p>
         <div className={styles.tableWrap}>
           <table>
             <thead>
