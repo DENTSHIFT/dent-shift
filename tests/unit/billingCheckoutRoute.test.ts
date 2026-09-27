@@ -14,10 +14,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/server/auth/session", () => ({ getCurrentContact: mocks.currentContact }));
-vi.mock("@/server/config/billingConfig", () => ({
-  resolveBillingConfigFromProcessEnv: mocks.resolveConfig,
-  BillingConfigError: class BillingConfigError extends Error {},
-}));
+vi.mock("@/server/config/billingConfig", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/config/billingConfig")>();
+  return {
+    ...actual,
+    resolveBillingConfigFromProcessEnv: mocks.resolveConfig,
+    BillingConfigError: class BillingConfigError extends Error {},
+  };
+});
 vi.mock("@/server/providers/billing/stripeCheckoutProvider", () => ({
   createStripeCheckoutSession: mocks.createCheckout,
   retrieveStripeCheckoutSession: mocks.retrieveCheckout,
@@ -70,6 +74,7 @@ beforeEach(() => {
     url: "https://checkout.stripe.com/c/pay/test-session",
     id: "cs_test_session",
     expiresAtEpochSeconds: null,
+    livemode: false,
   });
   mocks.getLatestSubscription.mockResolvedValue(null);
   // 既定: この医院はまだトライアルを消費していない(=ライト/スタンダードでトライアル対象)。
@@ -108,6 +113,7 @@ describe("POST /api/billing/checkout", () => {
       appBaseUrl: "https://dent-shift.example.com",
       priceLabels: { light: "L", standard: "S", premium: "P" },
       stripePriceIds: { light: "price_l", standard: "price_s", premium: "price_p" },
+      expectedMode: "test",
     });
 
     const response = await POST(request("standard"));
@@ -141,6 +147,7 @@ describe("POST /api/billing/checkout", () => {
       appBaseUrl: "https://dent-shift.example.com",
       priceLabels: { light: "L", standard: "S", premium: "P" },
       stripePriceIds: { light: "price_l", standard: "price_s", premium: "price_p" },
+      expectedMode: "test",
     });
 
     const response = await POST(request("premium"));
@@ -167,6 +174,7 @@ describe("POST /api/billing/checkout", () => {
         appBaseUrl: "https://dent-shift.example.com",
         priceLabels: { light: "L", standard: "S", premium: "P" },
         stripePriceIds: { light: "price_l", standard: "price_s", premium: "price_p" },
+        expectedMode: "test",
       });
     }
 
@@ -218,6 +226,7 @@ describe("POST /api/billing/checkout", () => {
       appBaseUrl: "https://dent-shift.example.com",
       priceLabels: { light: "L", standard: "S", premium: "P" },
       stripePriceIds: { light: "l", standard: "s", premium: "p" },
+      expectedMode: "test",
     });
     const response = await POST(request("standard", "https://evil.example.com"));
     expect(response.status).toBe(403);
@@ -233,6 +242,7 @@ describe("POST /api/billing/checkout", () => {
       appBaseUrl: "https://dent-shift.example.com",
       priceLabels: { light: "L", standard: "S", premium: "P" },
       stripePriceIds: { light: "price_l", standard: "price_s", premium: "price_p" },
+      expectedMode: "test",
     });
   }
 
@@ -383,6 +393,38 @@ describe("POST /api/billing/checkout", () => {
     it("Session作成成功後に予約の所有権が失われていた(attach失敗)場合はSessionを返さない", async () => {
       stripeReadyConfig();
       mocks.attachStripeSessionToReservation.mockResolvedValue(false);
+
+      const response = await POST(request("light"));
+      expect(response.status).toBe(502);
+    });
+
+    it("2026-09-28追加(PO再指摘): StripeのlivemodeがSTRIPE_EXPECTED_MODEと一致しない場合、Sessionを返さずfail-closedで停止し、自分の予約だけをreleaseする", async () => {
+      stripeReadyConfig(); // expectedMode: "test"
+      mocks.createCheckout.mockResolvedValue({
+        url: "https://checkout.stripe.com/c/pay/test-session",
+        id: "cs_test_session",
+        expiresAtEpochSeconds: null,
+        livemode: true, // test期待なのに実際はlive
+      });
+
+      const response = await POST(request("light"));
+      expect(response.status).toBe(502);
+      expect(mocks.attachStripeSessionToReservation).not.toHaveBeenCalled();
+      expect(mocks.releaseOwnReservation).toHaveBeenCalledWith({
+        entitlementId: "entitlement-1",
+        ownerToken: "owner-token-1",
+      });
+    });
+
+    it("2026-09-28追加(PO再指摘): トライアル無し経路(startCheckoutWithoutTrial)でもlivemode不一致はfail-closedで停止する", async () => {
+      stripeReadyConfig();
+      mocks.getClinicTrialState.mockResolvedValue({ trialConsumedAt: new Date("2026-09-01T00:00:00Z") });
+      mocks.createCheckout.mockResolvedValue({
+        url: "https://checkout.stripe.com/c/pay/test-session",
+        id: "cs_test_session",
+        expiresAtEpochSeconds: null,
+        livemode: true,
+      });
 
       const response = await POST(request("light"));
       expect(response.status).toBe(502);

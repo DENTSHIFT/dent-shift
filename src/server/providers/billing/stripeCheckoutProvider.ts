@@ -6,7 +6,15 @@ export class StripeCheckoutProviderError extends Error {}
 async function postCheckoutSession(
   apiKey: string,
   params: URLSearchParams
-): Promise<{ url: string; id: string; expiresAtEpochSeconds: number | null }> {
+): Promise<{
+  url: string;
+  id: string;
+  expiresAtEpochSeconds: number | null;
+  // 2026-09-28追加(PO再指摘、Stripe test/live取り違え防止の追加防御): StripeがSession
+  // 応答へ既に含めているlivemodeフィールド(追加のAPI呼び出し・権限拡大は不要)。
+  // 呼び出し側(checkout route)がSTRIPE_EXPECTED_MODEとの一致を確認する。
+  livemode: boolean | null;
+}> {
   let response: Response;
   try {
     response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
@@ -57,8 +65,10 @@ async function postCheckoutSession(
 
   const expiresAtValue = (body as { expires_at?: unknown }).expires_at;
   const expiresAtEpochSeconds = typeof expiresAtValue === "number" ? expiresAtValue : null;
+  const livemodeValue = (body as { livemode?: unknown }).livemode;
+  const livemode = typeof livemodeValue === "boolean" ? livemodeValue : null;
 
-  return { url: checkoutUrl.toString(), id: idValue, expiresAtEpochSeconds };
+  return { url: checkoutUrl.toString(), id: idValue, expiresAtEpochSeconds, livemode };
 }
 
 export async function createStripeCheckoutSession(input: {
@@ -78,7 +88,12 @@ export async function createStripeCheckoutSession(input: {
   // 一意に特定し、reserved→consumedへの消費を照合する(clinicIdだけでは探さない、
   // PO指示3・4)。トライアル対象外(プレミアム等)のCheckoutにはこのmetadataを付けない。
   trialEntitlementId?: string;
-}): Promise<{ url: string; id: string; expiresAtEpochSeconds: number | null }> {
+}): Promise<{
+  url: string;
+  id: string;
+  expiresAtEpochSeconds: number | null;
+  livemode: boolean | null;
+}> {
   const params = new URLSearchParams();
   params.set("mode", "subscription");
   params.set("line_items[0][price]", input.priceId);

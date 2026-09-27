@@ -8,10 +8,9 @@ import {
   type BillingConfig,
 } from "@/server/config/billingConfig";
 import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
-import { hasExistingSubscription as subscriptionBlocksNewCheckout } from "@/domain/billing/subscriptionStatus";
+import { isSubscriptionStatus } from "@/domain/billing/subscriptionStatus";
 import { evaluateUpgrade } from "@/domain/billing/planUpgrade";
-import { isTrialEligiblePlan } from "@/domain/billing/trialActivation";
-import { resolveTrialCtaLabel, type TrialCtaLabel } from "@/domain/billing/trialEntitlement";
+import { resolvePlanActionState, type PlanActionState } from "@/domain/billing/trialEntitlement";
 import { getClinicTrialCheckoutSnapshot } from "@/server/db/trialEntitlementRepository";
 import { UpgradeButton } from "@/components/UpgradeButton";
 import styles from "./plans.module.css";
@@ -34,78 +33,83 @@ function safeBillingConfig(): { config: BillingConfig; configurationError: boole
   }
 }
 
-function PlanAction({
-  plan,
-  checkoutReady,
-  authenticated,
-  isBillingExempt,
-  hasExistingSubscription,
-  currentPlan,
-  upgradeAllowed,
-  ctaLabel,
-}: {
-  plan: PlanId;
-  currentPlan: PlanId | null;
-  upgradeAllowed: boolean;
-  checkoutReady: boolean;
-  authenticated: boolean;
-  isBillingExempt: boolean;
-  hasExistingSubscription: boolean;
-  // 2026-09-27追加、2026-09-28拡張(PO再指摘、CTA判定を先送りしない): サーバー側の
-  // 実判定(resolveTrialCtaLabel、DB保存済みのTrialEntitlement/Clinic.trialConsumedAtの
-  // 状態のみで判定、Stripe APIは呼ばない)に基づくCTA文言。「未契約」の中でも
-  // 新規利用可能/有効なSessionあり/Session作成中/利用済みを区別する。
-  // 最終的な真偽はCheckout API(reserveTrialEntitlement)側で必ず再検証される。
-  ctaLabel: TrialCtaLabel;
-}) {
-  // 2026-09-24: 永久無料の特別アカウント(billingExempt)には、Stripe決済へ進む
-  // CTAを一切出さない(すでに無期限で有効な契約があり、購入操作自体が不要かつ
-  // Stripe側に対応する契約が存在しないため実行してもエラーになる)。
-  if (isBillingExempt) {
-    return <span className={styles.disabledAction}>永久無料でご利用中です</span>;
-  }
-  // 2026-09-23: 二重契約・二重課金防止。既にactive/trial/past_due等の契約がある
-  // クリニックには新規Checkoutへの導線を出さない(APIも別途ガード済み、画面側だけに
-  // 依存しない)。プラン変更・解約はダッシュボードのCustomer Portal導線を案内する。
-  if (hasExistingSubscription) {
-    if (plan === currentPlan) {
+// 2026-09-28全面修正(PO再指摘、CTA矛盾の解消): PlanActionはresolvePlanActionState()が
+// 返す状態を機械的に描画するだけにする。「押すと409になるボタンを表示しない」ことを、
+// 個別の条件分岐の重複ではなく単一の判別可能な状態(PlanActionState)の型で保証する。
+function PlanAction({ plan, state }: { plan: PlanId; state: PlanActionState }) {
+  switch (state.kind) {
+    case "billing_exempt":
+      return <span className={styles.disabledAction}>永久無料でご利用中です</span>;
+    case "current_plan":
       return <span className={styles.disabledAction}>現在のプラン</span>;
-    }
-    // 上位プランへのアップグレードのみ。ダウングレードや価格の自由指定は受け付けない。
-    if (upgradeAllowed && (plan === "standard" || plan === "premium")) {
+    case "upgrade":
       return (
         <UpgradeButton
-          targetPlan={plan}
+          targetPlan={state.targetPlan}
           className={styles.action}
           label="アップグレード"
           confirmMessage="このプランへアップグレードします。トライアル期間は変わりません。有効な契約の場合は差額が請求されます。よろしいですか?"
         />
       );
+    // 2026-09-28修正(PO再指摘): 新規Checkoutを禁止する既存Subscription状態では、
+    // 押すと409になるボタンを表示せず、契約状況の確認(ダッシュボード)へ誘導する。
+    case "manage_existing":
+      return (
+        <Link className={styles.action} href="/dashboard">
+          契約状況を確認する
+        </Link>
+      );
+    case "checkout_not_ready":
+      return <span className={styles.disabledAction}>オンライン契約は準備中</span>;
+    case "login_required":
+      return (
+        <Link className={styles.action} href="/login">
+          ログインして契約へ進む
+        </Link>
+      );
+    case "start_trial":
+    case "continue_session":
+    case "preparing":
+    case "contract":
+    case "recontract": {
+      const label: Record<typeof state.kind, string> = {
+        start_trial: "7日間無料で試す",
+        continue_session: "無料トライアルの手続きを続ける",
+        preparing: "手続きを準備中",
+        contract: "このプランで契約する",
+        recontract: "このプランで再契約する",
+      };
+      return (
+        <form action="/api/billing/checkout" method="post">
+          <input type="hidden" name="plan" value={plan} />
+          <button className={styles.action} type="submit">
+            {label[state.kind]}
+          </button>
+        </form>
+      );
     }
-    return <span className={styles.disabledAction}>ご契約中(プラン変更はダッシュボードから)</span>;
   }
-  if (!checkoutReady) {
-    return <span className={styles.disabledAction}>オンライン契約は準備中</span>;
+}
+
+function trialNoteFor(state: PlanActionState, isTrialPlan: boolean): string | null {
+  switch (state.kind) {
+    case "start_trial":
+      return "7日間無料トライアル対象・カード登録が必要です・トライアル中は請求されません・キャンセルしない場合はトライアル終了後にこのプランの料金が発生します";
+    case "continue_session":
+      return "トライアルの手続きが完了していません・続きから再開できます";
+    case "preparing":
+      return "お手続きの準備をしています・少し待って再度お試しください";
+    case "recontract":
+      return "無料トライアルは既に利用済みのため、ご契約と同時に料金が発生します";
+    case "contract":
+      return isTrialPlan
+        ? "無料トライアルは既に利用済みのため、ご契約と同時に料金が発生します"
+        : "トライアル対象外のプランです・ご契約と同時に料金が発生します";
+    default:
+      // billing_exempt/current_plan/upgrade/manage_existing/checkout_not_ready/login_requiredは
+      // トライアル関連の注記自体を表示しない(既存契約者に無関係な文言を出さない)。
+      return null;
   }
-  if (!authenticated) {
-    return (
-      <Link className={styles.action} href="/login">
-        ログインして契約へ進む
-      </Link>
-    );
-  }
-  // 2026-09-27追加、2026-09-28拡張(PO再指摘): 新規契約(既存契約なし)の場合のみ、
-  // サーバー側で実際に判定したctaLabelをそのまま表示する。既存契約者・アップグレード・
-  // billingExemptの各分岐(上記)は元々この分岐を通らないため、誤ってトライアル対象と
-  // 表示することはない。
-  return (
-    <form action="/api/billing/checkout" method="post">
-      <input type="hidden" name="plan" value={plan} />
-      <button className={styles.action} type="submit">
-        {ctaLabel}
-      </button>
-    </form>
-  );
 }
 
 export default async function PlansPage({
@@ -120,12 +124,18 @@ export default async function PlansPage({
     ? await getLatestSubscriptionByClinicId(currentContact.clinicId)
     : null;
   const isBillingExempt = subscription?.billingExempt === true;
-  const hasExistingSubscription = !isBillingExempt && subscriptionBlocksNewCheckout(subscription);
-  // 2026-09-27追加、2026-09-28拡張(PO再指摘、CTA判定を先送りしない): CTA文言を
-  // プラン種別だけでなく、この医院の実際のトライアル消費状態・有効な予約の有無で判定する。
+  const subscriptionStatus =
+    subscription && isSubscriptionStatus(subscription.status) ? subscription.status : null;
+  // 2026-09-28修正(PO再指摘): 「既存契約あり」を表示用の単純なbooleanへ潰さず、
+  // resolvePlanActionState()へSubscription状態そのものを渡す(CTA矛盾の再発防止)。
   const clinicTrialSnapshot = currentContact
     ? await getClinicTrialCheckoutSnapshot(currentContact.clinicId)
     : null;
+
+  const hasBlockingSubscription =
+    !isBillingExempt &&
+    subscriptionStatus !== null &&
+    subscriptionStatus !== "cancelled";
 
   return (
     <main className={styles.page}>
@@ -157,7 +167,7 @@ export default async function PlansPage({
         <div className={styles.infoBanner}>決済は完了していません。プランをもう一度確認できます。</div>
       )}
 
-      {hasExistingSubscription && (
+      {hasBlockingSubscription && (
         <div className={styles.infoBanner}>
           既にご契約中です。プランの変更・解約はダッシュボードから行えます。
         </div>
@@ -174,75 +184,48 @@ export default async function PlansPage({
       )}
 
       <section className={styles.cards} aria-label="プラン一覧">
-        {PLAN_SUMMARIES.map((plan) => (
-          <article
-            className={`${styles.card} ${plan.recommended ? styles.recommended : ""}`}
-            key={plan.id}
-          >
-            {plan.recommended && <span className={styles.recommendedBadge}>おすすめ</span>}
-            <h2>{plan.name}</h2>
-            <p className={styles.description}>{plan.description}</p>
-            <p className={styles.price}>
-              {config.priceLabels[plan.id]}
-            </p>
-            <ul>
-              {plan.highlights.map((highlight) => <li key={highlight}>{highlight}</li>)}
-            </ul>
-            {(() => {
-              // 2026-09-28修正(PO再指摘): 既存Subscriptionがある場合はresolveTrialCtaLabel
-              // 自体がisBillingExempt/hasExistingSubscriptionによらず常に「このプランで
-              // 契約する」を返す(関数内の必須引数として保証、単一のテスト対象)。
-              const ctaLabel: TrialCtaLabel = clinicTrialSnapshot
-                ? resolveTrialCtaLabel({
-                    plan: plan.id,
-                    clinic: clinicTrialSnapshot,
-                    hasExistingSubscription: isBillingExempt || hasExistingSubscription,
-                  })
-                : isBillingExempt || hasExistingSubscription
-                  ? "このプランで契約する"
-                  : isTrialEligiblePlan(plan.id)
-                    ? "7日間無料で試す"
-                    : "このプランで契約する";
-              return (
-                <>
-                  {!isBillingExempt && !hasExistingSubscription && (
-                    <p className={styles.trialNote}>
-                      {ctaLabel === "7日間無料で試す"
-                        ? "7日間無料トライアル対象・カード登録が必要です・トライアル中は請求されません・キャンセルしない場合はトライアル終了後にこのプランの料金が発生します"
-                        : ctaLabel === "無料トライアルの手続きを続ける"
-                          ? "トライアルの手続きが完了していません・続きから再開できます"
-                          : ctaLabel === "手続きを準備中"
-                            ? "お手続きの準備をしています・少し待って再度お試しください"
-                            : isTrialEligiblePlan(plan.id)
-                              ? "無料トライアルは既に利用済みのため、ご契約と同時に料金が発生します"
-                              : "トライアル対象外のプランです・ご契約と同時に料金が発生します"}
-                    </p>
-                  )}
-                  <PlanAction
-                    plan={plan.id}
-                    checkoutReady={checkoutReady}
-                    authenticated={Boolean(currentContact)}
-                    isBillingExempt={isBillingExempt}
-                    hasExistingSubscription={hasExistingSubscription}
-                    ctaLabel={ctaLabel}
-                    currentPlan={subscription?.plan ?? null}
-                    upgradeAllowed={
-                      subscription
-                        ? evaluateUpgrade({
-                            currentPlan: subscription.plan,
-                            status: subscription.status,
-                            billingExempt: subscription.billingExempt,
-                            invited: subscription.inviteId !== null,
-                            targetPlan: plan.id,
-                          }).ok
-                        : false
-                    }
-                  />
-                </>
-              );
-            })()}
-          </article>
-        ))}
+        {PLAN_SUMMARIES.map((plan) => {
+          const upgradeAllowed = subscription
+            ? evaluateUpgrade({
+                currentPlan: subscription.plan,
+                status: subscription.status,
+                billingExempt: subscription.billingExempt,
+                invited: subscription.inviteId !== null,
+                targetPlan: plan.id,
+              }).ok
+            : false;
+
+          const state = resolvePlanActionState({
+            plan: plan.id,
+            currentPlan: subscription?.plan ?? null,
+            authenticated: Boolean(currentContact),
+            checkoutReady,
+            isBillingExempt,
+            subscriptionStatus,
+            upgradeAllowed,
+            clinic: clinicTrialSnapshot,
+          });
+          const note = trialNoteFor(state, plan.id === "light" || plan.id === "standard");
+
+          return (
+            <article
+              className={`${styles.card} ${plan.recommended ? styles.recommended : ""}`}
+              key={plan.id}
+            >
+              {plan.recommended && <span className={styles.recommendedBadge}>おすすめ</span>}
+              <h2>{plan.name}</h2>
+              <p className={styles.description}>{plan.description}</p>
+              <p className={styles.price}>
+                {config.priceLabels[plan.id]}
+              </p>
+              <ul>
+                {plan.highlights.map((highlight) => <li key={highlight}>{highlight}</li>)}
+              </ul>
+              {note && <p className={styles.trialNote}>{note}</p>}
+              <PlanAction plan={plan.id} state={state} />
+            </article>
+          );
+        })}
       </section>
 
       <section className={styles.comparison}>

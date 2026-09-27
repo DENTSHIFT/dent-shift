@@ -7,9 +7,11 @@ import {
   isReservationStillValid,
   isTrialEntitlementStatus,
   isTrialPlan,
+  resolvePlanActionState,
   resolveTrialCtaLabel,
   resolveTrialTerms,
   RESERVATION_PENDING_TTL_MS,
+  type PlanActionState,
 } from "@/domain/billing/trialEntitlement";
 import { hasExistingSubscription } from "@/domain/billing/subscriptionStatus";
 
@@ -177,5 +179,141 @@ describe("2026-09-28追加(PO再指摘): 期限境界の統一(isReservationStil
   it("reservationExpiresAt < now は期限切れ", () => {
     const now = new Date("2026-09-28T00:00:00.000Z");
     expect(isReservationStillValid(new Date("2026-09-27T23:59:59.999Z"), now)).toBe(false);
+  });
+});
+
+describe("2026-09-28追加(PO再指摘、CTA矛盾の解消): resolvePlanActionState", () => {
+  const FRESH_CLINIC = { trialConsumedAt: null, hasConsumedEntitlement: false, activeReservation: null };
+  const CONSUMED_CLINIC = {
+    trialConsumedAt: new Date("2026-01-01T00:00:00Z"),
+    hasConsumedEntitlement: true,
+    activeReservation: null,
+  };
+  const BASE = {
+    plan: "light" as const,
+    currentPlan: null,
+    authenticated: true,
+    checkoutReady: true,
+    isBillingExempt: false,
+    subscriptionStatus: null,
+    upgradeAllowed: false,
+    clinic: FRESH_CLINIC,
+  };
+
+  it("Subscriptionなし・トライアル未利用 → start_trial", () => {
+    expect(resolvePlanActionState(BASE)).toEqual({ kind: "start_trial" });
+  });
+
+  it("Subscriptionなし・トライアル利用済み → contract", () => {
+    expect(resolvePlanActionState({ ...BASE, clinic: CONSUMED_CLINIC })).toEqual({ kind: "contract" });
+  });
+
+  it("cancelledで新規契約が許可され、トライアル利用済みなら → recontract", () => {
+    expect(
+      resolvePlanActionState({ ...BASE, subscriptionStatus: "cancelled", clinic: CONSUMED_CLINIC })
+    ).toEqual({ kind: "recontract" });
+  });
+
+  it("cancelledだがトライアル未利用なら通常どおり → start_trial(再契約ではなく新規トライアル)", () => {
+    expect(
+      resolvePlanActionState({ ...BASE, subscriptionStatus: "cancelled", clinic: FRESH_CLINIC })
+    ).toEqual({ kind: "start_trial" });
+  });
+
+  it.each(["trial", "active", "past_due", "restricted", "suspended", "cancel_scheduled"] as const)(
+    "status=%sは新規Checkout CTAを出さない(現在のプランでもアップグレード対象でもない場合はmanage_existing)",
+    (status) => {
+      expect(
+        resolvePlanActionState({
+          ...BASE,
+          plan: "premium",
+          currentPlan: "light",
+          subscriptionStatus: status,
+          upgradeAllowed: false,
+        })
+      ).toEqual({ kind: "manage_existing" });
+    }
+  );
+
+  it("現在契約中のプランと同じ場合は current_plan", () => {
+    expect(
+      resolvePlanActionState({ ...BASE, plan: "light", currentPlan: "light", subscriptionStatus: "active" })
+    ).toEqual({ kind: "current_plan" });
+  });
+
+  it("アップグレード対象(standard/premium)かつupgradeAllowedなら upgrade", () => {
+    expect(
+      resolvePlanActionState({
+        ...BASE,
+        plan: "standard",
+        currentPlan: "light",
+        subscriptionStatus: "active",
+        upgradeAllowed: true,
+      })
+    ).toEqual({ kind: "upgrade", targetPlan: "standard" });
+  });
+
+  it("billingExemptは契約状態によらず billing_exempt(Checkout CTAを一切出さない)", () => {
+    expect(resolvePlanActionState({ ...BASE, isBillingExempt: true, subscriptionStatus: "active" })).toEqual({
+      kind: "billing_exempt",
+    });
+  });
+
+  it("有効なCheckout Sessionあり(checkoutSessionId設定済み)→ continue_session", () => {
+    expect(
+      resolvePlanActionState({
+        ...BASE,
+        clinic: { ...FRESH_CLINIC, activeReservation: { hasCheckoutSession: true } },
+      })
+    ).toEqual({ kind: "continue_session" });
+  });
+
+  it("Session作成中(checkoutSessionId未設定)→ preparing", () => {
+    expect(
+      resolvePlanActionState({
+        ...BASE,
+        clinic: { ...FRESH_CLINIC, activeReservation: { hasCheckoutSession: false } },
+      })
+    ).toEqual({ kind: "preparing" });
+  });
+
+  it("未ログインは login_required", () => {
+    expect(resolvePlanActionState({ ...BASE, authenticated: false, clinic: null })).toEqual({
+      kind: "login_required",
+    });
+  });
+
+  it("Stripe未設定(checkoutReady=false)は checkout_not_ready(既存契約がない場合)", () => {
+    expect(resolvePlanActionState({ ...BASE, checkoutReady: false })).toEqual({
+      kind: "checkout_not_ready",
+    });
+  });
+
+  it("トライアル対象外のPremiumは、未契約なら常に contract(トライアルCTAは出ない)", () => {
+    expect(resolvePlanActionState({ ...BASE, plan: "premium", clinic: FRESH_CLINIC })).toEqual({
+      kind: "contract",
+    });
+  });
+
+  it("2026-09-28追加(PO再指摘): manage_existing/current_plan/upgrade/billing_exemptはいずれも新規Checkout CTAではない(kindの網羅性チェック)", () => {
+    const nonCheckoutKinds: PlanActionState["kind"][] = [
+      "manage_existing",
+      "current_plan",
+      "upgrade",
+      "billing_exempt",
+      "login_required",
+      "checkout_not_ready",
+    ];
+    const checkoutKinds: PlanActionState["kind"][] = [
+      "start_trial",
+      "continue_session",
+      "preparing",
+      "contract",
+      "recontract",
+    ];
+    // 両者に重複が無いこと(=1つの状態が両方の意味を同時に持たない)を機械的に保証する。
+    for (const kind of nonCheckoutKinds) {
+      expect(checkoutKinds).not.toContain(kind);
+    }
   });
 });

@@ -158,6 +158,83 @@ export function resolveTrialCtaLabel(input: {
   return "7日間無料で試す";
 }
 
+// 2026-09-28追加(PO再指摘、CTA矛盾の解消): 「押すと409になるボタンを表示しない」ことを
+// コード・テストで保証するため、/plansページのCTA全体を1つの判別可能な状態として解決する。
+// 各状態はラベルだけでなく「リンク先」「実際にCheckoutを許可するか」まで含み、
+// PlanAction()コンポーネント側はこの状態を機械的に描画するだけにする(条件分岐の重複・
+// 表示とAPI許可条件のズレを構造的に防ぐ)。
+export type PlanActionState =
+  | { kind: "login_required" }
+  | { kind: "checkout_not_ready" }
+  | { kind: "billing_exempt" }
+  | { kind: "current_plan" }
+  | { kind: "upgrade"; targetPlan: "standard" | "premium" }
+  // 新規Checkoutを禁止する既存Subscription状態(trial/active/past_due/restricted/
+  // suspended/cancel_scheduled)で、現在のプランでもアップグレード対象でもない場合。
+  // Checkout CTAを一切出さず、契約状況の確認へ誘導する(押すと409になるボタンを
+  // 表示しない、PO指示2)。
+  | { kind: "manage_existing" }
+  | { kind: "start_trial" } // 「7日間無料で試す」
+  | { kind: "continue_session" } // 「無料トライアルの手続きを続ける」
+  | { kind: "preparing" } // 「手続きを準備中」
+  | { kind: "contract" } // 「このプランで契約する」(新規、トライアル対象外 or 消費済み)
+  | { kind: "recontract" }; // 「このプランで再契約する」(cancelled かつ トライアル消費済み)
+
+/**
+ * /plansページのCTA全体を解決する。呼び出し元はこの関数の戻り値だけを見て描画すればよく、
+ * hasExistingSubscription等を個別に再判定しない(判定順序を誤って「押すと409になる
+ * ボタン」を表示してしまう事故を構造的に防ぐ、PO再指摘)。
+ * Checkout APIの最終的な許可条件はreserveTrialEntitlement()/canStartCheckout()側で
+ * 必ず再検証される。ここでの判定はStripe APIを呼ばず、DB保存済みの状態のみで行う。
+ */
+export function resolvePlanActionState(input: {
+  plan: PlanId;
+  currentPlan: PlanId | null;
+  authenticated: boolean;
+  checkoutReady: boolean;
+  isBillingExempt: boolean;
+  // 医院の現在の契約状態(一度も契約したことがなければnull)。
+  subscriptionStatus: SubscriptionStatus | null;
+  // 上位プランへのアップグレードが許可されるか(planUpgrade.ts参照、既存機能)。
+  upgradeAllowed: boolean;
+  // 未ログインの場合はnull。
+  clinic: ClinicTrialCheckoutSnapshot | null;
+}): PlanActionState {
+  if (input.isBillingExempt) return { kind: "billing_exempt" };
+
+  const blocksNewCheckout =
+    input.subscriptionStatus !== null && hasExistingSubscription({
+      status: input.subscriptionStatus,
+      billingExempt: false,
+    });
+
+  if (blocksNewCheckout) {
+    if (input.plan === input.currentPlan) return { kind: "current_plan" };
+    if (input.upgradeAllowed && (input.plan === "standard" || input.plan === "premium")) {
+      return { kind: "upgrade", targetPlan: input.plan };
+    }
+    return { kind: "manage_existing" };
+  }
+
+  if (!input.checkoutReady) return { kind: "checkout_not_ready" };
+  if (!input.authenticated || !input.clinic) return { kind: "login_required" };
+
+  if (input.clinic.activeReservation) {
+    return input.clinic.activeReservation.hasCheckoutSession
+      ? { kind: "continue_session" }
+      : { kind: "preparing" };
+  }
+
+  const trialConsumed = input.clinic.trialConsumedAt !== null || input.clinic.hasConsumedEntitlement;
+  if (!isTrialPlan(input.plan)) return { kind: "contract" };
+  if (!trialConsumed) return { kind: "start_trial" };
+  // トライアル対象プランで消費済み。cancelled(=新規契約が許可される既存Subscriptionが
+  // ある)場合のみ「再契約」の文言にする。Subscriptionが無い(=一度も契約したことがない
+  // のにトライアルだけ消費済み、という通常起こらない状態)場合は通常の契約文言にする。
+  if (input.subscriptionStatus === "cancelled") return { kind: "recontract" };
+  return { kind: "contract" };
+}
+
 export function isVerifiedTrialingSubscriptionForConsumption(input: {
   subscription: StripeSubscriptionSnapshotForConsumption;
   expectedClinicId: string;

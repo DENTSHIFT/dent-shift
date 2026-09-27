@@ -10,6 +10,8 @@ const COMPLETE_STRIPE_ENV = {
   STRIPE_PRICE_ID_STANDARD: "price_standard",
   STRIPE_PRICE_ID_PREMIUM: "price_premium",
   STRIPE_TAX_RATE_ID: "txr_japan_10_percent",
+  // 2026-09-28追加(PO再指摘): Stripe test/live取り違え防止のfail-closedガード。
+  STRIPE_EXPECTED_MODE: "test",
 };
 
 describe("billingConfig", () => {
@@ -57,6 +59,66 @@ describe("billingConfig", () => {
         env: { ...COMPLETE_STRIPE_ENV, STRIPE_TAX_RATE_ID: "" },
       })
     ).toThrow(BillingConfigError);
+  });
+
+  it("2026-09-28追加(PO再指摘): STRIPE_EXPECTED_MODE未設定・不明な値はfail-closedで拒否する", () => {
+    expect(() =>
+      resolveBillingConfig({ env: { ...COMPLETE_STRIPE_ENV, STRIPE_EXPECTED_MODE: "" } })
+    ).toThrow(BillingConfigError);
+    expect(() =>
+      resolveBillingConfig({ env: { ...COMPLETE_STRIPE_ENV, STRIPE_EXPECTED_MODE: "sandbox" } })
+    ).toThrow(BillingConfigError);
+  });
+
+  it("2026-09-28追加(PO再指摘): 未知のprefixの秘密鍵はmode判定不能としてfail-closedで拒否する", () => {
+    expect(() =>
+      resolveBillingConfig({ env: { ...COMPLETE_STRIPE_ENV, STRIPE_SECRET_KEY: "not_a_stripe_key" } })
+    ).toThrow(BillingConfigError);
+  });
+
+  it("2026-09-28追加(PO再指摘): STRIPE_EXPECTED_MODE=testでlive用キー(sk_live_)はfail-closedで拒否する", () => {
+    expect(() =>
+      resolveBillingConfig({
+        env: { ...COMPLETE_STRIPE_ENV, STRIPE_SECRET_KEY: "sk_live_should_not_be_used_in_test" },
+      })
+    ).toThrow(BillingConfigError);
+  });
+
+  it("2026-09-28追加(PO再指摘): STRIPE_EXPECTED_MODE=liveでtest用キー(sk_test_)はfail-closedで拒否する", () => {
+    expect(() =>
+      resolveBillingConfig({
+        env: { ...COMPLETE_STRIPE_ENV, STRIPE_EXPECTED_MODE: "live", STRIPE_SECRET_KEY: "sk_live_actual_live_key" },
+      })
+    ).not.toThrow();
+    expect(() =>
+      resolveBillingConfig({
+        env: { ...COMPLETE_STRIPE_ENV, STRIPE_EXPECTED_MODE: "live" },
+      })
+    ).toThrow(BillingConfigError);
+  });
+
+  it("2026-09-28追加(PO再指摘): 制限付きキー(rk_test_/rk_live_)のprefixもmode判定できる", () => {
+    expect(() =>
+      resolveBillingConfig({ env: { ...COMPLETE_STRIPE_ENV, STRIPE_SECRET_KEY: "rk_test_restricted" } })
+    ).not.toThrow();
+    expect(() =>
+      resolveBillingConfig({ env: { ...COMPLETE_STRIPE_ENV, STRIPE_SECRET_KEY: "rk_live_restricted" } })
+    ).toThrow(BillingConfigError);
+  });
+
+  it("2026-09-28追加(PO再指摘): mode不一致のエラーメッセージに秘密鍵の値・prefixの残りを含めない", () => {
+    const secretSuffix = "should_not_leak_1234567890";
+    let caught: unknown;
+    try {
+      resolveBillingConfig({
+        env: { ...COMPLETE_STRIPE_ENV, STRIPE_SECRET_KEY: `sk_live_${secretSuffix}` },
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(BillingConfigError);
+    expect((caught as Error).message).not.toContain(secretSuffix);
+    expect((caught as Error).message).not.toContain("sk_live_");
   });
 
   it("APIキー値を設定エラーへ含めない", () => {

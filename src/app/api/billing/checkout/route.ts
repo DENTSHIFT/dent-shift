@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isPlanId } from "@/domain/billing/planCatalog";
 import { getCurrentContact } from "@/server/auth/session";
 import {
+  assertStripeLivemodeMatchesExpectedMode,
   BillingConfigError,
   resolveBillingConfigFromProcessEnv,
 } from "@/server/config/billingConfig";
@@ -160,6 +161,15 @@ export async function POST(request: NextRequest) {
       trialEntitlementId: entitlementId,
     });
 
+    // 2026-09-28追加(PO再指摘、Stripe test/live取り違え防止の追加防御): Stripe自身が
+    // 応答へ含めたlivemodeとSTRIPE_EXPECTED_MODEを突き合わせる。ここで例外を投げれば、
+    // 直後のcatchブロックの既存の失敗処理(自分の予約だけをrelease)に乗り、Sessionは
+    // ユーザーへ一切返さない。
+    assertStripeLivemodeMatchesExpectedMode({
+      livemode: checkout.livemode,
+      expectedMode: config.expectedMode,
+    });
+
     // Stripeが実際に発行したsession.id・expires_atを、所有者一致を条件に予約行へ保存する。
     // DBトランザクションを開いたままStripe APIを呼ばない(先にStripe呼び出しを完了させてから
     // この短い条件付き更新のみを行う)。
@@ -234,6 +244,12 @@ async function startCheckoutWithoutTrial(input: {
       contactEmail: currentContact.email,
       appBaseUrl: config.appBaseUrl,
       trialPeriodDays: undefined,
+    });
+
+    // 2026-09-28追加(PO再指摘、Stripe test/live取り違え防止の追加防御)。
+    assertStripeLivemodeMatchesExpectedMode({
+      livemode: checkout.livemode,
+      expectedMode: config.expectedMode,
     });
 
     await enqueueIntegrationEvent({
