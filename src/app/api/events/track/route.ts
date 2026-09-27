@@ -10,6 +10,9 @@ const ALLOWED_PUBLIC_EVENT_TYPES = new Set([
   "diagnosis_result_viewed",
   "online_consultation_clicked",
   "phone_inquiry_clicked",
+  // 2026-09-27追加(PO承認、第1段階): 診断結果画面の主CTA(無料トライアルを始める)から
+  // /plansへ進んだことの計測(既存基盤のみ使用)。
+  "diagnosis_result_trial_cta_clicked",
 ]);
 
 export async function POST(request: NextRequest) {

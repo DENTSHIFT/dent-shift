@@ -193,6 +193,9 @@ export default async function DiagnosisResultPage({
             width: 144px !important;
             height: 144px !important;
           }
+          .ds-value-columns {
+            grid-template-columns: 1fr !important;
+          }
         }
       `}</style>
 
@@ -390,7 +393,7 @@ export default async function DiagnosisResultPage({
             <Card className="ds-order-rootcause">
               <SectionTitle
                 title="改善余地がある理由"
-                subtitle="「競合優勢」と判定された質問について、根拠のある範囲でのみ原因を示します(原因説明)"
+                subtitle="AIに「表示されなかった」質問について、根拠のある範囲でのみ原因を示します(原因説明)"
               />
               {vm.lossRootCauses.length > 0 ? (
                 <div style={{ display: "grid", gap: 14 }}>
@@ -401,7 +404,7 @@ export default async function DiagnosisResultPage({
               ) : hasLoseQuestions ? (
                 <EmptyNote text="改善余地のある質問はありますが、根拠不足のため原因を特定できませんでした(捏造を避けるため、断定的な原因表示はしていません)。" />
               ) : (
-                <EmptyNote text="現時点で「競合優勢」と判定された患者質問はありません。" tone="positive" />
+                <EmptyNote text="現時点でAIに「表示されなかった」患者質問はありません。" tone="positive" />
               )}
             </Card>
 
@@ -513,6 +516,11 @@ export default async function DiagnosisResultPage({
           </div>
         </div>
 
+        {/* 2026-09-27追加(PO承認、第1段階): 診断結果からプラン比較経由での無料トライアル
+            導線。既存機能(/plans、Stripe Checkout、isTrialEligiblePlan)を接続するのみで、
+            新規のバックエンド処理・DB変更・Stripe設定変更は行わない。
+            未実装の「名前つき競合比較」「診断履歴の変化比較」「継続計測」は、実装済みの
+            ものと誤認されないよう、ここには含めない。 */}
         <section
           style={{
             marginTop: 20,
@@ -520,36 +528,79 @@ export default async function DiagnosisResultPage({
             background: "#fff",
             border: `1px solid ${BORDER}`,
             borderRadius: 16,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 16,
           }}
         >
-          <div>
-            <h2 style={{ margin: 0, color: NAVY, fontSize: 17 }}>継続的な改善を始める</h2>
-            <p style={{ margin: "6px 0 0", color: MUTED, fontSize: 12 }}>
-              3つのプランの機能差を確認できます。料金確定前に請求が始まることはありません。
-            </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }} className="ds-value-columns">
+            <div>
+              <h3 style={{ margin: 0, fontSize: 13, color: MUTED, fontWeight: 700 }}>
+                今回の無料診断で確認できた内容
+              </h3>
+              <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 12.5, color: NAVY, lineHeight: 1.9 }}>
+                <li>総合スコアと6領域の評価</li>
+                <li>患者質問ごとのAI表示状況(AIで表示された/もう一歩/表示されなかった)</li>
+                <li>表示されなかった理由(根拠のある範囲で)</li>
+                <li>今月の優先改善TOP3</li>
+              </ul>
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 13, color: MUTED, fontWeight: 700 }}>
+                無料トライアルで続けて確認できる内容
+              </h3>
+              <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 12.5, color: NAVY, lineHeight: 1.9 }}>
+                <li>AI集患スコアの継続的な確認</li>
+                <li>改善アクションの進捗管理</li>
+                <li>診断結果の履歴保存(ダッシュボードから確認)</li>
+                <li>スペシャリストへの相談(プランにより回数が異なります)</li>
+              </ul>
+            </div>
           </div>
-          <Link
-            href="/plans"
+
+          <div
             style={{
-              display: "inline-flex",
-              minHeight: 42,
-              alignItems: "center",
-              padding: "8px 18px",
-              borderRadius: 10,
-              background: BLUE,
-              color: "#fff",
-              fontSize: 13,
-              fontWeight: 700,
-              textDecoration: "none",
+              marginTop: 18,
+              padding: "14px 16px",
+              background: "#F8FAFC",
+              border: `1px solid ${BORDER}`,
+              borderRadius: 12,
+              fontSize: 11.5,
+              color: MUTED,
+              lineHeight: 1.9,
             }}
           >
-            改善プランを比較する
-          </Link>
+            <p style={{ margin: 0, fontWeight: 700, color: NAVY }}>トライアルの条件</p>
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              <li>ライトプラン・スタンダードプランが7日間無料トライアルの対象です</li>
+              <li>トライアル開始にはクレジットカードの登録が必要です</li>
+              <li>7日間のトライアル期間中は請求が発生しません</li>
+              <li>キャンセルしない場合、トライアル終了後に選択したプランの料金が発生します</li>
+              <li>プレミアムプランはトライアル対象外で、契約時から課金が発生します</li>
+            </ul>
+          </div>
+
+          <div style={{ marginTop: 18, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 14 }}>
+            <TrackedCtaLink
+              diagnosisId={id}
+              eventType="diagnosis_result_trial_cta_clicked"
+              href="/plans"
+              style={{
+                display: "inline-flex",
+                minHeight: 44,
+                alignItems: "center",
+                padding: "8px 22px",
+                borderRadius: 10,
+                background: BLUE,
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 700,
+                textDecoration: "none",
+              }}
+            >
+              無料トライアルを始める
+            </TrackedCtaLink>
+            <Link href="/plans" style={{ fontSize: 13, fontWeight: 700, color: BLUE, textDecoration: "none" }}>
+              プランと料金を見る
+            </Link>
+          </div>
         </section>
 
         <PhoneInquiryCta diagnosisId={id} />
@@ -641,7 +692,7 @@ function ShareOfVoiceStat({ shareOfVoice }: { shareOfVoice: ShareOfVoiceResult }
   return (
     <p style={{ marginTop: 6, fontSize: 12, color: MUTED }}>
       AI推薦シェア: <strong style={{ color: NAVY }}>{shareOfVoice.percentage}%</strong>
-      (患者質問{shareOfVoice.measuredQuestionCount}件中{shareOfVoice.winCount}件で優位推薦)
+      (患者質問{shareOfVoice.measuredQuestionCount}件中{shareOfVoice.winCount}件でAIに表示された)
     </p>
   );
 }

@@ -1,10 +1,16 @@
 // 指示書10章「Salesforceイベント」の最低限同期対象イベント名。
 // イベント名は指示書の記載どおり英語スネークケースで固定する。
+// 2026-09-27追加(PO承認、第1段階): "checkout_started"は、無料診断→トライアル導線の
+// 計測要件(診断結果→プラン比較→Checkout→トライアル開始)のうち、既存基盤(この
+// IntegrationEvent仕組み)で追加できる「Checkoutへ進んだ/トライアル対象プランを
+// 選択した」を1イベントで表す(新しい外部分析サービスは追加していない)。
 export const INTEGRATION_EVENT_TYPES = [
   "diagnosis_started",
   "diagnosis_completed",
   "diagnosis_result_viewed",
+  "diagnosis_result_trial_cta_clicked",
   "trial_signup_started",
+  "checkout_started",
   "phone_added",
   "sms_verification_sent",
   "phone_verified",

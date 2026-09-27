@@ -119,12 +119,12 @@ function SharePreview() {
 
 function QuestionsPreview() {
   const rows = [
-    { q: "目黒 インプラント おすすめ", status: "競合優勢" },
-    { q: "東京 矯正歯科 おすすめ", status: "自院優勢" },
-    { q: "目黒 ホワイトニング 安い", status: "競合優勢" },
+    { q: "目黒 インプラント おすすめ", status: "表示されなかった" },
+    { q: "東京 矯正歯科 おすすめ", status: "AIで表示された" },
+    { q: "目黒 ホワイトニング 安い", status: "表示されなかった" },
   ];
-  const statusColor: Record<string, string> = { 自院優勢: "#166534", 競合優勢: "#B91C1C" };
-  const statusBg: Record<string, string> = { 自院優勢: "#ECFDF3", 競合優勢: "#FEF2F2" };
+  const statusColor: Record<string, string> = { "AIで表示された": "#166534", "表示されなかった": "#B91C1C" };
+  const statusBg: Record<string, string> = { "AIで表示された": "#ECFDF3", "表示されなかった": "#FEF2F2" };
   return (
     <div style={{ display: "grid", gap: 8 }}>
       {rows.map((row) => (

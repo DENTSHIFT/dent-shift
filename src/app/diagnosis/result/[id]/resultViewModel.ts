@@ -65,13 +65,14 @@ const DOMAIN_LABEL: Record<DomainKey, string> = {
 // は算出ロジック側の都合の並びなので、表示専用にこの並びへ入れ替える(算出ロジックは変更しない)。
 export const DOMAIN_DISPLAY_ORDER: DomainKey[] = ["AIO", "MEO", "SEO", "LLMO", "WEB_BOOKING", "REVIEWS"];
 
-// 2026-09-22のユーザー指示: 患者質問ごとの勝ち負け判定の表示ラベルを統一
-// (win→自院優勢 / close→拮抗 / lose→競合優勢 / insufficient_data→データ不足)。
-// ダッシュボード・診断結果画面の両方がこの定数を共有するため、両画面で表示が揃う。
+// 2026-09-27修正(PO指示): win/close/loseは「AIが自院を推薦したか」という自院単独の
+// 実測結果であり、名前つき競合医院との比較ではない(近隣競合の実データ抽出は未実装、
+// UnavailableCompetitorProvider参照)。「自院優勢」「競合優勢」という比較を断定する
+// ラベルは誤解を招くため、自院がAIにどう表示されたかのみを表す表現に統一する。
 const QUESTION_STATUS_LABEL: Record<QuestionOutcomeStatus, string> = {
-  win: "自院優勢",
-  close: "拮抗",
-  lose: "競合優勢",
+  win: "AIで表示された",
+  close: "もう一歩",
+  lose: "表示されなかった",
   insufficient_data: "データ不足",
 };
 

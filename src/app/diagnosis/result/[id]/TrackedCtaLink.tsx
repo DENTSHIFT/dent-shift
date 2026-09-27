@@ -14,7 +14,10 @@ export function TrackedCtaLink({
   ...anchorProps
 }: {
   diagnosisId: string;
-  eventType: "online_consultation_clicked" | "phone_inquiry_clicked";
+  eventType:
+    | "online_consultation_clicked"
+    | "phone_inquiry_clicked"
+    | "diagnosis_result_trial_cta_clicked";
 } & AnchorHTMLAttributes<HTMLAnchorElement>) {
   return (
     <a

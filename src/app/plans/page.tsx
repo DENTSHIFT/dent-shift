@@ -10,6 +10,7 @@ import {
 import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
 import { hasExistingSubscription as subscriptionBlocksNewCheckout } from "@/domain/billing/subscriptionStatus";
 import { evaluateUpgrade } from "@/domain/billing/planUpgrade";
+import { isTrialEligiblePlan } from "@/domain/billing/trialActivation";
 import { UpgradeButton } from "@/components/UpgradeButton";
 import styles from "./plans.module.css";
 import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
@@ -84,11 +85,16 @@ function PlanAction({
       </Link>
     );
   }
+  // 2026-09-27追加(PO承認、第1段階): 新規契約(既存契約なし)の場合のみ、トライアル対象
+  // プラン(ライト/スタンダード)は「7日間無料で試す」、プレミアム(トライアル対象外)は
+  // 「このプランで契約する」とCTA文言を分ける。既存契約者・アップグレード・
+  // billingExemptの各分岐(上記)は元々この分岐を通らないため、誤ってトライアル対象と
+  // 表示することはない。
   return (
     <form action="/api/billing/checkout" method="post">
       <input type="hidden" name="plan" value={plan} />
       <button className={styles.action} type="submit">
-        このプランで契約へ進む
+        {isTrialEligiblePlan(plan) ? "7日間無料で試す" : "このプランで契約する"}
       </button>
     </form>
   );
@@ -169,6 +175,13 @@ export default async function PlansPage({
             <ul>
               {plan.highlights.map((highlight) => <li key={highlight}>{highlight}</li>)}
             </ul>
+            {!isBillingExempt && !hasExistingSubscription && (
+              <p className={styles.trialNote}>
+                {isTrialEligiblePlan(plan.id)
+                  ? "7日間無料トライアル対象・カード登録が必要です・トライアル中は請求されません・キャンセルしない場合はトライアル終了後にこのプランの料金が発生します"
+                  : "トライアル対象外のプランです・ご契約と同時に料金が発生します"}
+              </p>
+            )}
             <PlanAction
               plan={plan.id}
               checkoutReady={checkoutReady}

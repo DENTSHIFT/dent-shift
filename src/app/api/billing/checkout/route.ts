@@ -13,6 +13,7 @@ import {
 } from "@/domain/billing/trialActivation";
 import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
 import { hasExistingSubscription } from "@/domain/billing/subscriptionStatus";
+import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
 
 export async function POST(request: NextRequest) {
   const currentContact = await getCurrentContact();
@@ -91,6 +92,19 @@ export async function POST(request: NextRequest) {
       appBaseUrl: config.appBaseUrl,
       trialPeriodDays: isTrialEligiblePlan(plan) ? TRIAL_PERIOD_DAYS : undefined,
     });
+
+    // 2026-09-27追加(PO承認、第1段階): 「トライアル対象プランを選択した/Checkoutへ
+    // 進んだ」の計測(既存のIntegrationEvent基盤のみを使用、新規の外部分析サービスは
+    // 追加しない)。計測失敗はCheckout自体を妨げない(ベストエフォート)。
+    await enqueueIntegrationEvent({
+      eventType: "checkout_started",
+      clinicId: currentContact.clinicId,
+      contactId: currentContact.id,
+      payload: { plan, trial_eligible: isTrialEligiblePlan(plan) },
+    }).catch((error) => {
+      console.error("[POST /api/billing/checkout] Salesforce sync enqueue failed:", error);
+    });
+
     return NextResponse.redirect(checkout.url, 303);
   } catch (error) {
     // 例外メッセージ本文もログへ出す(Stripe APIキー等の機密値は含まれない)。

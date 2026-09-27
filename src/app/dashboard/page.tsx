@@ -438,7 +438,7 @@ export default async function DashboardPage() {
                       <p className={styles.metricValue}>{vm.result.shareOfVoice.percentage}%</p>
                       <p className={styles.metricNote}>
                         患者質問{vm.result.shareOfVoice.measuredQuestionCount}件中
-                        {vm.result.shareOfVoice.winCount}件で優位推薦
+                        {vm.result.shareOfVoice.winCount}件でAIに表示された
                       </p>
                     </>
                   ) : (
@@ -451,7 +451,7 @@ export default async function DashboardPage() {
                 <div className={styles.metricCard}>
                   <p className={styles.metricLabel}>優先課題数</p>
                   <p className={styles.metricValue}>{vm.questionSummary.needsImprovement}件</p>
-                  <p className={styles.metricNote}>競合優勢と判定された質問</p>
+                  <p className={styles.metricNote}>AIに表示されなかった質問</p>
                 </div>
                 <div className={styles.metricCard}>
                   <p className={styles.metricLabel}>取得状況</p>
