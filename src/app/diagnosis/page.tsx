@@ -551,7 +551,10 @@ export default function DiagnosisPage() {
                   onChange={handleChange("directorName")}
                   onBlur={handleBlur("directorName")}
                   error={fieldError("directorName")}
-                  readOnly={authenticatedProfile !== null}
+                  // 2026-09-27修正: 院長名は医院名/URL/メールと違って登録必須項目ではなく、
+                  // 未入力の医院も多い。ログイン中は常にreadOnlyになっていたため、
+                  // 既存値の有無に関わらず院長名を入力・編集できなかった不具合を修正する
+                  // (医院名・公式URL・メールは登録情報が正本のためreadOnlyのまま維持)。
                 />
                 <TextField
                   id="clinicUrl"
@@ -587,10 +590,15 @@ export default function DiagnosisPage() {
                   onChange={handleChange("contactPhone")}
                   onBlur={handleBlur("contactPhone")}
                   error={fieldError("contactPhone")}
-                  readOnly={Boolean(authenticatedProfile?.contactPhone)}
+                  // 2026-09-27修正: 空白のみの値だと見た目は空欄なのにreadOnlyになり
+                  // 入力できなくなっていたため、trim後の値で判定する
+                  // (diagnosisPrefill.tsのvalues.contactPhone反映条件と揃える)。
+                  readOnly={Boolean(authenticatedProfile?.contactPhone?.trim())}
                 />
                 <p style={{ margin: "-8px 0 0", fontSize: 12, color: MUTED }}>
-                  SMS認証に使用します。こちらからの営業電話は一切行いません。
+                  {authenticatedProfile?.contactPhone?.trim()
+                    ? "SMS認証済みの電話番号を使用します。"
+                    : "SMS認証に使用します。こちらからの営業電話は一切行いません。"}
                 </p>
               </div>
 
