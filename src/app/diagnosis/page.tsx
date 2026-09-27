@@ -122,6 +122,7 @@ export default function DiagnosisPage() {
   const [analysisCompleted, setAnalysisCompleted] = useState(false);
   const [apiCompleted, setApiCompleted] = useState(false);
   const [apiErrorMessage, setApiErrorMessage] = useState<string | null>(null);
+  const [showLockedNotice, setShowLockedNotice] = useState(false);
   const [diagnosisId, setDiagnosisId] = useState<string | null>(null);
 
   const rafRef = useRef<number | null>(null);
@@ -149,6 +150,12 @@ export default function DiagnosisPage() {
     // 禁止文字列としているため、それと衝突しない書き方にする。
     const params = new URLSearchParams(globalThis.location.search);
     utmRef.current = sanitizeUtmAttributionFromSearchParams(params);
+    // 2026-09-27追加: ダッシュボードの「診断後に使える」メニュー(AI検索/競合医院/
+    // 改善アクション/診断履歴)を診断結果がない状態でクリックした場合にこの画面へ
+    // 案内する。理由が分かるよう案内バナーを表示するだけで、送信内容には含めない。
+    if (params.get("locked") === "1") {
+      setShowLockedNotice(true);
+    }
   }, []);
 
   // 医院名・URL等いずれかのフィールドへ最初に入力した時点を「診断開始」とみなし、
@@ -520,6 +527,11 @@ export default function DiagnosisPage() {
 
         <div className="ds-right">
           <section className="ds-form-card">
+            {showLockedNotice && (
+              <div className="ds-locked-notice" role="status">
+                この機能は無料AI集患診断の完了後に利用できます。まずは下記フォームから診断を始めましょう。
+              </div>
+            )}
             {authenticatedProfile && (
               <div className="ds-signed-in-notice" role="status">
                 <strong>{authenticatedProfile.clinicName}</strong> の登録情報を使用します。
@@ -699,6 +711,16 @@ export default function DiagnosisPage() {
           border-radius: 10px;
           background: #eff6ff;
           color: #1e3a5f;
+          font-size: 12px;
+          line-height: 1.7;
+        }
+        .ds-locked-notice {
+          margin-bottom: 16px;
+          padding: 12px 14px;
+          border: 1px solid #fbbf24;
+          border-radius: 10px;
+          background: #fffbeb;
+          color: #92400e;
           font-size: 12px;
           line-height: 1.7;
         }

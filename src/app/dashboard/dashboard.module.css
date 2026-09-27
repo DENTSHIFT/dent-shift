@@ -7,6 +7,9 @@
 .navActive, .navActive:hover { color: #fff; background: #2563eb; }
 .navMuted { color: #9aa4b2; }
 .navIcon { width: 28px; height: 28px; flex-shrink: 0; display: grid; place-items: center; border-radius: 9px; color: #2563eb; background: #eff6ff; text-align: center; font-size: 15px; }
+/* 2026-09-27追加: 診断結果がまだない医院に対し、診断完了後に使える機能であることを
+   ナビ上でも視覚的に示す小さなバッジ(クリックすると/diagnosisへ案内される)。 */
+.navLockedBadge { margin-left: auto; padding: 2px 7px; border-radius: 999px; color: #6b7280; background: #f1f5f9; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .navActive .navIcon { color: #2563eb; background: #fff; }
 .sideTrust { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 9px; padding: 11px 10px; border: 1px solid #e5e9f0; border-radius: 12px; color: #40506a; background: #f8fafc; font-size: 11px; font-weight: 700; line-height: 1.45; }
 .sideTrustIcon { width: 24px; height: 24px; flex-shrink: 0; display: grid; place-items: center; border: 1px solid #2563eb; border-radius: 50%; color: #2563eb; background: #fff; }

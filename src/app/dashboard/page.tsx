@@ -23,6 +23,7 @@ import {
 import { getEntitlementUsage } from "@/server/db/planEntitlementUsageRepository";
 import { blocksFeatureAccess } from "@/domain/billing/subscriptionStatus";
 import { resolveFeatureAccessNotice } from "./featureAccessNotice";
+import { resolveNavHref, LOCKED_DIAGNOSIS_HREF } from "./navSections";
 
 const NAV_ITEMS = [
   { label: "経営サマリー", icon: "⌂", href: "/dashboard", active: true },
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
   { label: "初期設定", icon: "◫", href: "/onboarding", active: false },
   { label: "プラン比較", icon: "▦", href: "/plans", active: false },
 ] as const;
+
 
 const DOMAIN_ICONS: Record<string, string> = {
   AIO: "✦",
@@ -76,7 +78,13 @@ function subscriptionStatusClass(tone: SubscriptionTone) {
   return `${styles.subscriptionStatus} ${styles.subscriptionNeutral}`;
 }
 
-function DashboardNav({ bookingUrl }: { bookingUrl: string | undefined }) {
+function DashboardNav({
+  bookingUrl,
+  availableSectionIds,
+}: {
+  bookingUrl: string | undefined;
+  availableSectionIds: ReadonlySet<string>;
+}) {
   return (
     <aside className={styles.sidebar}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -88,18 +96,30 @@ function DashboardNav({ bookingUrl }: { bookingUrl: string | undefined }) {
         height={572}
       />
       <nav className={styles.nav} aria-label="ダッシュボードメニュー">
-        {NAV_ITEMS.map((item) => (
-          <Link
-            key={item.label}
-            href={item.href}
-            className={`${styles.navLink} ${item.active ? styles.navActive : ""}`}
-          >
-            <span className={styles.navIcon} aria-hidden="true">
-              {item.icon}
-            </span>
-            {item.label}
-          </Link>
-        ))}
+        {NAV_ITEMS.map((item) => {
+          const href = resolveNavHref(item.href, availableSectionIds);
+          const locked = href === LOCKED_DIAGNOSIS_HREF;
+          return (
+            <Link
+              key={item.label}
+              href={href}
+              className={`${styles.navLink} ${item.active ? styles.navActive : ""}`}
+              {...(locked
+                ? { title: "この機能は無料AI集患診断の完了後に利用できます", "aria-label": `${item.label}(診断完了後に利用できます)` }
+                : {})}
+            >
+              <span className={styles.navIcon} aria-hidden="true">
+                {item.icon}
+              </span>
+              {item.label}
+              {locked && (
+                <span className={styles.navLockedBadge} aria-hidden="true">
+                  診断後
+                </span>
+              )}
+            </Link>
+          );
+        })}
         <Link href="/dashboard/settings" className={styles.navLink}>
           <span className={styles.navIcon} aria-hidden="true">⚙</span>
           設定・連携
@@ -153,7 +173,7 @@ export default async function DashboardPage() {
     const notice = resolveFeatureAccessNotice(subscription.status);
     return (
       <div className={styles.shell}>
-        <DashboardNav bookingUrl={undefined} />
+        <DashboardNav bookingUrl={undefined} availableSectionIds={new Set()} />
         <div className={styles.main}>
           <header className={styles.topbar}>
             <div>
@@ -287,9 +307,13 @@ export default async function DashboardPage() {
     }
   }
 
+  const availableSectionIds: ReadonlySet<string> = vm.hasDiagnosis
+    ? new Set(["ai-search", "competitors", "improvements", "history", "subscription"])
+    : new Set(httpsAdvisory ? ["improvements", "subscription"] : ["subscription"]);
+
   return (
     <div className={styles.shell}>
-      <DashboardNav bookingUrl={bookingUrl} />
+      <DashboardNav bookingUrl={bookingUrl} availableSectionIds={availableSectionIds} />
       <div className={styles.main}>
         <header className={styles.topbar}>
           <div>
@@ -619,9 +643,28 @@ export default async function DashboardPage() {
 
       <nav className={styles.mobileNav} aria-label="モバイルメニュー">
         <Link href="/dashboard"><span aria-hidden="true">⌂</span>サマリー</Link>
-        <Link href="#ai-search"><span aria-hidden="true">✦</span>AI検索</Link>
-        <Link href="#improvements"><span aria-hidden="true">✓</span>改善</Link>
-        <Link href="#history"><span aria-hidden="true">▤</span>履歴</Link>
+        {(
+          [
+            { id: "ai-search", icon: "✦", label: "AI検索" },
+            { id: "improvements", icon: "✓", label: "改善" },
+            { id: "history", icon: "▤", label: "履歴" },
+          ] as const
+        ).map((item) => {
+          const href = resolveNavHref(`#${item.id}`, availableSectionIds);
+          const locked = href === LOCKED_DIAGNOSIS_HREF;
+          return (
+            <Link
+              key={item.id}
+              href={href}
+              {...(locked
+                ? { title: "この機能は無料AI集患診断の完了後に利用できます", "aria-label": `${item.label}(診断完了後に利用できます)` }
+                : {})}
+            >
+              <span aria-hidden="true">{item.icon}</span>
+              {item.label}
+            </Link>
+          );
+        })}
         <Link href="#subscription"><span aria-hidden="true">◇</span>契約</Link>
       </nav>
     </div>
