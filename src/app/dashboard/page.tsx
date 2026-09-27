@@ -125,6 +125,23 @@ function DashboardNav({ bookingUrl }: { bookingUrl: string | undefined }) {
   );
 }
 
+function HttpsAdvisoryItem({ advisory }: { advisory: NonNullable<ReturnType<typeof buildHttpsAdvisory>> }) {
+  return (
+    <div className={styles.improvementItem} data-improvement="website-https">
+      <span className={styles.rank} aria-hidden="true">!</span>
+      <div>
+        <p className={styles.itemTitle}>{advisory.title}</p>
+        <p className={styles.itemDescription}>{advisory.description}</p>
+        <p className={styles.itemDescription}>
+          <Link className={styles.textLink} href={advisory.actionHref}>
+            {advisory.actionLabel}
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default async function DashboardPage() {
   const contact = await requireContact({ next: "/dashboard" });
   const subscription = await getLatestSubscriptionByClinicId(contact.clinicId);
@@ -351,6 +368,17 @@ export default async function DashboardPage() {
             </div>
           </section>
 
+          {!vm.hasDiagnosis && httpsAdvisory && (
+            <article className={styles.card} id="improvements">
+              <div className={styles.cardHeader}>
+                <h2 className={styles.sectionLabel}>改善アクション</h2>
+              </div>
+              <div className={styles.improvementList}>
+                <HttpsAdvisoryItem advisory={httpsAdvisory} />
+              </div>
+            </article>
+          )}
+
           {!vm.hasDiagnosis ? (
             <section className={styles.emptyCard}>
               <div className={styles.emptyIcon} aria-hidden="true">✦</div>
@@ -436,20 +464,7 @@ export default async function DashboardPage() {
                       </div>
                     ))
                   )}
-                  {httpsAdvisory && (
-                    <div className={styles.improvementItem} data-improvement="website-https">
-                      <span className={styles.rank} aria-hidden="true">!</span>
-                      <div>
-                        <p className={styles.itemTitle}>{httpsAdvisory.title}</p>
-                        <p className={styles.itemDescription}>{httpsAdvisory.description}</p>
-                        <p className={styles.itemDescription}>
-                          <Link className={styles.textLink} href={httpsAdvisory.actionHref}>
-                            {httpsAdvisory.actionLabel}
-                          </Link>
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                  {httpsAdvisory && <HttpsAdvisoryItem advisory={httpsAdvisory} />}
                 </div>
               </article>
 
