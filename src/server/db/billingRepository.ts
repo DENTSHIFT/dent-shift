@@ -189,7 +189,8 @@ export async function applyBillingWebhookEvent(
 }
 
 // Stripeはsubscription.created / checkout.session.completedをほぼ同時に送るため、両者が同時に
-// Subscriptionをupsertして一意制約違反(P2002)や書き込み競合(P2034)になり得る。
+// Subscriptionをupsertして一意制約違反(P2002)や書き込み競合(P2034)になり得る。トランザクションの
+// 待ち・タイムアウト(P2028)も一時的な失敗として同様に再試行する(処理はproviderEventIdで冪等)。
 // 敗者側は再実行すれば先行トランザクションの結果を読めるので、数回だけ再試行する。
 export async function retryOnConcurrentWrite<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
   for (let attempt = 1; ; attempt++) {
@@ -197,7 +198,7 @@ export async function retryOnConcurrentWrite<T>(run: () => Promise<T>, attempts 
       return await run();
     } catch (error) {
       const code = (error as { code?: unknown } | null)?.code;
-      if ((code !== "P2002" && code !== "P2034") || attempt >= attempts) throw error;
+      if ((code !== "P2002" && code !== "P2034" && code !== "P2028") || attempt >= attempts) throw error;
       // 競合が実際に起きた頻度と種類を運用ログで確認できるよう、再試行のたびに記録する。
       console.warn(`[billing webhook] concurrent write conflict (${String(code)}), retry ${attempt}/${attempts - 1}`);
       await new Promise((resolve) => setTimeout(resolve, 150 * attempt));

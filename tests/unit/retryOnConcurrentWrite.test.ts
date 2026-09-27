@@ -14,6 +14,12 @@ describe("retryOnConcurrentWrite", () => {
     expect(run).toHaveBeenCalledTimes(2);
   });
 
+  it("トランザクションのタイムアウト(P2028)も再試行する", async () => {
+    const run = vi.fn().mockRejectedValueOnce({ code: "P2028" }).mockResolvedValueOnce("ok");
+    await expect(retryOnConcurrentWrite(run)).resolves.toBe("ok");
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
   it("上限回数を超えたら元のエラーを投げる", async () => {
     const error = { code: "P2034" };
     const run = vi.fn().mockRejectedValue(error);
