@@ -1,7 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { ClinicProfileErrors, ClinicProfileField } from "@/domain/clinic/clinicProfile";
+import {
+  HTTP_URL_NOTICE,
+  isInsecureHttpUrl,
+  type ClinicProfileErrors,
+  type ClinicProfileField,
+} from "@/domain/clinic/clinicProfile";
 import styles from "./settings.module.css";
 
 type Values = Record<ClinicProfileField, string>;
@@ -87,6 +92,11 @@ export function ClinicProfileForm({ initial }: { initial: Values }) {
                 onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
               />
               {field.hint && !error && <span className={styles.hint}>{field.hint}</span>}
+              {field.name === "url" && !error && isInsecureHttpUrl(values.url) && (
+                <p className={styles.notice} role="note">
+                  {HTTP_URL_NOTICE}
+                </p>
+              )}
               {error && (
                 <p id={`${id}-error`} className={styles.fieldError} role="alert">
                   {error}

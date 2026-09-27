@@ -105,3 +105,11 @@ export function changedClinicProfileFields(
 ): ClinicProfileField[] {
   return CLINIC_PROFILE_FIELDS.filter((field) => (before[field] ?? null) !== (after[field] ?? null));
 }
+
+// http:// のURLは保存できるが、HTTPS未対応の可能性を案内する(実際の対応状況は確認していないため断定しない)。
+export const HTTP_URL_NOTICE =
+  "WebサイトURLが http:// で始まっています。このサイトはHTTPSに対応していない可能性があります。サイトの管理会社または制作会社へ、SSL証明書の設定についてご相談ください。";
+
+export function isInsecureHttpUrl(value: string): boolean {
+  return /^http:\/\//i.test(value.trim());
+}

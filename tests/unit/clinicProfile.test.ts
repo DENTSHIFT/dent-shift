@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changedClinicProfileFields, validateClinicProfileInput } from "@/domain/clinic/clinicProfile";
+import { HTTP_URL_NOTICE, changedClinicProfileFields, isInsecureHttpUrl, validateClinicProfileInput } from "@/domain/clinic/clinicProfile";
 
 const valid = {
   name: "  テスト歯科  ",
@@ -57,5 +57,19 @@ describe("changedClinicProfileFields", () => {
     if (!parsed.ok) throw new Error("invalid");
     const before = { ...parsed.value, name: "旧名称", contactPhone: null };
     expect(changedClinicProfileFields(before, parsed.value)).toEqual(["name", "contactPhone"]);
+  });
+});
+
+describe("isInsecureHttpUrl / HTTP_URL_NOTICE", () => {
+  it("http:// だけを対象にし、https:// は対象外", () => {
+    expect(isInsecureHttpUrl("http://example.com")).toBe(true);
+    expect(isInsecureHttpUrl("  HTTP://example.com")).toBe(true);
+    expect(isInsecureHttpUrl("https://example.com")).toBe(false);
+    expect(isInsecureHttpUrl("")).toBe(false);
+  });
+  it("断定を避けた文言で、証明書を『ダウンロード』とは表現しない", () => {
+    expect(HTTP_URL_NOTICE).toContain("HTTPSに対応していない可能性があります");
+    expect(HTTP_URL_NOTICE).not.toContain("ダウンロード");
+    expect(HTTP_URL_NOTICE).not.toContain("設定されていません");
   });
 });
