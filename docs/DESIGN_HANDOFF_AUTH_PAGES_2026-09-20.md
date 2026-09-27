@@ -34,7 +34,7 @@
 ## 3. 実装方針
 
 - `src/app/login/`・`src/app/signup/`・`src/app/verify-phone/`それぞれに、ops側と同様のCSS Modulesファイル(`login.module.css`等、または3画面で共有する`auth.module.css`を1つ作ってもよい)を新設し、`ops.module.css`の`.loginShell`/`.loginCard`系のスタイルをベースに流用する。
-- ロゴ画像は`/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png`を使う(ops側と同じ)。
+- ロゴ画像は`/brand/logo/DENT_SHIFT_official_2026-09-24.png`を使う(ops側と同じ)。
 - 各ページの既存の文言・分岐ロジック・`<Field>`ヘルパー的な構造は維持し、**見た目(スタイルの当て方)だけ**をops/loginと揃える。
 - `/verify-phone`はSMS送信後にステップが切り替わる(`enter-phone` → `enter-code`)。両ステップともカードデザインを維持すること。
 

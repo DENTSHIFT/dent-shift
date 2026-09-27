@@ -29,7 +29,7 @@
 
 ## 3. 現状の内容(変更しない要素)
 
-- ロゴ画像(`/brand/logo/DENT_SHIFT_horizontal_tagline_transparent.png`)
+- ロゴ画像(`/brand/logo/DENT_SHIFT_official_2026-09-24.png`)
 - 見出し: 「歯科集患を、AIでシフトする。」
 - 説明文: 「現状が分かる。競合との差が分かる。次に何をすればよいか分かる。予約につながったかまで分かる。」
 - 主CTA: 「無料でAI集患診断する」(`/diagnosis`)
