@@ -38,10 +38,10 @@ function checkUrl(value: string, label: string): string | null {
   try {
     parsed = new URL(value);
   } catch {
-    return `${label}は https:// から始まるURLの形式で入力してください`;
+    return `${label}は http:// または https:// から始まるURLを入力してください`;
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    return `${label}は https:// から始まるURLの形式で入力してください`;
+    return `${label}は http:// または https:// から始まるURLを入力してください`;
   }
   return null;
 }
@@ -109,6 +109,10 @@ export function changedClinicProfileFields(
 // http:// のURLは保存できるが、HTTPS未対応の可能性を案内する(実際の対応状況は確認していないため断定しない)。
 export const HTTP_URL_NOTICE =
   "WebサイトURLが http:// で始まっています。このサイトはHTTPSに対応していない可能性があります。サイトの管理会社または制作会社へ、SSL証明書の設定についてご相談ください。";
+
+// GBP・予約サイトは外部サービス側で管理される場合があるため、警告のみ(医院向けの改善アクションは作らない)。
+export const HTTP_EXTERNAL_URL_NOTICE =
+  "このURLは http:// で始まっています。安全な通信(HTTPS)に対応していない可能性があります。URLをご確認ください。";
 
 export function isInsecureHttpUrl(value: string): boolean {
   return /^http:\/\//i.test(value.trim());

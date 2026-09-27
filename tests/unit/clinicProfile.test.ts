@@ -73,3 +73,24 @@ describe("isInsecureHttpUrl / HTTP_URL_NOTICE", () => {
     expect(HTTP_URL_NOTICE).not.toContain("設定されていません");
   });
 });
+
+describe("URL入力ルール(WebサイトURL・GBP・予約URL共通)", () => {
+  const fields = ["url", "gbpUrl", "bookingUrl"] as const;
+  const base = { name: "テスト歯科", url: "https://example.com", gbpUrl: "", bookingUrl: "" };
+  for (const field of fields) {
+    it(`${field}: https:// と http:// は保存でき、://なし・不正値は拒否する`, () => {
+      for (const ok of ["https://example.com", "http://example.com", "http://example.com/path?x=1"]) {
+        expect(validateClinicProfileInput({ ...base, [field]: ok }).ok, `${field} ${ok}`).toBe(true);
+      }
+      for (const bad of ["httpexample.com", "httptest.dentshift.jp/dashboard/settings", "abc", "www.example.com", "ftp://example.com"]) {
+        const result = validateClinicProfileInput({ ...base, [field]: bad });
+        expect(result.ok, `${field} ${bad}`).toBe(false);
+        if (!result.ok) expect(result.errors[field]).toContain("http:// または https:// から始まるURL");
+      }
+    });
+  }
+  it("任意のURL欄は空欄で保存できるが、WebサイトURLは必須", () => {
+    expect(validateClinicProfileInput({ ...base, gbpUrl: "", bookingUrl: "" }).ok).toBe(true);
+    expect(validateClinicProfileInput({ ...base, url: "" }).ok).toBe(false);
+  });
+});

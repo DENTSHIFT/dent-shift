@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import {
+  HTTP_EXTERNAL_URL_NOTICE,
   HTTP_URL_NOTICE,
   isInsecureHttpUrl,
   type ClinicProfileErrors,
@@ -22,9 +23,9 @@ const FIELDS: Array<{
 }> = [
   { name: "name", label: "医院名", required: true, autoComplete: "organization" },
   { name: "directorName", label: "院長名" },
-  { name: "url", label: "WebサイトURL", required: true, type: "url", hint: "https:// から始まるURL" },
-  { name: "gbpUrl", label: "GoogleビジネスプロフィールURL", type: "url", hint: "任意。https:// から始まるURL" },
-  { name: "bookingUrl", label: "予約URL", type: "url", hint: "任意。https:// から始まるURL" },
+  { name: "url", label: "WebサイトURL", required: true, type: "url", hint: "http:// または https:// から始まるURL" },
+  { name: "gbpUrl", label: "GoogleビジネスプロフィールURL", type: "url", hint: "任意。http:// または https:// から始まるURL" },
+  { name: "bookingUrl", label: "予約URL", type: "url", hint: "任意。http:// または https:// から始まるURL" },
   { name: "contactPhone", label: "連絡先電話番号", type: "tel", hint: "任意。例: 03-1234-5678", autoComplete: "tel" },
 ];
 
@@ -92,11 +93,13 @@ export function ClinicProfileForm({ initial }: { initial: Values }) {
                 onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
               />
               {field.hint && !error && <span className={styles.hint}>{field.hint}</span>}
-              {field.name === "url" && !error && isInsecureHttpUrl(values.url) && (
-                <p className={styles.notice} role="note">
-                  {HTTP_URL_NOTICE}
-                </p>
-              )}
+              {(field.name === "url" || field.name === "gbpUrl" || field.name === "bookingUrl") &&
+                !error &&
+                isInsecureHttpUrl(values[field.name]) && (
+                  <p className={styles.notice} role="note">
+                    {field.name === "url" ? HTTP_URL_NOTICE : HTTP_EXTERNAL_URL_NOTICE}
+                  </p>
+                )}
               {error && (
                 <p id={`${id}-error`} className={styles.fieldError} role="alert">
                   {error}
