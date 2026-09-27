@@ -21,7 +21,10 @@ import {
   currentEntitlementPeriod,
 } from "@/domain/options/planEntitlements";
 import { getEntitlementUsage } from "@/server/db/planEntitlementUsageRepository";
-import { blocksFeatureAccess } from "@/domain/billing/subscriptionStatus";
+import { blocksFeatureAccess, isSubscriptionStatus } from "@/domain/billing/subscriptionStatus";
+import { resolveDashboardTrialBannerState } from "@/domain/billing/trialEntitlement";
+import { getClinicTrialCheckoutSnapshot } from "@/server/db/trialEntitlementRepository";
+import { TrialCtaBanner } from "./TrialCtaBanner";
 import { resolveFeatureAccessNotice } from "./featureAccessNotice";
 import { resolveNavHref, LOCKED_DIAGNOSIS_HREF } from "./navSections";
 
@@ -264,12 +267,10 @@ export default async function DashboardPage() {
   const upgradeNotices =
     upgradeCandidate && subscription && nextPlan
       ? [
-          buildUpgradeNotice({
-            currentPlan: subscription.plan,
-            requiredPlan: nextPlan,
-            featureLabel: "競合医院の比較",
-            gain: `表示できる競合医院が${COMPETITOR_DISPLAY_LIMIT[subscription.plan]}院から${COMPETITOR_DISPLAY_LIMIT[nextPlan]}院になります。`,
-          }),
+          // 2026-09-28削除(PO再指摘、P1-5「他院との比較」の扱い): 「競合医院の比較」を
+          // アップグレード動機として案内していたが、競合比較機能自体が未実装(常に空、
+          // UnavailableCompetitorProvider)のため、実装済みでない機能でアップグレードを
+          // 動機づける表示は行わない。実際にプラン差がある「改善指示書PDFの無料枠」のみ案内する。
           buildUpgradeNotice({
             currentPlan: subscription.plan,
             requiredPlan: nextPlan,
@@ -283,6 +284,23 @@ export default async function DashboardPage() {
     ? subscription.plan === "light"
       ? "スタンダード以上にアップグレード"
       : "プレミアムにアップグレード"
+    : null;
+
+  // 2026-09-28追加(PO承認、P1-1): ダッシュボード上部のトライアル/契約導線CTA。
+  // isBillingExemptはsubscriptionVm側の状態を再利用せず、Subscription.billingExemptを
+  // 直接見る(既存の他分岐と判定基準を揃える)。
+  const isBillingExempt = subscription?.billingExempt === true;
+  const subscriptionStatus =
+    subscription && isSubscriptionStatus(subscription.status) ? subscription.status : null;
+  const clinicTrialSnapshot = await getClinicTrialCheckoutSnapshot(contact.clinicId);
+  const trialBannerState = clinicTrialSnapshot
+    ? resolveDashboardTrialBannerState({
+        isBillingExempt,
+        subscriptionStatus,
+        hasAnyUpgradeAvailable: upgradeCandidate === true,
+        hasDiagnosis: diagnoses.length > 0,
+        clinic: clinicTrialSnapshot,
+      })
     : null;
 
   // プラン別表示制御(2026-09-22のユーザー指示): 競合医院の表示件数(診断エンジン側の
@@ -336,6 +354,8 @@ export default async function DashboardPage() {
               新しく診断する
             </Link>
           </div>
+
+          {trialBannerState && <TrialCtaBanner state={trialBannerState} nextPlan={nextPlan} />}
 
           <RegistrationProgressBanner
             registrationStep={contact.registrationStep}

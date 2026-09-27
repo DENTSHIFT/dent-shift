@@ -7,6 +7,7 @@ import {
   isReservationStillValid,
   isTrialEntitlementStatus,
   isTrialPlan,
+  resolveDashboardTrialBannerState,
   resolvePlanActionState,
   resolveTrialCtaLabel,
   resolveTrialTerms,
@@ -315,5 +316,86 @@ describe("2026-09-28追加(PO再指摘、CTA矛盾の解消): resolvePlanActionS
     for (const kind of nonCheckoutKinds) {
       expect(checkoutKinds).not.toContain(kind);
     }
+  });
+});
+
+describe("2026-09-28追加(PO承認、P1-1): resolveDashboardTrialBannerState", () => {
+  const FRESH_CLINIC = { trialConsumedAt: null, hasConsumedEntitlement: false, activeReservation: null };
+  const CONSUMED_CLINIC = {
+    trialConsumedAt: new Date("2026-01-01T00:00:00Z"),
+    hasConsumedEntitlement: true,
+    activeReservation: null,
+  };
+  const BASE = {
+    isBillingExempt: false,
+    subscriptionStatus: null as null,
+    hasAnyUpgradeAvailable: false,
+    hasDiagnosis: true,
+    clinic: FRESH_CLINIC,
+  };
+
+  it("未診断 → no_diagnosis(トライアル利用可能でも診断が先)", () => {
+    expect(resolveDashboardTrialBannerState({ ...BASE, hasDiagnosis: false })).toEqual({
+      kind: "no_diagnosis",
+    });
+  });
+
+  it("診断済み・トライアル未消費・既存契約なし → trial_available", () => {
+    expect(resolveDashboardTrialBannerState(BASE)).toEqual({ kind: "trial_available" });
+  });
+
+  it("トライアル消費済み・未契約 → trial_consumed", () => {
+    expect(resolveDashboardTrialBannerState({ ...BASE, clinic: CONSUMED_CLINIC })).toEqual({
+      kind: "trial_consumed",
+    });
+  });
+
+  it("有効なCheckout Sessionあり → continue_session(診断状態によらず優先)", () => {
+    expect(
+      resolveDashboardTrialBannerState({
+        ...BASE,
+        hasDiagnosis: false,
+        clinic: { ...FRESH_CLINIC, activeReservation: { hasCheckoutSession: true } },
+      })
+    ).toEqual({ kind: "continue_session" });
+  });
+
+  it("Session作成中 → preparing", () => {
+    expect(
+      resolveDashboardTrialBannerState({
+        ...BASE,
+        clinic: { ...FRESH_CLINIC, activeReservation: { hasCheckoutSession: false } },
+      })
+    ).toEqual({ kind: "preparing" });
+  });
+
+  it.each(["trial", "active", "past_due", "restricted", "suspended", "cancel_scheduled"] as const)(
+    "既存契約(status=%s)があり、アップグレード対象でなければ → manage_existing(新規トライアルCTAは出さない)",
+    (status) => {
+      expect(
+        resolveDashboardTrialBannerState({ ...BASE, subscriptionStatus: status, hasAnyUpgradeAvailable: false })
+      ).toEqual({ kind: "manage_existing" });
+    }
+  );
+
+  it("既存契約があり、実装済みのアップグレード導線が使える → upgrade_available", () => {
+    expect(
+      resolveDashboardTrialBannerState({ ...BASE, subscriptionStatus: "active", hasAnyUpgradeAvailable: true })
+    ).toEqual({ kind: "upgrade_available" });
+  });
+
+  it("billingExemptは契約状態・診断状態によらず billing_exempt(トライアル・契約CTAを出さない)", () => {
+    expect(
+      resolveDashboardTrialBannerState({ ...BASE, isBillingExempt: true, subscriptionStatus: "active" })
+    ).toEqual({ kind: "billing_exempt" });
+  });
+
+  it("cancelled(新規契約が許可される)はブロックせず、トライアル消費状態で通常どおり判定する", () => {
+    expect(resolveDashboardTrialBannerState({ ...BASE, subscriptionStatus: "cancelled" })).toEqual({
+      kind: "trial_available",
+    });
+    expect(
+      resolveDashboardTrialBannerState({ ...BASE, subscriptionStatus: "cancelled", clinic: CONSUMED_CLINIC })
+    ).toEqual({ kind: "trial_consumed" });
   });
 });

@@ -235,6 +235,51 @@ export function resolvePlanActionState(input: {
   return { kind: "contract" };
 }
 
+// 2026-09-28追加(PO承認、P1-1/P1-2): ダッシュボード上部・診断結果ページのCTAは
+// 特定の1プランに紐づかない(「プランを選ぶ」導線の入口であるため)。resolvePlanActionState
+// はプラン単位の判定なので、ここでは医院単位の一段階上の状態を解決する。
+export type DashboardTrialBannerState =
+  | { kind: "billing_exempt" }
+  | { kind: "manage_existing" } // 新規Checkoutを禁止する既存Subscriptionがあり、アップグレード対象でもない
+  | { kind: "upgrade_available" } // 既存Subscriptionがあり、実装済みのアップグレード導線が使える
+  | { kind: "continue_session" } // 有効なCheckout Sessionあり
+  | { kind: "preparing" } // Session作成中
+  | { kind: "no_diagnosis" } // まだ無料診断を完了していない
+  | { kind: "trial_available" } // 無料診断済み・トライアル未消費・既存契約なし
+  | { kind: "trial_consumed" }; // トライアル消費済み・既存契約なし(未契約)
+
+export function resolveDashboardTrialBannerState(input: {
+  isBillingExempt: boolean;
+  subscriptionStatus: SubscriptionStatus | null;
+  // 既存Subscriptionがある場合、実装済みのアップグレード導線(evaluateUpgrade)が
+  // 何らかのプランへ使えるか(呼び出し元がplanUpgrade.tsの結果を渡す)。
+  hasAnyUpgradeAvailable: boolean;
+  hasDiagnosis: boolean;
+  // 未ログインはこの関数の対象外(ダッシュボードは常に認証済み)なのでnullは扱わない。
+  clinic: ClinicTrialCheckoutSnapshot;
+}): DashboardTrialBannerState {
+  if (input.isBillingExempt) return { kind: "billing_exempt" };
+
+  const blocksNewCheckout =
+    input.subscriptionStatus !== null &&
+    hasExistingSubscription({ status: input.subscriptionStatus, billingExempt: false });
+
+  if (blocksNewCheckout) {
+    return input.hasAnyUpgradeAvailable ? { kind: "upgrade_available" } : { kind: "manage_existing" };
+  }
+
+  if (input.clinic.activeReservation) {
+    return input.clinic.activeReservation.hasCheckoutSession
+      ? { kind: "continue_session" }
+      : { kind: "preparing" };
+  }
+
+  if (!input.hasDiagnosis) return { kind: "no_diagnosis" };
+
+  const trialConsumed = input.clinic.trialConsumedAt !== null || input.clinic.hasConsumedEntitlement;
+  return trialConsumed ? { kind: "trial_consumed" } : { kind: "trial_available" };
+}
+
 export function isVerifiedTrialingSubscriptionForConsumption(input: {
   subscription: StripeSubscriptionSnapshotForConsumption;
   expectedClinicId: string;

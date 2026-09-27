@@ -17,6 +17,10 @@ export const INTEGRATION_EVENT_TYPES = [
   "diagnosis_completed",
   "diagnosis_result_viewed",
   "diagnosis_result_trial_cta_clicked",
+  // 2026-09-28追加(PO承認、P1-6): ダッシュボード上部CTA(状態に応じたトライアル/
+  // プラン導線)のクリックを記録する。クリック自体はブラウザの自己申告(Webhook由来の
+  // trial_activated/subscription_activatedとは区別する、PO指示)。
+  "dashboard_trial_cta_clicked",
   "trial_signup_started",
   "checkout_started",
   "phone_added",

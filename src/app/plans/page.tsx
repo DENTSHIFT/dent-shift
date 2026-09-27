@@ -10,9 +10,11 @@ import {
 import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
 import { isSubscriptionStatus } from "@/domain/billing/subscriptionStatus";
 import { evaluateUpgrade } from "@/domain/billing/planUpgrade";
+import { isTrialEligiblePlan } from "@/domain/billing/trialActivation";
 import { resolvePlanActionState, type PlanActionState } from "@/domain/billing/trialEntitlement";
 import { getClinicTrialCheckoutSnapshot } from "@/server/db/trialEntitlementRepository";
 import { UpgradeButton } from "@/components/UpgradeButton";
+import { PlanFeatureCellView } from "@/components/PlanFeatureCell";
 import styles from "./plans.module.css";
 import { SupportPhoneFooter } from "@/components/SupportPhoneFooter";
 
@@ -62,9 +64,11 @@ function PlanAction({ plan, state }: { plan: PlanId; state: PlanActionState }) {
     case "checkout_not_ready":
       return <span className={styles.disabledAction}>オンライン契約は準備中</span>;
     case "login_required":
+      // 2026-09-28追加(PO承認、P1-3): トライアル対象プランは「ログインして無料
+      // トライアルへ」、対象外(Premium)は従来どおりの契約文言にする。
       return (
         <Link className={styles.action} href="/login">
-          ログインして契約へ進む
+          {isTrialEligiblePlan(plan) ? "ログインして無料トライアルへ" : "ログインして契約へ進む"}
         </Link>
       );
     case "start_trial":
@@ -206,15 +210,27 @@ export default async function PlansPage({
             clinic: clinicTrialSnapshot,
           });
           const note = trialNoteFor(state, plan.id === "light" || plan.id === "standard");
+          // 2026-09-28追加(PO承認、P1-3): プラン上部で無料トライアル対象を一目で
+          // 分かるようにする(価格の直上に表示)。「おすすめ」は既にこの文言に
+          // 含めるため、右上リボンとは別枠で重複表示しない。
+          const trialBadgeText =
+            plan.id === "premium"
+              ? "無料トライアル対象外／申込後すぐに利用開始"
+              : plan.id === "standard"
+                ? "7日間無料・おすすめ"
+                : "7日間無料";
 
           return (
-            <article
-              className={`${styles.card} ${plan.recommended ? styles.recommended : ""}`}
-              key={plan.id}
-            >
-              {plan.recommended && <span className={styles.recommendedBadge}>おすすめ</span>}
+            <article className={styles.card} key={plan.id}>
               <h2>{plan.name}</h2>
               <p className={styles.description}>{plan.description}</p>
+              <p
+                className={
+                  plan.id === "premium" ? styles.trialBadgeMuted : styles.trialBadge
+                }
+              >
+                {trialBadgeText}
+              </p>
               <p className={styles.price}>
                 {config.priceLabels[plan.id]}
               </p>
@@ -230,29 +246,45 @@ export default async function PlansPage({
 
       <section className={styles.comparison}>
         <h2>プラン別機能一覧</h2>
-        <p>各プランで利用できる機能をご確認いただけます。</p>
-        <div className={styles.tableWrap}>
-          <table>
-            <thead>
-              <tr>
-                <th>機能</th>
-                <th>ライトプラン</th>
-                <th>スタンダードプラン</th>
-                <th>プレミアムプラン</th>
-              </tr>
-            </thead>
-            <tbody>
-              {PLAN_FEATURE_ROWS.map((row) => (
-                <tr key={row.feature}>
-                  <th>{row.feature}</th>
-                  <td>{row.light}</td>
-                  <td>{row.standard}</td>
-                  <td>{row.premium}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <p>各プランで利用できる機能をご確認いただけます。現在実装済みの機能のみを掲載しています。</p>
+        {/* 2026-09-28全面修正(PO承認、P1-4): category(common/differs/comingSoon)ごとに
+            区分して表示する。現時点でプラン間に実際の差がある項目は「改善指示書PDFの
+            無料枠」のみのため、無理に多数の○×を並べず、3区分に整理する(PO指示)。 */}
+        {(["common", "differs", "comingSoon"] as const).map((category) => {
+          const rows = PLAN_FEATURE_ROWS.filter((row) => row.category === category);
+          if (rows.length === 0) return null;
+          const heading =
+            category === "common"
+              ? "現在すべてのプランで使える機能"
+              : category === "differs"
+                ? "プランごとの差"
+                : "順次提供予定(契約判断の材料にはまだなりません)";
+          return (
+            <div key={category} className={styles.tableWrap} style={{ marginTop: 18 }}>
+              <h3 style={{ fontSize: 14, margin: "0 0 8px" }}>{heading}</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">機能</th>
+                    <th scope="col">ライトプラン</th>
+                    <th scope="col">スタンダードプラン</th>
+                    <th scope="col">プレミアムプラン</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.feature}>
+                      <th scope="row">{row.feature}</th>
+                      <td><PlanFeatureCellView cell={row.light} /></td>
+                      <td><PlanFeatureCellView cell={row.standard} /></td>
+                      <td><PlanFeatureCellView cell={row.premium} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
       </section>
 
       <section className={styles.assurance}>

@@ -367,6 +367,20 @@ export default async function DiagnosisResultPage({
               )}
             </Card>
 
+            {/* 2026-09-28追加(PO承認、P1-2): 結果概要の直後の補助CTA(軽量リンク1本)。
+                主要CTAは下部の大きなセクション(ds-order-top3の後)のみとし、ここでは
+                強いボックスを重ねない(PO指示: 主要CTA1つ+補助リンク程度に整理)。 */}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: -6 }}>
+              <TrackedCtaLink
+                diagnosisId={id}
+                eventType="diagnosis_result_trial_cta_clicked"
+                href="/plans"
+                style={{ fontSize: 12, fontWeight: 700, color: BLUE, textDecoration: "none" }}
+              >
+                この結果を改善につなげる →
+              </TrackedCtaLink>
+            </div>
+
             {/* 診断要約(2026-09-22最終修正): 総合スコア直後に1文で「今どういう状態か」を示す。
                 新しい判定ロジックは追加せず、既存のvm(評価ラベル・改善TOP3の1位)のみから組み立てる。 */}
             {vm.topImprovements.length > 0 && (
@@ -625,6 +639,18 @@ export default async function DiagnosisResultPage({
         </section>
 
         <PhoneInquiryCta diagnosisId={id} />
+
+        {/* 2026-09-28追加(PO承認、P1-2): ページ下部の補助CTA(軽量リンク1本、3か所目)。 */}
+        <div style={{ textAlign: "center", marginTop: 16 }}>
+          <TrackedCtaLink
+            diagnosisId={id}
+            eventType="diagnosis_result_trial_cta_clicked"
+            href="/plans"
+            style={{ fontSize: 13, fontWeight: 700, color: BLUE, textDecoration: "none" }}
+          >
+            プランを見て改善を始める →
+          </TrackedCtaLink>
+        </div>
 
         <p style={{ fontSize: 12, color: "#9CA3AF", marginTop: 24, textAlign: "center" }}>
           本レポートはAIによる参考情報です。医療広告・法的判断についての最終判断は医院または専門家が行ってください。

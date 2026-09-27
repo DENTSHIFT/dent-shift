@@ -5,6 +5,7 @@ import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { DiagnosisPreviewTabs } from "@/components/marketing/DiagnosisPreviewTabs";
 import { MobileStickyCta } from "@/components/marketing/MobileStickyCta";
 import { PLAN_SUMMARIES, PLAN_FEATURE_ROWS } from "@/domain/billing/planCatalog";
+import { PlanFeatureCellView } from "@/components/PlanFeatureCell";
 import { PLAN_PRICE_LABELS } from "@/domain/billing/planPricing";
 import styles from "./page.module.css";
 
@@ -487,11 +488,11 @@ function PlanComparisonSection() {
             {PLAN_FEATURE_ROWS.map((row) => (
               <tr key={row.feature}>
                 <td>{row.feature}</td>
-                <td>{row.light}</td>
+                <td><PlanFeatureCellView cell={row.light} /></td>
                 <td className={styles.tableHighlightCol} style={{ fontWeight: 700 }}>
-                  {row.standard}
+                  <PlanFeatureCellView cell={row.standard} />
                 </td>
-                <td>{row.premium}</td>
+                <td><PlanFeatureCellView cell={row.premium} /></td>
               </tr>
             ))}
           </tbody>
@@ -503,15 +504,17 @@ function PlanComparisonSection() {
               <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 800, color: NAVY }}>{row.feature}</p>
               <div className={styles.compareRow}>
                 <span style={{ color: "#6B7280" }}>ライトプラン</span>
-                <span>{row.light}</span>
+                <span><PlanFeatureCellView cell={row.light} /></span>
               </div>
               <div className={styles.compareRow}>
                 <span style={{ color: BLUE, fontWeight: 700 }}>スタンダードプラン</span>
-                <span style={{ fontWeight: 700, color: NAVY }}>{row.standard}</span>
+                <span style={{ fontWeight: 700, color: NAVY }}>
+                  <PlanFeatureCellView cell={row.standard} />
+                </span>
               </div>
               <div className={styles.compareRow}>
                 <span style={{ color: "#6B7280" }}>プレミアムプラン</span>
-                <span>{row.premium}</span>
+                <span><PlanFeatureCellView cell={row.premium} /></span>
               </div>
             </div>
           ))}

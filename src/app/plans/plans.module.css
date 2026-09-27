@@ -68,6 +68,11 @@
   font-weight: 800;
 }
 .card h2 { margin: 0; font-size: 24px; }
+/* 2026-09-28追加(PO承認、P1-3): 無料トライアル対象を一目で分かるようにする、
+   価格の直上のバッジ。トライアル対象(ライト/スタンダード)は青系で目立たせ、
+   対象外(プレミアム)は落ち着いた色でトライアル対象外である旨を明示する。 */
+.trialBadge { display: inline-block; margin: 10px 0 0; padding: 4px 10px; border-radius: 999px; background: #dbeafe; color: #1e3a8a; font-size: 12px; font-weight: 800; }
+.trialBadgeMuted { display: inline-block; margin: 10px 0 0; padding: 4px 10px; border-radius: 999px; background: #f1f5f9; color: #64748b; font-size: 11px; font-weight: 700; }
 .description { color: #677180; font-size: 13px; line-height: 1.7; min-height: 68px; }
 .price { margin: 16px 0; font-size: 21px; font-weight: 800; }
 /* 2026-09-27追加: 契約ボタンを押す前に認識できるよう、小さすぎる注記にせず
