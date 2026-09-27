@@ -479,7 +479,7 @@ export default function DiagnosisPage() {
             <p className="ds-main-copy">
               AIにあなたの医院がどう見えているか。
               <br />
-              競合との差と改善余地を約60秒で診断します。
+              実際に取得できた範囲で、AI上の表示状況と医院情報の設定状況を確認します。
             </p>
 
             {/* 5. 診断でわかること3カード(2026-09-07のユーザー指示。従来の補足3行を
@@ -492,13 +492,13 @@ export default function DiagnosisPage() {
               />
               <InsightCard
                 icon="compare"
-                title="競合との差"
-                description="患者質問ごとのAI表示状況"
+                title="AI表示状況"
+                description="患者質問ごとにAIで表示されたか"
               />
               <InsightCard
                 icon="trend"
-                title="改善TOP3"
-                description="次に何を直すべきか"
+                title="設定状況の確認"
+                description="次に確認すべきこと"
               />
             </div>
           </div>

@@ -428,8 +428,17 @@ export default async function DashboardPage() {
               <section className={styles.metricsGrid} aria-label="サマリーKPI">
                 <div className={styles.metricCard}>
                   <p className={styles.metricLabel}>総合スコア</p>
-                  <p className={styles.metricValue}>{vm.result.overall.points} / {vm.result.overall.maxPoints}点</p>
-                  <p className={styles.metricNote}>{vm.trend.label}</p>
+                  {vm.result.overall.totalStatus === "unavailable" ? (
+                    <>
+                      <p className={styles.metricValue} style={{ fontSize: 14 }}>算定不可</p>
+                      <p className={styles.metricNote}>実測データが不足しています</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className={styles.metricValue}>{vm.result.overall.points} / {vm.result.overall.maxPoints}点</p>
+                      <p className={styles.metricNote}>{vm.trend.label}</p>
+                    </>
+                  )}
                 </div>
                 <div className={styles.metricCard}>
                   <p className={styles.metricLabel}>AI選出率</p>
@@ -495,23 +504,33 @@ export default async function DashboardPage() {
               <section className={styles.overviewGrid} aria-label="診断スコア概要">
                 <div className={`${styles.card} ${styles.scoreCard}`}>
                   <h2 className={styles.sectionLabel}>AI集患総合スコア</h2>
-                  <div
-                    className={styles.gauge}
-                    style={{
-                      background: `conic-gradient(#2563EB ${Math.max(
-                        0,
-                        Math.min(100, vm.result.overall.points)
-                      )}%, #E5E9F0 0)`,
-                    }}
-                  >
-                    <div className={styles.gaugeInner}>
-                      <span className={styles.scoreNumber}>{vm.result.overall.points}</span>
-                      <span className={styles.scoreMax}>/ {vm.result.overall.maxPoints}点</span>
-                    </div>
-                  </div>
-                  <span className={trendClass(vm.trend.tone)}>{vm.trend.label}</span>
-                  {vm.result.overall.statusCaveat && (
-                    <p className={styles.scoreCaveat}>{vm.result.overall.statusCaveat}</p>
+                  {vm.result.overall.totalStatus === "unavailable" ? (
+                    // 2026-09-27追加(PO承認): 全領域未測定時はゲージ・数値を出さず、
+                    // 算定不可であることのみを明示する。
+                    <p className={styles.scoreCaveat} style={{ marginTop: 8 }}>
+                      現在、算定可能な実測データが不足しています
+                    </p>
+                  ) : (
+                    <>
+                      <div
+                        className={styles.gauge}
+                        style={{
+                          background: `conic-gradient(#2563EB ${Math.max(
+                            0,
+                            Math.min(100, vm.result.overall.points)
+                          )}%, #E5E9F0 0)`,
+                        }}
+                      >
+                        <div className={styles.gaugeInner}>
+                          <span className={styles.scoreNumber}>{vm.result.overall.points}</span>
+                          <span className={styles.scoreMax}>/ {vm.result.overall.maxPoints}点</span>
+                        </div>
+                      </div>
+                      <span className={trendClass(vm.trend.tone)}>{vm.trend.label}</span>
+                      {vm.result.overall.statusCaveat && (
+                        <p className={styles.scoreCaveat}>{vm.result.overall.statusCaveat}</p>
+                      )}
+                    </>
                   )}
                 </div>
 

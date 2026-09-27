@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFreeDiagnosis, InvalidDiagnosisInputError } from "@/server/services/runFreeDiagnosis";
-import { MockAiProvider } from "@/server/providers/ai/mockAiProvider";
+import { UnavailableAiProvider } from "@/server/providers/ai/unavailableAiProvider";
 import { UnavailableCompetitorProvider } from "@/server/providers/competitor/unavailableCompetitorProvider";
 import { UnavailableScoreProvider } from "@/server/providers/scoring/unavailableScoreProvider";
 import { UnavailableAdComplianceProvider } from "@/server/providers/ad-compliance/unavailableAdComplianceProvider";
@@ -21,11 +21,12 @@ import type { ResultEmailDeliveryStatus } from "@/domain/email/resultEmailDelive
 import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
 import { sanitizeUtmAttribution } from "@/domain/marketing/utmAttribution";
 
-// legacy mock providers(P0案Bの「既存mock/reference score用」経路。2026-09-08の
-// ユーザー指示: AI_MEASUREMENT_PROVIDER="openai"でもこのlegacy aiProviderは
-// 消さない。canonical aiMeasurementProvider(下記)はあくまでOpenAI実測overlayで
-// あり、legacy mock診断を置き換えるものではない)。
-const aiProvider = new MockAiProvider();
+// 2026-09-27修正(PO承認): 通常診断からMockAiProviderを除外する。疑似乱数による
+// 言及・順位・競合言及の捏造を正式スコア・患者質問結果・根拠文言へ混入させない
+// (MockAiProvider自体は削除せず、ユニットテスト・fixture・明示的なデモモード専用として残す)。
+// canonical aiMeasurementProvider(下記)による実測は、2026-09-08承認の分離設計により
+// 引き続きスコアへは接続しない(patientQuestion単位の事実表示にのみ使う)。
+const aiProvider = new UnavailableAiProvider();
 // 2026-09-24のユーザー指示: 近隣競合比較・医療広告AIチェックは実データ取得基盤が
 // 未実装のため、架空の競合医院名やダミーのリスク判定を本番で表示しない。実装完了までは
 // 常に空配列を返すUnavailable系providerを使う(UI側は「準備中」表示にフォールバックする)。

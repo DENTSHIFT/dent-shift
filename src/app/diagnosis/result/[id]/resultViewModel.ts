@@ -179,7 +179,10 @@ export function buildSampleBanner(isSample: boolean): SampleBannerViewModel {
   return {
     show: true,
     title: "サンプル診断",
-    subtitle: "参考データ(サンプル・推定値)を含みます。実際の医院データとは異なる場合があります。",
+    // 2026-09-27修正(PO承認): 「実際の医院データとは異なる場合がある」という弱い表現から、
+    // 契約判断・競合比較の根拠に使えないことを明示する表現へ強化する。
+    subtitle:
+      "この結果にはサンプル・推定データが含まれます。正式な医院評価、競合比較、契約判断の根拠としては利用できません。",
   };
 }
 
@@ -187,6 +190,10 @@ export interface OverallScoreViewModel {
   points: number;
   maxPoints: number;
   statusCaveat: string | null;
+  // 2026-09-27追加(PO承認): totalStatus自体をUIへ渡し、「全領域未測定」(unavailable)と
+  // 「一部のみ測定」(partial/estimated)を明確に区別できるようにする。unavailableの場合、
+  // 呼び出し側は0/100点等の数値・ゲージを一切表示せず、専用の文言へ差し替える。
+  totalStatus: OverallScoreStatus;
 }
 
 export function buildOverallScoreViewModel(
@@ -200,9 +207,9 @@ export function buildOverallScoreViewModel(
   } else if (totalStatus === "estimated") {
     statusCaveat = "一部推定値を含むスコアです";
   } else if (totalStatus === "unavailable") {
-    statusCaveat = "現時点では総合スコアを算出できていません";
+    statusCaveat = "現在、算定可能な実測データが不足しています";
   }
-  return { points: totalPoints, maxPoints, statusCaveat };
+  return { points: totalPoints, maxPoints, statusCaveat, totalStatus };
 }
 
 export interface DomainViewModel {

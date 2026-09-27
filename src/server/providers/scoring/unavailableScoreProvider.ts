@@ -42,7 +42,12 @@ export class UnavailableScoreProvider implements ScoreProvider {
       status: "unavailable",
       evidence: [{ summary: reason, ruleKey: def.ruleKey }],
       measuredAt: null,
-      dataSource: "mock",
+      // 2026-09-27修正(PO承認): "mock"は「疑似乱数で捏造した値」を意味するタグであり、
+      // ここ(unavailable、値そのものが無い)には本来当てはまらない。"mock"のままだと
+      // computeIsSample()のhasMockCriterion判定が常にtrueになり、Mockを一切使っていない
+      // 通常診断まで恒久的に「サンプル診断」表示になってしまっていた(実際の原因)。
+      // 未接続を表すタグとして、同ファイル内の他のunavailable分岐と揃え"ai_provider"にする。
+      dataSource: "ai_provider",
       unavailableReason,
     }));
   }
@@ -54,8 +59,14 @@ export class UnavailableScoreProvider implements ScoreProvider {
    * (旧MockScoreProviderではこの2つを疑似乱数で埋めていたが、本番では表示しない)。
    */
   private scoreAioGroundedOnly(input: ScoreCriterionInput): CriterionScore[] {
-    const now = new Date().toISOString();
     const observations = input.aiObservations;
+    // 2026-09-27修正(PO承認): 観測が0件(=通常診断からMockAiProviderを除外した結果、
+    // 実測手段も未接続の状態)の場合、mentionRate=0等の疑似的な「0点」を出さず、
+    // 他5領域と同じくAIOの3criterionもunavailableとして扱う(未測定を0点扱いしない)。
+    if (observations.length === 0) {
+      return this.unavailableAll("AIO", "AIOの実測連携は現在準備中です", "not_connected");
+    }
+    const now = new Date().toISOString();
     const mentioned = observations.filter((o) => o.mentioned);
     const mentionRate = observations.length === 0 ? 0 : mentioned.length / observations.length;
     const distinctQuestionsMentioned = new Set(mentioned.map((o) => o.question)).size;

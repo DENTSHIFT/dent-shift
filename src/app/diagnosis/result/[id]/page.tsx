@@ -288,6 +288,26 @@ export default async function DiagnosisResultPage({
             {/* 総合診断(2/2): AI集患総合スコア(このページで唯一のスコア表示) */}
             <Card className="ds-order-score">
               <SectionTitle title="AI集患総合スコア" />
+              {vm.overall.totalStatus === "unavailable" ? (
+                // 2026-09-27追加(PO承認): 6領域すべてが未測定の場合、0/100点等の数値・
+                // ゲージを一切表示しない(未測定を0点や暫定スコアに見せない)。
+                <div
+                  style={{
+                    padding: "20px 16px",
+                    borderRadius: 12,
+                    background: "#F8FAFC",
+                    border: `1px solid ${BORDER}`,
+                  }}
+                >
+                  <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: NAVY }}>
+                    現在、算定可能な実測データが不足しています
+                  </p>
+                  <p style={{ margin: "8px 0 0", fontSize: 12.5, color: MUTED, lineHeight: 1.8 }}>
+                    正式なスコア算定方法の実測データ接続が完了するまで、総合点は表示しません。
+                    下記の患者質問ごとの実測状況・医院情報の設定状況はご確認いただけます。
+                  </p>
+                </div>
+              ) : (
               <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
                 <div
                   className="ds-score-gauge"
@@ -344,6 +364,7 @@ export default async function DiagnosisResultPage({
                   <ShareOfVoiceStat shareOfVoice={vm.shareOfVoice} />
                 </div>
               </div>
+              )}
             </Card>
 
             {/* 診断要約(2026-09-22最終修正): 総合スコア直後に1文で「今どういう状態か」を示す。
