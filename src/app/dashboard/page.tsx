@@ -351,16 +351,6 @@ export default async function DashboardPage() {
             </div>
           </section>
 
-          {httpsAdvisory && (
-            <section className={styles.httpsAdvisory} aria-labelledby="https-advisory-title">
-              <h2 id="https-advisory-title" className={styles.httpsAdvisoryTitle}>{httpsAdvisory.title}</h2>
-              <p className={styles.httpsAdvisoryText}>{httpsAdvisory.description}</p>
-              <Link className={styles.subscriptionLink} href={httpsAdvisory.actionHref}>
-                {httpsAdvisory.actionLabel}
-              </Link>
-            </section>
-          )}
-
           {!vm.hasDiagnosis ? (
             <section className={styles.emptyCard}>
               <div className={styles.emptyIcon} aria-hidden="true">✦</div>
@@ -431,7 +421,9 @@ export default async function DashboardPage() {
                 </div>
                 <div className={styles.improvementList}>
                   {vm.result.topImprovements.length === 0 ? (
-                    <p className={styles.itemDescription}>現在表示できる改善項目はありません。</p>
+                    !httpsAdvisory && (
+                      <p className={styles.itemDescription}>現在表示できる改善項目はありません。</p>
+                    )
                   ) : (
                     vm.result.topImprovements.slice(0, 3).map((task, index) => (
                       <div className={styles.improvementItem} key={task.key}>
@@ -443,6 +435,20 @@ export default async function DashboardPage() {
                         </div>
                       </div>
                     ))
+                  )}
+                  {httpsAdvisory && (
+                    <div className={styles.improvementItem} data-improvement="website-https">
+                      <span className={styles.rank} aria-hidden="true">!</span>
+                      <div>
+                        <p className={styles.itemTitle}>{httpsAdvisory.title}</p>
+                        <p className={styles.itemDescription}>{httpsAdvisory.description}</p>
+                        <p className={styles.itemDescription}>
+                          <Link className={styles.textLink} href={httpsAdvisory.actionHref}>
+                            {httpsAdvisory.actionLabel}
+                          </Link>
+                        </p>
+                      </div>
+                    </div>
                   )}
                 </div>
               </article>
