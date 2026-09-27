@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { prisma } from "./prismaClient";
 import {
   canTransitionSubscription,
@@ -12,6 +13,7 @@ import type {
   BillingWebhookApplyResult,
   BillingWebhookCommand,
   BillingWebhookIdentity,
+  SubscriptionActivatedSignal,
   TrialActivatedSignal,
 } from "@/domain/billing/billingWebhook";
 import { confirmAttributionForClinic } from "./ambassadorRepository";
@@ -215,12 +217,22 @@ async function applyBillingWebhookEventOnce(
       where: { providerEventId: input.providerEventId },
       select: { id: true },
     });
-    if (alreadyProcessed) return { result: "duplicate", notify: null, trialActivated: null };
+    if (alreadyProcessed) {
+      return {
+        result: "duplicate",
+        notify: null,
+        trialActivated: null,
+        subscriptionActivated: null,
+        subscriptionActivatedIntegrationEventId: null,
+      };
+    }
 
     let result: Exclude<BillingWebhookApplyResult, "duplicate"> = "processed";
     let clinicId: string | null = null;
     let notify: BillingStatusNotification | null = null;
     let trialActivated: TrialActivatedSignal | null = null;
+    let subscriptionActivated: SubscriptionActivatedSignal | null = null;
+    let subscriptionActivatedIntegrationEventId: string | null = null;
 
     if (input.action.kind === "ignored") {
       result = "ignored";
@@ -266,7 +278,15 @@ async function applyBillingWebhookEventOnce(
             where: { id: input.action.identity.clinicId },
             select: { id: true },
           });
-          if (clinic) return { result: "retry", notify: null, trialActivated: null };
+          if (clinic) {
+            return {
+              result: "retry",
+              notify: null,
+              trialActivated: null,
+              subscriptionActivated: null,
+              subscriptionActivatedIntegrationEventId: null,
+            };
+          }
         }
         result = "ignored";
       } else {
@@ -321,6 +341,50 @@ async function applyBillingWebhookEventOnce(
             externalSubscriptionId: subscription.externalSubscriptionId,
           };
         }
+        // 2026-09-28追加(PO承認、P1-4「有料契約への移行」): statusが実際に
+        // (active以外、または未作成)→activeへ遷移した瞬間を検知する。trial経由の
+        // active化(trial_activatedとは別イベント)・トライアルなしの初回active化
+        // (Premium即時課金等)の両方を対象とする。判定根拠はstatusBeforeTrialCheckと
+        // 同じ(このWebhook処理が始まる前の実際の状態)。
+        if (
+          subscription &&
+          subscription.status === "active" &&
+          statusBeforeTrialCheck !== "active" &&
+          subscription.externalSubscriptionId &&
+          isPlanId(subscription.plan)
+        ) {
+          subscriptionActivated = {
+            clinicId: subscription.clinicId,
+            externalSubscriptionId: subscription.externalSubscriptionId,
+            plan: subscription.plan,
+            fromStatus: statusBeforeTrialCheck,
+            viaTrial: subscription.trialStartedAt !== null,
+          };
+          // 【重要】「同一トランザクション内でイベントの存在を保証する」というPO指示を
+          // 満たすため、tx.integrationEvent.create()+catch(P2002)は使わない
+          // (PostgreSQLでは、トランザクション内でユニーク制約違反をJS側でcatchしても
+          // トランザクション自体がaborted状態になり、以降のCOMMITが失敗しうる。
+          // trialEntitlementRepository.tsのconsumeTrialEntitlementFromWebhook()で
+          // 実PostgreSQL接続により検証済みの同じ対策を用いる)。
+          // `INSERT ... ON CONFLICT ("dedupeKey") DO NOTHING`は例外を発生させず、
+          // dedupeKeyが既に存在する場合は単に0行挿入して正常終了する
+          // (=Subscription状態更新を含むこのトランザクション全体が問題なくCOMMITできる)。
+          const dedupeKey = `subscription_activated:${subscriptionActivated.externalSubscriptionId}`;
+          const newIntegrationEventId = crypto.randomUUID();
+          const payloadJson = JSON.stringify({
+            plan: subscriptionActivated.plan,
+            from_status: subscriptionActivated.fromStatus ?? "none",
+            to_status: "active",
+            via_trial: subscriptionActivated.viaTrial,
+          });
+          const insertedRows = await tx.$queryRaw<{ id: string }[]>`
+            INSERT INTO "IntegrationEvent" ("id", "eventType", "payloadJson", "status", "clinicId", "dedupeKey")
+            VALUES (${newIntegrationEventId}, ${"subscription_activated"}, ${payloadJson}, ${"pending"}, ${subscriptionActivated.clinicId}, ${dedupeKey})
+            ON CONFLICT ("dedupeKey") DO NOTHING
+            RETURNING "id"
+          `;
+          subscriptionActivatedIntegrationEventId = insertedRows[0]?.id ?? null;
+        }
         if (input.action.kind === "invoice_status" && subscription) {
           await tx.payment.upsert({
             where: { externalPaymentId: input.action.externalPaymentId },
@@ -361,6 +425,12 @@ async function applyBillingWebhookEventOnce(
         occurredAt: input.occurredAt,
       },
     });
-    return { result, notify, trialActivated };
+    return {
+      result,
+      notify,
+      trialActivated,
+      subscriptionActivated,
+      subscriptionActivatedIntegrationEventId,
+    };
   }, WEBHOOK_TRANSACTION_OPTIONS);
 }

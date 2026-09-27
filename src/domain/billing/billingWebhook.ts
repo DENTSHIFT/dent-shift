@@ -81,6 +81,23 @@ export interface TrialActivatedSignal {
   externalSubscriptionId: string;
 }
 
+// 2026-09-28追加(PO承認、P1-4「有料契約への移行」): trial_activatedと同じ根拠
+// (Stripe Webhookの確定情報、ブラウザの自己申告ではない)でstatusが実際にactiveへ
+// 遷移した場合のシグナル。dedupeKey(`subscription_activated:${externalSubscriptionId}`)
+// のDBユニーク制約により、同一Subscriptionにつき生涯1件だけ記録される
+// (past_due→active等の復帰では、IntegrationEvent自体は新規作成されないが、
+// このシグナル自体はStripeの確定情報どおりtrueを返す。実際に新規記録されたかは
+// integrationEventIdがnullかどうかで判別する、billingRepository.ts参照)。
+export interface SubscriptionActivatedSignal {
+  clinicId: string;
+  externalSubscriptionId: string;
+  plan: PlanId;
+  // 遷移前のstatus(初回のSubscription作成時はnull)。
+  fromStatus: SubscriptionStatus | null;
+  // トライアル経由でのactive化か(trialStartedAtが設定されているか)。
+  viaTrial: boolean;
+}
+
 export interface BillingWebhookApplyOutcome {
   result: BillingWebhookApplyResult;
   notify: BillingStatusNotification | null;
@@ -90,4 +107,12 @@ export interface BillingWebhookApplyOutcome {
   // 同一Webhookイベントの再送はproviderEventIdの一意制約で"duplicate"として弾かれ、
   // 別イベントでも遷移が起きていなければfalseになるため、二重発火しない。
   trialActivated: TrialActivatedSignal | null;
+  // 2026-09-28追加(PO承認、P1-4): Subscription.statusが実際に(active以外)→activeへ
+  // 遷移した場合のシグナル。trial経由・トライアルなし初回activeの両方を対象とする。
+  subscriptionActivated: SubscriptionActivatedSignal | null;
+  // 上のsubscriptionActivatedに伴い、同一トランザクション内で新規作成された
+  // "subscription_activated" IntegrationEvent行のid。dedupeにより新規作成されなかった
+  // 場合(=既にその契約の初回active化が記録済み)はnull。呼び出し元(webhook route)が
+  // 新規作成された場合のみベストエフォートでSalesforce同期を1回試行するために使う。
+  subscriptionActivatedIntegrationEventId: string | null;
 }

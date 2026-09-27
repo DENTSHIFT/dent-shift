@@ -1,16 +1,28 @@
-import Link from "next/link";
 import type { PlanId } from "@/domain/billing/planCatalog";
 import type { DashboardTrialBannerState } from "@/domain/billing/trialEntitlement";
 import { UpgradeButton } from "@/components/UpgradeButton";
 import styles from "./dashboard.module.css";
 
 /**
- * 2026-09-28追加(PO承認、P1-1): ダッシュボードのメイン領域上部に、医院の状態に応じた
- * トライアル/契約導線CTAを表示する。resolveDashboardTrialBannerState()の結果だけを
- * 見て描画し(個別の条件分岐を重複させない)、billingExemptの場合は何も表示しない。
- * クリックは/api/dashboard/trial-cta経由で計測してから遷移する(サーバー側で
- * clinicIdをセッションから取得、クライアントJSを増やさない)。
+ * 2026-09-28追加(PO承認、P1-1)、2026-09-28修正(PO再指摘、GETの副作用化を解消):
+ * ダッシュボードのメイン領域上部に、医院の状態に応じたトライアル/契約導線CTAを表示する。
+ * resolveDashboardTrialBannerState()の結果だけを見て描画し(個別の条件分岐を重複させない)、
+ * billingExemptの場合は何も表示しない(=固定枠自体を残さない)。
+ * クリック計測は/api/dashboard/trial-ctaへの**POST**フォーム送信で行う(GETの副作用化を
+ * 避ける。prefetch・先読み・クローラーがGETを叩いても記録されない)。サーバー側で
+ * clinicIdをセッションから取得し、遷移先はsafeNextPathで検証する(TrialCtaButtonForm参照)。
  */
+function TrialCtaButtonForm({ to, label }: { to: string; label: string }) {
+  return (
+    <form action="/api/dashboard/trial-cta" method="post">
+      <input type="hidden" name="to" value={to} />
+      <button className={styles.trialCtaButton} type="submit">
+        {label}
+      </button>
+    </form>
+  );
+}
+
 export function TrialCtaBanner({
   state,
   nextPlan,
@@ -31,12 +43,7 @@ export function TrialCtaBanner({
               無料AI集患診断で、現在のAI表示状況を確認できます。
             </p>
           </div>
-          <Link
-            className={styles.trialCtaButton}
-            href="/api/dashboard/trial-cta?to=/diagnosis"
-          >
-            まずは無料診断を完了する
-          </Link>
+          <TrialCtaButtonForm to="/diagnosis" label="まずは無料診断を完了する" />
         </section>
       );
     case "trial_available":
@@ -48,9 +55,7 @@ export function TrialCtaBanner({
               改善アクション、継続診断、利用可能な機能を7日間お試しいただけます。
             </p>
           </div>
-          <Link className={styles.trialCtaButton} href="/api/dashboard/trial-cta?to=/plans">
-            まずは7日間無料で試す
-          </Link>
+          <TrialCtaButtonForm to="/plans" label="まずは7日間無料で試す" />
         </section>
       );
     case "continue_session":
@@ -59,9 +64,7 @@ export function TrialCtaBanner({
           <div>
             <h2 className={styles.trialCtaHeading}>無料トライアルの手続きを続ける</h2>
           </div>
-          <Link className={styles.trialCtaButton} href="/api/dashboard/trial-cta?to=/plans">
-            無料トライアルの手続きを続ける
-          </Link>
+          <TrialCtaButtonForm to="/plans" label="無料トライアルの手続きを続ける" />
         </section>
       );
     case "preparing":
@@ -83,12 +86,12 @@ export function TrialCtaBanner({
           <div>
             <h2 className={styles.trialCtaHeading}>プランを選んで改善を続ける</h2>
           </div>
-          <Link className={styles.trialCtaButton} href="/api/dashboard/trial-cta?to=/plans">
-            プランを選んで改善を続ける
-          </Link>
+          <TrialCtaButtonForm to="/plans" label="プランを選んで改善を続ける" />
         </section>
       );
     case "manage_existing":
+      // 同一ページ内のフラグメント遷移(サーバーへのリクエストが発生しない)なので
+      // GETの副作用問題は生じない。POSTフォーム化は不要。
       return (
         <section className={styles.trialCtaBanner} aria-label="次のアクション">
           <div>

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
     normalize: vi.fn(),
     apply: vi.fn(),
     sendBillingStatusChangeEmail: vi.fn(),
+    syncIntegrationEvent: vi.fn(),
   };
 });
 
@@ -28,6 +29,9 @@ vi.mock("@/server/db/billingRepository", () => ({
 }));
 vi.mock("@/server/services/sendBillingStatusChangeEmail", () => ({
   sendBillingStatusChangeEmail: mocks.sendBillingStatusChangeEmail,
+}));
+vi.mock("@/server/services/salesforceSync", () => ({
+  syncIntegrationEvent: mocks.syncIntegrationEvent,
 }));
 
 import { POST } from "@/app/api/billing/webhook/route";
@@ -58,6 +62,7 @@ beforeEach(() => {
   mocks.normalize.mockReturnValue({ providerEventId: "evt_1" });
   mocks.apply.mockResolvedValue({ result: "processed", notify: null });
   mocks.sendBillingStatusChangeEmail.mockResolvedValue("sent");
+  mocks.syncIntegrationEvent.mockResolvedValue(undefined);
 });
 
 describe("POST /api/billing/webhook", () => {
@@ -149,5 +154,45 @@ describe("POST /api/billing/webhook", () => {
     mocks.sendBillingStatusChangeEmail.mockRejectedValue(new Error("resend down"));
     const response = await POST(request());
     expect(response.status).toBe(200);
+  });
+
+  describe("2026-09-28追加(PO承認、P1-4): subscription_activatedのDB記録と外部同期の分離", () => {
+    it("subscriptionActivatedIntegrationEventIdがある場合のみSalesforce同期を試行する", async () => {
+      mocks.apply.mockResolvedValue({
+        result: "processed",
+        notify: null,
+        trialActivated: null,
+        subscriptionActivated: { clinicId: "clinic-1", externalSubscriptionId: "sub_1" },
+        subscriptionActivatedIntegrationEventId: "integration-event-1",
+      });
+      const response = await POST(request());
+      expect(response.status).toBe(200);
+      expect(mocks.syncIntegrationEvent).toHaveBeenCalledWith("integration-event-1");
+    });
+
+    it("dedupeによりintegrationEventIdがnull(既に別経路が記録済み)の場合は同期を試行しない", async () => {
+      mocks.apply.mockResolvedValue({
+        result: "processed",
+        notify: null,
+        trialActivated: null,
+        subscriptionActivated: { clinicId: "clinic-1", externalSubscriptionId: "sub_1" },
+        subscriptionActivatedIntegrationEventId: null,
+      });
+      await POST(request());
+      expect(mocks.syncIntegrationEvent).not.toHaveBeenCalled();
+    });
+
+    it("同期失敗はWebhookの200応答をブロックしない(DB記録と外部同期の分離)", async () => {
+      mocks.apply.mockResolvedValue({
+        result: "processed",
+        notify: null,
+        trialActivated: null,
+        subscriptionActivated: { clinicId: "clinic-1", externalSubscriptionId: "sub_1" },
+        subscriptionActivatedIntegrationEventId: "integration-event-1",
+      });
+      mocks.syncIntegrationEvent.mockRejectedValue(new Error("salesforce timeout"));
+      const response = await POST(request());
+      expect(response.status).toBe(200);
+    });
   });
 });

@@ -264,6 +264,297 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
     expect(resent.trialActivated).toBeNull();
   });
 
+  describe("2026-09-28追加(PO承認、P1-4): subscription_activated(有料契約への移行)", () => {
+    it("trial→activeで1件記録される", async () => {
+      const clinic = await createClinic("sub-active-1");
+      const externalSubscriptionId = `sub_active_${clinic.id}`;
+
+      const created = await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sa_create_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "trial",
+          occurredAt: new Date("2026-09-28T00:00:00Z"),
+        })
+      );
+      expect(created.subscriptionActivated).toBeNull();
+
+      const activated = await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sa_activate_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "active",
+          occurredAt: new Date("2026-09-28T01:00:00Z"),
+        })
+      );
+      expect(activated.subscriptionActivated).toEqual({
+        clinicId: clinic.id,
+        externalSubscriptionId,
+        plan: "light",
+        fromStatus: "trial",
+        viaTrial: false, // このヘルパーはtrialStartedAtを設定しないため
+      });
+      expect(activated.subscriptionActivatedIntegrationEventId).toEqual(expect.any(String));
+
+      const events = await prisma.integrationEvent.findMany({
+        where: { dedupeKey: `subscription_activated:${externalSubscriptionId}` },
+      });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.clinicId).toBe(clinic.id);
+      const payload = JSON.parse(events[0]!.payloadJson);
+      expect(payload).toEqual({ plan: "light", from_status: "trial", to_status: "active", via_trial: false });
+    });
+
+    it("トライアルなしの初回activeでも1件記録される(checkout_completed、Premium即時課金相当)", async () => {
+      const clinic = await createClinic("sub-active-2");
+      const externalSubscriptionId = `sub_immediate_${clinic.id}`;
+
+      const result = await billingRepository.applyBillingWebhookEvent({
+        providerEventId: `evt_sa_immediate_${clinic.id}`,
+        eventType: "checkout.session.completed",
+        occurredAt: new Date("2026-09-28T00:00:00Z"),
+        action: {
+          kind: "checkout_completed",
+          identity: { externalSubscriptionId, clinicId: clinic.id, plan: "premium" },
+          initialStatus: "active",
+          checkoutSessionId: `cs_immediate_${clinic.id}`,
+        },
+      });
+      expect(result.subscriptionActivated).toEqual({
+        clinicId: clinic.id,
+        externalSubscriptionId,
+        plan: "premium",
+        fromStatus: null,
+        viaTrial: false,
+      });
+      expect(result.subscriptionActivatedIntegrationEventId).toEqual(expect.any(String));
+
+      const count = await prisma.integrationEvent.count({
+        where: { dedupeKey: `subscription_activated:${externalSubscriptionId}` },
+      });
+      expect(count).toBe(1);
+    });
+
+    it("同一Webhookの再送(同一providerEventId)ではsubscriptionActivatedは返らず、イベントも増えない", async () => {
+      const clinic = await createClinic("sub-active-3");
+      const externalSubscriptionId = `sub_resend_${clinic.id}`;
+      const command = {
+        providerEventId: `evt_sa_resend_${clinic.id}`,
+        eventType: "checkout.session.completed",
+        occurredAt: new Date("2026-09-28T00:00:00Z"),
+        action: {
+          kind: "checkout_completed" as const,
+          identity: { externalSubscriptionId, clinicId: clinic.id, plan: "light" as const },
+          initialStatus: "active" as const,
+          checkoutSessionId: `cs_resend_${clinic.id}`,
+        },
+      };
+      const first = await billingRepository.applyBillingWebhookEvent(command);
+      expect(first.subscriptionActivated).not.toBeNull();
+
+      const resent = await billingRepository.applyBillingWebhookEvent(command);
+      expect(resent.result).toBe("duplicate");
+      expect(resent.subscriptionActivated).toBeNull();
+
+      const count = await prisma.integrationEvent.count({
+        where: { dedupeKey: `subscription_activated:${externalSubscriptionId}` },
+      });
+      expect(count).toBe(1);
+    });
+
+    it("別Webhook(customer.subscription.updated)で同じactive状態が届いても1件のまま(dedupeKey一意制約)", async () => {
+      const clinic = await createClinic("sub-active-4");
+      const externalSubscriptionId = `sub_other_webhook_${clinic.id}`;
+
+      const first = await billingRepository.applyBillingWebhookEvent({
+        providerEventId: `evt_sa_first_${clinic.id}`,
+        eventType: "checkout.session.completed",
+        occurredAt: new Date("2026-09-28T00:00:00Z"),
+        action: {
+          kind: "checkout_completed",
+          identity: { externalSubscriptionId, clinicId: clinic.id, plan: "light" },
+          initialStatus: "active",
+          checkoutSessionId: `cs_other_webhook_${clinic.id}`,
+        },
+      });
+      expect(first.subscriptionActivated).not.toBeNull();
+
+      // past_due→activeという別種の遷移だが、externalSubscriptionIdは同じ
+      // (以下の"active→past_due→activeでも1件"テストで詳しく確認する)。
+      const second = await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sa_second_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "active",
+          occurredAt: new Date("2026-09-28T00:00:01Z"),
+        })
+      );
+      // 既にactiveなので遷移として検知されない(statusBeforeTrialCheck === "active")。
+      expect(second.subscriptionActivated).toBeNull();
+
+      const count = await prisma.integrationEvent.count({
+        where: { dedupeKey: `subscription_activated:${externalSubscriptionId}` },
+      });
+      expect(count).toBe(1);
+    });
+
+    it("active→past_due→activeでも1件のまま(2回目のactive化はシグナルとしては検知されるが、DB行は新規作成されない)", async () => {
+      const clinic = await createClinic("sub-active-5");
+      const externalSubscriptionId = `sub_recover_${clinic.id}`;
+
+      const activated = await billingRepository.applyBillingWebhookEvent({
+        providerEventId: `evt_sa_recover_1_${clinic.id}`,
+        eventType: "checkout.session.completed",
+        occurredAt: new Date("2026-09-28T00:00:00Z"),
+        action: {
+          kind: "checkout_completed",
+          identity: { externalSubscriptionId, clinicId: clinic.id, plan: "light" },
+          initialStatus: "active",
+          checkoutSessionId: `cs_recover_${clinic.id}`,
+        },
+      });
+      expect(activated.subscriptionActivatedIntegrationEventId).toEqual(expect.any(String));
+
+      await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sa_recover_2_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "past_due",
+          occurredAt: new Date("2026-09-28T01:00:00Z"),
+        })
+      );
+
+      const recovered = await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sa_recover_3_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "active",
+          occurredAt: new Date("2026-09-28T02:00:00Z"),
+        })
+      );
+      // Stripeの確定情報どおり遷移自体はシグナルとして返るが、
+      expect(recovered.subscriptionActivated).toEqual({
+        clinicId: clinic.id,
+        externalSubscriptionId,
+        plan: "light",
+        fromStatus: "past_due",
+        viaTrial: false,
+      });
+      // dedupeKeyが既に存在するため、新規のIntegrationEvent行は作られない(=null)。
+      expect(recovered.subscriptionActivatedIntegrationEventId).toBeNull();
+
+      const count = await prisma.integrationEvent.count({
+        where: { dedupeKey: `subscription_activated:${externalSubscriptionId}` },
+      });
+      expect(count).toBe(1);
+    });
+
+    it("dedupeKeyが先に存在していても、Subscription状態更新自体はcommitされる(PostgreSQLでトランザクションをabortさせない設計)", async () => {
+      const clinic = await createClinic("sub-active-6");
+      const externalSubscriptionId = `sub_commit_check_${clinic.id}`;
+
+      await billingRepository.applyBillingWebhookEvent({
+        providerEventId: `evt_sa_commit_1_${clinic.id}`,
+        eventType: "checkout.session.completed",
+        occurredAt: new Date("2026-09-28T00:00:00Z"),
+        action: {
+          kind: "checkout_completed",
+          identity: { externalSubscriptionId, clinicId: clinic.id, plan: "light" },
+          initialStatus: "active",
+          checkoutSessionId: `cs_commit_check_${clinic.id}`,
+        },
+      });
+      await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sa_commit_2_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "past_due",
+          occurredAt: new Date("2026-09-28T01:00:00Z"),
+        })
+      );
+      // dedupeKey重複が発生するこの3回目のイベントでも、Subscription.statusの
+      // 更新自体は正しくコミットされていること(トランザクションがabortしていれば
+      // statusは更新されないはず)を確認する。
+      await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sa_commit_3_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "active",
+          occurredAt: new Date("2026-09-28T02:00:00Z"),
+        })
+      );
+      const finalSubscription = await billingRepository.getLatestSubscriptionByClinicId(clinic.id);
+      expect(finalSubscription?.status).toBe("active");
+    });
+
+    it("cancelled等、active以外への遷移では発火しない", async () => {
+      const clinic = await createClinic("sub-active-7");
+      const externalSubscriptionId = `sub_no_fire_${clinic.id}`;
+
+      await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sa_nofire_1_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "trial",
+          occurredAt: new Date("2026-09-28T00:00:00Z"),
+        })
+      );
+      const cancelled = await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sa_nofire_2_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "cancelled",
+          occurredAt: new Date("2026-09-28T01:00:00Z"),
+        })
+      );
+      expect(cancelled.subscriptionActivated).toBeNull();
+      expect(cancelled.subscriptionActivatedIntegrationEventId).toBeNull();
+    });
+
+    it("trial_activatedとsubscription_activatedは別イベントとして共存する(dedupeKeyのprefixが異なる)", async () => {
+      const clinic = await createClinic("sub-active-8");
+      const externalSubscriptionId = `sub_coexist_${clinic.id}`;
+
+      const trialResult = await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sa_coexist_1_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "trial",
+          occurredAt: new Date("2026-09-28T00:00:00Z"),
+        })
+      );
+      expect(trialResult.trialActivated).toEqual({ clinicId: clinic.id, externalSubscriptionId });
+
+      const activeResult = await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sa_coexist_2_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "active",
+          occurredAt: new Date("2026-09-28T01:00:00Z"),
+        })
+      );
+      expect(activeResult.subscriptionActivated).not.toBeNull();
+
+      // trial_activatedはbillingRepository側では記録しない(webhook route側の責務)ため、
+      // ここではsubscription_activated用のIntegrationEvent行だけを確認する。
+      const events = await prisma.integrationEvent.findMany({
+        where: { clinicId: clinic.id, eventType: "subscription_activated" },
+      });
+      expect(events).toHaveLength(1);
+    });
+  });
+
   describe("実在しない医院へのWebhook(orphan webhook)", () => {
     // テスト医院のDB削除後に、Stripe側だけ契約が残って後日イベントが届くケース。
     // 契約を再作成しようとして外部キー違反→500→Stripeの無限再送になってはならない。
@@ -281,7 +572,13 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
             occurredAt: new Date("2026-10-02T00:00:00Z"),
           })
         );
-        expect(result).toEqual({ result: "ignored", notify: null, trialActivated: null });
+        expect(result).toEqual({
+          result: "ignored",
+          notify: null,
+          trialActivated: null,
+          subscriptionActivated: null,
+          subscriptionActivatedIntegrationEventId: null,
+        });
         expect(await prisma.subscription.count({ where: { clinicId: MISSING_CLINIC_ID } })).toBe(0);
         // 存在しないclinicIdを外部キー付きで保存せず、通知の再送は重複としても扱える形で記録する。
         const recorded = await prisma.billingWebhookEvent.findUnique({ where: { providerEventId } });
@@ -349,7 +646,13 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
         },
       };
       const first = await billingRepository.applyBillingWebhookEvent(invoiceCommand);
-      expect(first).toEqual({ result: "retry", notify: null, trialActivated: null });
+      expect(first).toEqual({
+        result: "retry",
+        notify: null,
+        trialActivated: null,
+        subscriptionActivated: null,
+        subscriptionActivatedIntegrationEventId: null,
+      });
       expect(await prisma.payment.count({ where: { externalPaymentId: "in_invoice_race" } })).toBe(0);
       expect(
         await prisma.billingWebhookEvent.count({ where: { providerEventId: "evt_invoice_before_sub" } })

@@ -106,7 +106,13 @@ export async function POST(request: Request) {
     }
 
     const command = normalizeStripeBillingEvent(event);
-    const { result, notify, trialActivated } = await applyBillingWebhookEvent(command);
+    const {
+      result,
+      notify,
+      trialActivated,
+      subscriptionActivated,
+      subscriptionActivatedIntegrationEventId,
+    } = await applyBillingWebhookEvent(command);
 
     // 契約作成前に先着したinvoiceイベント。処理済みにせず、Stripeの再送で取りこぼしなく反映する。
     if (result === "retry") {
@@ -130,6 +136,20 @@ export async function POST(request: Request) {
         console.error(
           "[POST /api/billing/webhook] trial_activated event enqueue failed:",
           error instanceof Error ? error.name : "UnknownError"
+        );
+      });
+    }
+
+    // 2026-09-28追加(PO承認、P1-4「有料契約への移行」): "subscription_activated"の
+    // DB記録(outbox)自体はapplyBillingWebhookEvent()内の同一トランザクションで
+    // 既に確定済み(ON CONFLICT DO NOTHINGによる原子的なdedupe)。ここでは、新規作成
+    // された場合のみベストエフォートでSalesforce同期を1回試行する
+    // (DB記録と外部同期の失敗を分離する、既存のTrialEntitlement消費経路と同じ方針)。
+    if (subscriptionActivated && subscriptionActivatedIntegrationEventId) {
+      await syncIntegrationEvent(subscriptionActivatedIntegrationEventId).catch((syncError) => {
+        console.error(
+          "[POST /api/billing/webhook] subscription_activated event sync failed (will retry via pending-event job):",
+          syncError
         );
       });
     }
