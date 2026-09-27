@@ -99,10 +99,10 @@ function DashboardNav({ bookingUrl }: { bookingUrl: string | undefined }) {
             {item.label}
           </Link>
         ))}
-        <span className={styles.navMuted}>
+        <Link href="/dashboard/settings" className={styles.navLink}>
           <span className={styles.navIcon} aria-hidden="true">⚙</span>
-          設定・連携（準備中）
-        </span>
+          設定・連携
+        </Link>
       </nav>
 
       <div className={styles.sideTrust}>
