@@ -524,6 +524,12 @@ export interface MeasurementViewModel {
   /** 元のdataDisclaimer文字列(生データ)。「詳細を見る」内でのみ表示する想定。 */
   technicalDisclaimer: string;
   domainSourceSummary: string;
+  /**
+   * 2026-09-29追加(PO指示: ダッシュボード「取得状況」の円グラフ化)。既存のstatus集計
+   * (measured/estimated/partial/unavailable)を、推測値を作らずそのまま件数として公開する。
+   * 呼び出し側で円グラフを描く場合、独自の判定は行わずこの値をそのまま使うこと。
+   */
+  domainStatusCounts: Record<DomainAggregateStatus, number>;
 }
 
 /**
@@ -561,6 +567,7 @@ export function buildMeasurementViewModel(
     summaryLabel,
     technicalDisclaimer: dataDisclaimer,
     domainSourceSummary: parts.join(" / ") || "データソース情報がありません",
+    domainStatusCounts: counts,
   };
 }
 

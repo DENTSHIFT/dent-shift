@@ -62,6 +62,26 @@ describe("ダッシュボードの正確性(未診断カードの文言・競合
     expect(source).toContain('href: "#ai-search"');
     expect(source).toContain('href: "#improvements"');
   });
+
+  // 2026-09-29追加(PO指示): 本番実機で「AI検索」「競合医院」のクリックが無反応と
+  // なっていた不具合の回帰テスト。原因はNext.jsのLinkコンポーネントが同一ページ内の
+  // ハッシュ遷移でURLハッシュ更新・スクロールを行わないことだったため、同一ページ内
+  // アンカーは素の<a>タグでレンダリングするよう修正した(実機確認済み)。
+  it("同一ページ内アンカー(#で始まるhref)はLinkではなくネイティブの<a>タグでレンダリングする分岐を持つ", () => {
+    const source = dashboardSource();
+    expect(source).toContain("isSamePageAnchor");
+    expect(source).toContain("href.startsWith(\"#\")");
+    // デスクトップ・モバイル双方のナビで、同一ページ内アンカー用の<a key=...>分岐が
+    // 存在すること(Linkコンポーネントへの巻き戻りを防ぐ)。
+    const anchorBranchMatches = source.match(/<a key=\{?item\.(label|id)\}? href=\{href\}/g);
+    expect(anchorBranchMatches?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  it("契約セクションへのモバイル固定リンク(#subscription)もLinkではなくネイティブの<a>タグである", () => {
+    const source = dashboardSource();
+    expect(source).toContain('<a href="#subscription">');
+    expect(source).not.toContain('<Link href="#subscription">');
+  });
 });
 
 describe("オンボーディング導線の正確性", () => {

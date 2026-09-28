@@ -518,6 +518,24 @@ describe("buildMeasurementViewModel(計測条件・データソース)", () => {
     expect(vm.domainSourceSummary).toBe("実測2領域 / 推定1領域 / 一部取得1領域 / 取得不能2領域");
   });
 
+  it("2026-09-29追加(PO指示: ダッシュボード取得状況の円グラフ化): domainStatusCountsは推測せず実測status集計をそのまま返す", () => {
+    const domains: DomainScore[] = [
+      domainScore({ domain: "AIO", status: "measured" }),
+      domainScore({ domain: "MEO", status: "estimated" }),
+      domainScore({ domain: "SEO", status: "partial" }),
+      domainScore({ domain: "LLMO", status: "unavailable" }),
+      domainScore({ domain: "WEB_BOOKING", status: "unavailable" }),
+      domainScore({ domain: "REVIEWS", status: "measured" }),
+    ];
+    const vm = buildMeasurementViewModel("2026-09-06T00:00:00.000Z", "disclaimer", domains, false);
+    expect(vm.domainStatusCounts).toEqual({ measured: 2, estimated: 1, partial: 1, unavailable: 2 });
+  });
+
+  it("domainStatusCountsは領域が0件でも(全キー0で)必ず存在し、呼び出し側が安全にアクセスできる", () => {
+    const vm = buildMeasurementViewModel("2026-09-06T00:00:00.000Z", "disclaimer", [], false);
+    expect(vm.domainStatusCounts).toEqual({ measured: 0, estimated: 0, partial: 0, unavailable: 0 });
+  });
+
   it("2026-09-06のユーザー指示⑧: summaryLabelは院長向けの定型文で、生のdataDisclaimerをそのまま出さない", () => {
     const rawDisclaimer =
       "このレポートはP0開発中のモックデータです。ChatGPT/Gemini等の実プロバイダーには接続していません。";

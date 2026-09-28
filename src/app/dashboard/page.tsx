@@ -107,15 +107,20 @@ function DashboardNav({
         {NAV_ITEMS.map((item) => {
           const href = resolveNavHref(item.href, availableSectionIds);
           const locked = href === LOCKED_DIAGNOSIS_HREF;
-          return (
-            <Link
-              key={item.label}
-              href={href}
-              className={`${styles.navLink} ${item.active ? styles.navActive : ""}`}
-              {...(locked
-                ? { title: "この機能は無料AI集患診断の完了後に利用できます", "aria-label": `${item.label}(診断完了後に利用できます)` }
-                : {})}
-            >
+          // 2026-09-29修正: 同一ページ内アンカー(#で始まるhref)はNext.jsのLinkコンポーネント
+          // だと、同一ルートへの遷移とみなされスクロール・URLハッシュ更新が発生しないことが
+          // 本番で確認された(TrialCtaBanner.tsxのプレーンな<a href="#subscription">は問題なく
+          // 動作していたことから特定)。ページ内アンカーはネイティブの<a>タグを使い、実際の
+          // ページ遷移(/diagnosis等)のみLinkを使う。
+          const isSamePageAnchor = href.startsWith("#");
+          const sharedProps = {
+            className: `${styles.navLink} ${item.active ? styles.navActive : ""}`,
+            ...(locked
+              ? { title: "この機能は無料AI集患診断の完了後に利用できます", "aria-label": `${item.label}(診断完了後に利用できます)` }
+              : {}),
+          };
+          const content = (
+            <>
               <span className={styles.navIcon} aria-hidden="true">
                 {item.icon}
               </span>
@@ -125,6 +130,15 @@ function DashboardNav({
                   診断後
                 </span>
               )}
+            </>
+          );
+          return isSamePageAnchor ? (
+            <a key={item.label} href={href} {...sharedProps}>
+              {content}
+            </a>
+          ) : (
+            <Link key={item.label} href={href} {...sharedProps}>
+              {content}
             </Link>
           );
         })}
@@ -453,7 +467,10 @@ export default async function DashboardPage() {
 
               {/* 2026-09-22最終修正: 最上段を4KPI(総合スコア/AI選出率/優先課題数/取得状況)に整理。
                   既存の算出値(overall.points/shareOfVoice/questionSummary/measurement)をそのまま
-                  再利用するだけで、新しい集計ロジックは追加しない。 */}
+                  再利用するだけで、新しい集計ロジックは追加しない。
+                  2026-09-29追加(PO指示): 総合スコア・AI選出率をドーナツ表示に、取得状況を
+                  円グラフ表示に変更。数値算出そのものは変更せず、既存の.gauge同様の
+                  conic-gradientで視覚化するのみ。色だけに依存しないよう数値・ラベルは残す。 */}
               <section className={styles.metricsGrid} aria-label="サマリーKPI">
                 <div className={styles.metricCard}>
                   <p className={styles.metricLabel}>総合スコア</p>
@@ -463,22 +480,52 @@ export default async function DashboardPage() {
                       <p className={styles.metricNote}>実測データが不足しています</p>
                     </>
                   ) : (
-                    <>
-                      <p className={styles.metricValue}>{vm.result.overall.points} / {vm.result.overall.maxPoints}点</p>
+                    <div className={styles.metricDonutRow}>
+                      <div
+                        className={styles.metricDonut}
+                        style={{
+                          background: `conic-gradient(#2563eb ${Math.max(
+                            0,
+                            Math.min(100, (vm.result.overall.points / vm.result.overall.maxPoints) * 100)
+                          )}%, #e5e9f0 0)`,
+                        }}
+                        role="img"
+                        aria-label={`総合スコア ${vm.result.overall.points}/${vm.result.overall.maxPoints}点`}
+                      >
+                        <div className={styles.metricDonutInner}>
+                          <span className={styles.metricDonutValue}>
+                            {vm.result.overall.points}/{vm.result.overall.maxPoints}
+                          </span>
+                        </div>
+                      </div>
                       <p className={styles.metricNote}>{vm.trend.label}</p>
-                    </>
+                    </div>
                   )}
                 </div>
                 <div className={styles.metricCard}>
                   <p className={styles.metricLabel}>AI選出率</p>
                   {vm.result.shareOfVoice.status === "measured" ? (
-                    <>
-                      <p className={styles.metricValue}>{vm.result.shareOfVoice.percentage}%</p>
+                    <div className={styles.metricDonutRow}>
+                      <div
+                        className={styles.metricDonut}
+                        style={{
+                          background: `conic-gradient(#2563eb ${Math.max(
+                            0,
+                            Math.min(100, vm.result.shareOfVoice.percentage ?? 0)
+                          )}%, #e5e9f0 0)`,
+                        }}
+                        role="img"
+                        aria-label={`AI選出率 ${vm.result.shareOfVoice.percentage}%`}
+                      >
+                        <div className={styles.metricDonutInner}>
+                          <span className={styles.metricDonutValue}>{vm.result.shareOfVoice.percentage}%</span>
+                        </div>
+                      </div>
                       <p className={styles.metricNote}>
                         患者質問{vm.result.shareOfVoice.measuredQuestionCount}件中
                         {vm.result.shareOfVoice.winCount}件でAIに表示された
                       </p>
-                    </>
+                    </div>
                   ) : (
                     <>
                       <p className={styles.metricValue}>算出不可</p>
@@ -493,10 +540,59 @@ export default async function DashboardPage() {
                 </div>
                 <div className={styles.metricCard}>
                   <p className={styles.metricLabel}>取得状況</p>
-                  <p className={styles.metricValue} style={{ fontSize: 13 }}>
-                    {vm.result.measurement.domainSourceSummary}
-                  </p>
-                  <p className={styles.metricNote}>未測定分は0点として扱いません</p>
+                  {(() => {
+                    // 2026-09-29追加(PO指示): 取得(実測)/一部取得(推定+一部取得)/取得不能の
+                    // 3区分で円グラフ化する。既存のdomainStatusCounts(推測を含まない実データ)
+                    // をそのまま使い、件数が0件(取得できない場合)は既存のテキスト表示を維持する。
+                    const counts = vm.result.measurement.domainStatusCounts;
+                    const acquired = counts.measured;
+                    const partial = counts.estimated + counts.partial;
+                    const unavailable = counts.unavailable;
+                    const total = acquired + partial + unavailable;
+                    if (total === 0) {
+                      return (
+                        <>
+                          <p className={styles.metricValue} style={{ fontSize: 13 }}>
+                            {vm.result.measurement.domainSourceSummary}
+                          </p>
+                          <p className={styles.metricNote}>未測定分は0点として扱いません</p>
+                        </>
+                      );
+                    }
+                    const acquiredPct = (acquired / total) * 100;
+                    const partialPct = (partial / total) * 100;
+                    const gradient = `conic-gradient(#2563eb 0 ${acquiredPct}%, #f59e0b ${acquiredPct}% ${
+                      acquiredPct + partialPct
+                    }%, #cbd5e1 ${acquiredPct + partialPct}% 100%)`;
+                    return (
+                      <div className={styles.metricDonutRow}>
+                        <div
+                          className={styles.metricDonut}
+                          style={{ background: gradient }}
+                          role="img"
+                          aria-label={`取得状況 取得${acquired}領域、一部取得${partial}領域、取得不能${unavailable}領域`}
+                        >
+                          <div className={styles.metricDonutInner}>
+                            <span className={styles.metricDonutValue}>{total}領域</span>
+                          </div>
+                        </div>
+                        <ul className={styles.acquisitionLegend}>
+                          <li className={styles.acquisitionLegendItem}>
+                            <span className={styles.acquisitionLegendSwatch} style={{ background: "#2563eb" }} />
+                            取得 {acquired}
+                          </li>
+                          <li className={styles.acquisitionLegendItem}>
+                            <span className={styles.acquisitionLegendSwatch} style={{ background: "#f59e0b" }} />
+                            一部取得 {partial}
+                          </li>
+                          <li className={styles.acquisitionLegendItem}>
+                            <span className={styles.acquisitionLegendSwatch} style={{ background: "#cbd5e1" }} />
+                            取得不能 {unavailable}
+                          </li>
+                        </ul>
+                      </div>
+                    );
+                  })()}
                 </div>
               </section>
 
@@ -700,20 +796,23 @@ export default async function DashboardPage() {
         ).map((item) => {
           const href = resolveNavHref(`#${item.id}`, availableSectionIds);
           const locked = href === LOCKED_DIAGNOSIS_HREF;
-          return (
-            <Link
-              key={item.id}
-              href={href}
-              {...(locked
-                ? { title: "この機能は無料AI集患診断の完了後に利用できます", "aria-label": `${item.label}(診断完了後に利用できます)` }
-                : {})}
-            >
+          const isSamePageAnchor = href.startsWith("#");
+          const sharedProps = locked
+            ? { title: "この機能は無料AI集患診断の完了後に利用できます", "aria-label": `${item.label}(診断完了後に利用できます)` }
+            : {};
+          const content = (
+            <>
               <span aria-hidden="true">{item.icon}</span>
               {item.label}
-            </Link>
+            </>
+          );
+          return isSamePageAnchor ? (
+            <a key={item.id} href={href} {...sharedProps}>{content}</a>
+          ) : (
+            <Link key={item.id} href={href} {...sharedProps}>{content}</Link>
           );
         })}
-        <Link href="#subscription"><span aria-hidden="true">◇</span>契約</Link>
+        <a href="#subscription"><span aria-hidden="true">◇</span>契約</a>
       </nav>
     </div>
   );
