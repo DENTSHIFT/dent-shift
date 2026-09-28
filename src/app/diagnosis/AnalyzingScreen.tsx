@@ -143,9 +143,22 @@ export interface AnalyzingScreenProps {
   apiStatus: "pending" | "success" | "error";
   errorMessage: string | null;
   onRetry: () => void;
+  // 2026-09-29追加(PO指示): タイムアウト由来のエラーは、サーバー側処理が継続・成功し
+  // 得るため、同じ内容の即時再試行が医院データの重複作成につながるおそれがある
+  // (重複防止を保証できない)。この場合だけ「もう一度診断する」ボタンを出さず、
+  // 安全な導線(ログイン中はダッシュボード、未ログインはトップページ)を表示する。
+  isTimeoutError: boolean;
+  isAuthenticated: boolean;
 }
 
-export function AnalyzingScreen({ percent, apiStatus, errorMessage, onRetry }: AnalyzingScreenProps) {
+export function AnalyzingScreen({
+  percent,
+  apiStatus,
+  errorMessage,
+  onRetry,
+  isTimeoutError,
+  isAuthenticated,
+}: AnalyzingScreenProps) {
   const roundedPercent = Math.round(percent);
   // エラー時はそれ以上ステップ・カードを進行させて見せない(呼び出し元がpercent更新自体を
   // 止めるため実質的にstepStatusAtと同じ結果になるが、意図を明示するため分離して呼び出す)。
@@ -238,23 +251,46 @@ export function AnalyzingScreen({ percent, apiStatus, errorMessage, onRetry }: A
           <p style={{ margin: 0, fontSize: 13 }}>
             {errorMessage ?? "診断処理中にエラーが発生しました。時間をおいて再度お試しください。"}
           </p>
-          <button
-            type="button"
-            onClick={onRetry}
-            style={{
-              marginTop: 12,
-              background: BLUE,
-              color: "#fff",
-              padding: "10px 20px",
-              borderRadius: 999,
-              border: "none",
-              fontWeight: 700,
-              fontSize: 14,
-              cursor: "pointer",
-            }}
-          >
-            もう一度診断する
-          </button>
+          {isTimeoutError ? (
+            // 2026-09-29追加(PO指示): タイムアウトは「もう一度診断する」を出さない
+            // (サーバー側の処理が継続・成功し、重複作成につながるおそれがあるため)。
+            // ログイン中は診断履歴を確認できるダッシュボードへ、未ログインは
+            // 安全なトップページへ誘導する。
+            <a
+              href={isAuthenticated ? "/dashboard" : "/"}
+              style={{
+                display: "inline-block",
+                marginTop: 12,
+                background: BLUE,
+                color: "#fff",
+                padding: "10px 20px",
+                borderRadius: 999,
+                fontWeight: 700,
+                fontSize: 14,
+                textDecoration: "none",
+              }}
+            >
+              {isAuthenticated ? "診断履歴を確認する" : "トップページへ戻る"}
+            </a>
+          ) : (
+            <button
+              type="button"
+              onClick={onRetry}
+              style={{
+                marginTop: 12,
+                background: BLUE,
+                color: "#fff",
+                padding: "10px 20px",
+                borderRadius: 999,
+                border: "none",
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: "pointer",
+              }}
+            >
+              もう一度診断する
+            </button>
+          )}
         </div>
       )}
 

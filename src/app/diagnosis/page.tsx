@@ -132,10 +132,22 @@ export default function DiagnosisPage() {
   const [analysisCompleted, setAnalysisCompleted] = useState(false);
   const [apiCompleted, setApiCompleted] = useState(false);
   const [apiErrorMessage, setApiErrorMessage] = useState<string | null>(null);
+  // 2026-09-29追加(PO指示): タイムアウト表示後もサーバー側の診断処理(Clinic作成含む)が
+  // 継続・成功する可能性があり、かつClinicの重複判定は処理の終盤(saveDiagnosisResult内)
+  // まで行われないため、タイムアウト直後の「もう一度診断する」再試行は同一医院の
+  // 二重作成を防止できない(重複防止を保証できないケース)。この場合だけ通常のリトライ
+  // ボタンを出さず、安全な導線(ログイン中はダッシュボード、未ログインはトップページ)へ
+  // 差し替える。通信エラー・バリデーションエラー等(何も作成されていない)は
+  // 従来どおり即リトライ可能なため対象外。
+  const [isTimeoutError, setIsTimeoutError] = useState(false);
   const [showLockedNotice, setShowLockedNotice] = useState(false);
   const [diagnosisId, setDiagnosisId] = useState<string | null>(null);
 
-  const rafRef = useRef<number | null>(null);
+  // 2026-09-29修正(PO指示の実測検証中に判明): requestAnimationFrameは、タブが描画/
+  // コンポジット処理を継続していない場合(バックグラウンドタブ等)に長時間発火しない
+  // ことがあり、進捗表示・遷移判定の信頼性に影響しうる。60fpsの精度は不要な用途
+  // (数百ms単位のテキスト進捗表示)のため、より頑健なsetIntervalベースへ変更する。
+  const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // submit/retryのたびに増分するリクエスト世代番号。古い(キャンセル済み)fetchの結果が
   // 後から解決しても、現在の世代と一致しない場合はstateを更新しない(2重送信・連打対策)。
   const requestGenerationRef = useRef(0);
@@ -303,9 +315,12 @@ export default function DiagnosisPage() {
     const generation = requestGenerationRef.current;
     const startedAt = performance.now();
 
-    function tick(now: number) {
+    // 2026-09-29修正: 100ms間隔のsetIntervalで進捗を更新する(rAFではなく)。
+    // タブの描画状態に依存せず、API完了(apiCompletedRef)を確実に検知して
+    // 速やかに遷移可能な状態(analysisCompleted)へ進めるため。
+    function tick() {
       if (requestGenerationRef.current !== generation) return; // retry等で世代が進んだら停止
-      const elapsed = now - startedAt;
+      const elapsed = performance.now() - startedAt;
       const minDisplayElapsed = elapsed >= MIN_DISPLAY_MS;
 
       if (minDisplayElapsed) {
@@ -315,9 +330,12 @@ export default function DiagnosisPage() {
       }
 
       if (minDisplayElapsed && apiCompletedRef.current) {
-        // 最低表示時間経過 かつ API完了済み: 演出を締めくくり、以後のフレームは不要。
+        // 最低表示時間経過 かつ API完了済み: 演出を締めくくり、以後のtickは不要。
         setPercent(100);
-        rafRef.current = null;
+        if (tickIntervalRef.current !== null) {
+          clearInterval(tickIntervalRef.current);
+          tickIntervalRef.current = null;
+        }
         return;
       }
 
@@ -327,29 +345,31 @@ export default function DiagnosisPage() {
           Math.min(99, STALL_DISPLAY_PERCENT + (elapsed - MIN_DISPLAY_MS) / 200)
         : (elapsed / MIN_DISPLAY_MS) * STALL_DISPLAY_PERCENT;
       setPercent(next);
-      rafRef.current = requestAnimationFrame(tick);
     }
-    rafRef.current = requestAnimationFrame(tick);
+    tick();
+    tickIntervalRef.current = setInterval(tick, 100);
     void submitDiagnosis(generation);
 
     // 2026-09-29追加(PO指示): 診断処理が長時間終わらない場合の行き止まり防止。
     const timeoutId = window.setTimeout(() => {
       if (requestGenerationRef.current !== generation) return; // 既に完了/リトライ済みなら何もしない
       requestGenerationRef.current += 1; // 後から遅れて届く結果を無視する
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
+      if (tickIntervalRef.current !== null) {
+        clearInterval(tickIntervalRef.current);
+        tickIntervalRef.current = null;
       }
       setApiErrorMessage(
-        "診断処理に時間がかかっています。時間をおいて再度お試しください。"
+        "診断処理に時間がかかっています。サーバー側の処理は継続している場合があるため、" +
+          "同じ内容で再度診断すると医院データが重複するおそれがあります。"
       );
+      setIsTimeoutError(true);
       setFlowState("error");
     }, ANALYSIS_TIMEOUT_MS);
 
     return () => {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
+      if (tickIntervalRef.current !== null) {
+        clearInterval(tickIntervalRef.current);
+        tickIntervalRef.current = null;
       }
       window.clearTimeout(timeoutId);
     };
@@ -381,6 +401,7 @@ export default function DiagnosisPage() {
     setAnalysisCompleted(false);
     setApiCompleted(false);
     setApiErrorMessage(null);
+    setIsTimeoutError(false);
     setDiagnosisId(null);
     setFlowState("analyzing");
   }
@@ -438,17 +459,18 @@ export default function DiagnosisPage() {
   }
 
   function handleRetry() {
-    requestGenerationRef.current += 1; // 進行中のfetch/rAFの結果を無効化する
+    requestGenerationRef.current += 1; // 進行中のfetch/tick intervalの結果を無効化する
     apiCompletedRef.current = false;
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
+    if (tickIntervalRef.current !== null) {
+      clearInterval(tickIntervalRef.current);
+      tickIntervalRef.current = null;
     }
     setFlowState("form");
     setPercent(0);
     setAnalysisCompleted(false);
     setApiCompleted(false);
     setApiErrorMessage(null);
+    setIsTimeoutError(false);
     setDiagnosisId(null);
     allowDuplicateClinicRef.current = false;
   }
@@ -488,6 +510,8 @@ export default function DiagnosisPage() {
             apiStatus={flowState === "error" ? "error" : apiCompleted ? "success" : "pending"}
             errorMessage={apiErrorMessage}
             onRetry={handleRetry}
+            isTimeoutError={isTimeoutError}
+            isAuthenticated={authenticatedProfile !== null}
           />
         </div>
       </main>

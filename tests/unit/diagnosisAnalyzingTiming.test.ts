@@ -65,3 +65,79 @@ describe("AnalyzingScreenの案内文言(90%以降で表示)", () => {
     expect(source).toContain("分析結果をまとめています。もう少しお待ちください。");
   });
 });
+
+/**
+ * 2026-09-29追加(PO指示): 45秒タイムアウト後の「もう一度診断する」が、サーバー側で
+ * 継続中の処理(Clinic作成はsaveDiagnosisResult内、AI分析完了後まで行われない)と
+ * 競合し、同一医院を二重作成しうる問題の回帰テスト。
+ *
+ * 重複防止が保証できないことを確認した根拠:
+ * - findClinicDuplicateCandidate()はDBの一意制約に依らないfindMany+アプリ層判定のみ
+ *   (src/server/db/clinicDuplicateRepository.ts)
+ * - prisma/schema.prismaのClinicモデルにname/urlの@@unique制約は無い
+ * - saveDiagnosisResult()内のprisma.clinic.create()は、AI分析(10〜30秒超)完了後まで
+ *   呼ばれない(src/server/db/diagnosisRepository.ts)ため、タイムアウト直後に
+ *   同一内容で再送すると、元のリクエストがまだClinicを作成していない状態で
+ *   重複チェックをすり抜け、2件目のClinic/Diagnosisが作成されうる。
+ *
+ * そのため、タイムアウト由来のエラーだけは「もう一度診断する」を出さず、
+ * 安全な導線(ログイン中はダッシュボード、未ログインはトップページ)へ差し替える。
+ */
+describe("タイムアウト時は再試行ボタンを出さず、安全な導線へ差し替える(重複作成防止)", () => {
+  function pageSource(): string {
+    return readFileSync(path.join(process.cwd(), "src/app/diagnosis/page.tsx"), "utf8");
+  }
+
+  function analyzingScreenSource(): string {
+    return readFileSync(path.join(process.cwd(), "src/app/diagnosis/AnalyzingScreen.tsx"), "utf8");
+  }
+
+  it("page.tsx: タイムアウト時にisTimeoutErrorをtrueにし、AnalyzingScreenへ渡す", () => {
+    const source = pageSource();
+    expect(source).toMatch(/setIsTimeoutError\(true\);[\s\S]{0,80}setFlowState\("error"\)/);
+    expect(source).toContain("isTimeoutError={isTimeoutError}");
+    expect(source).toContain("isAuthenticated={authenticatedProfile !== null}");
+  });
+
+  it("page.tsx: 新しい診断開始(startAnalysis)・リトライ(handleRetry)の両方でisTimeoutErrorをfalseへリセットする", () => {
+    const source = pageSource();
+    const resetCount = (source.match(/setIsTimeoutError\(false\);/g) ?? []).length;
+    expect(resetCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("AnalyzingScreen.tsx: isTimeoutErrorがtrueの場合は「もう一度診断する」ボタンを出さない", () => {
+    const source = analyzingScreenSource();
+    expect(source).toMatch(/isTimeoutError \? \(/);
+    // 通常(非タイムアウト)エラーの再試行ボタンは維持されていること。
+    expect(source).toContain("もう一度診断する");
+  });
+
+  it("AnalyzingScreen.tsx: タイムアウト時、ログイン中は「診断履歴を確認する」、未ログインは「トップページへ戻る」を表示する", () => {
+    const source = analyzingScreenSource();
+    expect(source).toContain('isAuthenticated ? "/dashboard" : "/"');
+    expect(source).toContain('isAuthenticated ? "診断履歴を確認する" : "トップページへ戻る"');
+  });
+});
+
+/**
+ * 2026-09-29追加(PO指示の実測検証中に判明): requestAnimationFrameがタブの描画状態に
+ * 依存して長時間発火しないことがあり、進捗表示・遷移判定の信頼性に影響しうるため、
+ * setIntervalベースへ変更した回帰テスト。
+ */
+describe("進捗更新はrequestAnimationFrameではなくsetIntervalを使う", () => {
+  function pageSource(): string {
+    return readFileSync(path.join(process.cwd(), "src/app/diagnosis/page.tsx"), "utf8");
+  }
+
+  it("requestAnimationFrame/cancelAnimationFrameは使われていない", () => {
+    const source = pageSource();
+    expect(source).not.toContain("requestAnimationFrame(");
+    expect(source).not.toContain("cancelAnimationFrame(");
+  });
+
+  it("setInterval(tick, 100)で100ms間隔の更新を行う", () => {
+    const source = pageSource();
+    expect(source).toContain("setInterval(tick, 100)");
+    expect(source).toContain("tickIntervalRef");
+  });
+});
