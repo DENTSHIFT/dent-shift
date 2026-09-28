@@ -173,6 +173,8 @@ export async function POST(request: NextRequest) {
         gbpUrl: diagnosisInput.gbpUrl,
         bookingUrl: diagnosisInput.bookingUrl,
         existingClinicId: currentContact?.clinicId,
+        // 2026-09-29追加(PO承認、Salesforce連携P0): 初回流入UTMの永続化。
+        utm: utmFields,
       },
       result
     );
@@ -183,11 +185,22 @@ export async function POST(request: NextRequest) {
     await enqueueIntegrationEvent({
       eventType: "diagnosis_completed",
       clinicId: saved.clinicId,
+      contactId: currentContact?.id ?? null,
       payload: {
         email: diagnosisInput.contactEmail,
         clinic_name: diagnosisInput.clinicName,
+        director_name: diagnosisInput.directorName,
         website_url: diagnosisInput.clinicUrl,
         phone: diagnosisInput.contactPhone ?? null,
+        // 2026-09-29追加(PO承認、Salesforce連携P0): Contact ID(将来の外部ID方式upsert用、
+        // 現時点ではキューpayload/CSVにのみ残し、実送信フィールドへは追加しない)と
+        // 診断メタ情報(ID・日時・総合スコア・AIO/LLMO状態)を追加する。
+        contact_id: currentContact?.id ?? null,
+        diagnosis_id: saved.diagnosisId,
+        diagnosis_measured_at: result.measuredAt,
+        total_score: result.scoreBreakdown.totalPoints,
+        aio_status: result.scoreBreakdown.domains.find((d) => d.domain === "AIO")?.status ?? null,
+        llmo_status: result.scoreBreakdown.domains.find((d) => d.domain === "LLMO")?.status ?? null,
         ...utmFields,
       },
     }).catch((error) => {

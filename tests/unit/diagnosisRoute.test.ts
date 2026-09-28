@@ -45,7 +45,17 @@ vi.mock("@/server/services/sendDiagnosisResultEmail", () => ({
 
 import { POST } from "@/app/api/diagnosis/route";
 
-const diagnosisResult = { clinicName: "テスト歯科医院" };
+const diagnosisResult = {
+  clinicName: "テスト歯科医院",
+  measuredAt: "2026-09-29T00:00:00.000Z",
+  scoreBreakdown: {
+    totalPoints: 42,
+    domains: [
+      { domain: "AIO", status: "measured" },
+      { domain: "LLMO", status: "unavailable" },
+    ],
+  },
+};
 
 function request(body: Record<string, unknown>) {
   return new NextRequest("http://localhost/api/diagnosis", {

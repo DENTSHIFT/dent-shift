@@ -4,6 +4,8 @@ import {
   sanitizeUtmValue,
   sanitizeUtmAttribution,
   sanitizeUtmAttributionFromSearchParams,
+  firstTouchUtmUpdateData,
+  utmAttributionToClinicColumns,
 } from "@/domain/marketing/utmAttribution";
 
 describe("UTM_PARAM_KEYS", () => {
@@ -115,5 +117,99 @@ describe("sanitizeUtmAttributionFromSearchParams", () => {
       utm_content: null,
       utm_term: null,
     });
+  });
+});
+
+describe("utmAttributionToClinicColumns", () => {
+  it("UtmAttribution(snake_case)をClinicのcamelCaseカラム形に変換する", () => {
+    expect(
+      utmAttributionToClinicColumns({
+        utm_source: "instagram",
+        utm_medium: "paid_social",
+        utm_campaign: "launch",
+        utm_content: null,
+        utm_term: null,
+      })
+    ).toEqual({
+      utmSource: "instagram",
+      utmMedium: "paid_social",
+      utmCampaign: "launch",
+      utmContent: null,
+      utmTerm: null,
+    });
+  });
+});
+
+describe("firstTouchUtmUpdateData: 初回接点(first-touch)の上書き禁止", () => {
+  const emptyExisting = {
+    utmSource: null,
+    utmMedium: null,
+    utmCampaign: null,
+    utmContent: null,
+    utmTerm: null,
+  };
+
+  it("既存値が全てnullの場合、incomingの値で更新差分を作る", () => {
+    expect(
+      firstTouchUtmUpdateData(emptyExisting, {
+        utm_source: "instagram",
+        utm_medium: "paid_social",
+        utm_campaign: "launch",
+        utm_content: null,
+        utm_term: null,
+      })
+    ).toEqual({
+      utmSource: "instagram",
+      utmMedium: "paid_social",
+      utmCampaign: "launch",
+    });
+  });
+
+  it("既に値がある列はincomingで上書きしない(first-touch保持)", () => {
+    expect(
+      firstTouchUtmUpdateData(
+        { utmSource: "google", utmMedium: "cpc", utmCampaign: null, utmContent: null, utmTerm: null },
+        {
+          utm_source: "instagram",
+          utm_medium: "paid_social",
+          utm_campaign: "launch",
+          utm_content: null,
+          utm_term: null,
+        }
+      )
+    ).toEqual({ utmCampaign: "launch" });
+  });
+
+  it("incomingが全てnullなら更新差分は空オブジェクトになる", () => {
+    expect(
+      firstTouchUtmUpdateData(emptyExisting, {
+        utm_source: null,
+        utm_medium: null,
+        utm_campaign: null,
+        utm_content: null,
+        utm_term: null,
+      })
+    ).toEqual({});
+  });
+
+  it("全列に既存値がある場合は何も更新しない", () => {
+    expect(
+      firstTouchUtmUpdateData(
+        {
+          utmSource: "google",
+          utmMedium: "cpc",
+          utmCampaign: "spring",
+          utmContent: "ad1",
+          utmTerm: "dental",
+        },
+        {
+          utm_source: "instagram",
+          utm_medium: "paid_social",
+          utm_campaign: "launch",
+          utm_content: "story",
+          utm_term: "ai",
+        }
+      )
+    ).toEqual({});
   });
 });

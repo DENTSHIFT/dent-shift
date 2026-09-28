@@ -118,7 +118,16 @@ export async function POST(request: NextRequest) {
     eventType: "phone_verified",
     clinicId: contact.clinicId,
     contactId: contact.id,
-    payload: { registration_step: updatedStep },
+    payload: {
+      registration_step: updatedStep,
+      // 2026-09-29追加(PO承認、Salesforce連携P0): メールアドレスが無いとLeadを
+      // 特定できないため、登録系イベントにも含める。
+      email: contact.email,
+      clinic_name: contact.clinic.name,
+      director_name: contact.clinic.directorName,
+      website_url: contact.clinic.url,
+      consent_accepted_at: contact.consentAcceptedAt,
+    },
   }).catch((error) => {
     console.error("[POST /api/auth/phone/verify] Salesforce sync enqueue failed:", error);
   });

@@ -66,7 +66,19 @@ export async function POST(request: NextRequest) {
   await enqueueIntegrationEvent({
     eventType,
     clinicId: clinic.id,
-    payload: { email, clinic_name: clinic.name, website_url: clinic.url },
+    payload: {
+      email,
+      clinic_name: clinic.name,
+      director_name: clinic.directorName,
+      website_url: clinic.url,
+      // 2026-09-29追加(PO承認、Salesforce連携P0): オンライン相談の申込・完了イベントである旨。
+      consultation_requested: true,
+      utm_source: clinic.utmSource,
+      utm_medium: clinic.utmMedium,
+      utm_campaign: clinic.utmCampaign,
+      utm_content: clinic.utmContent,
+      utm_term: clinic.utmTerm,
+    },
   }).catch((error) => {
     console.error("[POST /api/webhooks/timerex] Salesforce sync enqueue failed:", error);
   });

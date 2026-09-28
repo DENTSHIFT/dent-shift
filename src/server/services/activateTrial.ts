@@ -46,6 +46,10 @@ export async function activateTrialIfEligible(contactId: string): Promise<void> 
     payload: {
       registration_step: "completed",
       trial_ends_at: subscription.trialEndsAt ? subscription.trialEndsAt.toISOString() : null,
+      // 2026-09-29追加(PO承認、Salesforce連携P0): 契約プラン・メールアドレス・同意日時を追加。
+      email: contact.email,
+      plan: subscription.plan,
+      consent_accepted_at: contact.consentAcceptedAt,
     },
   }).catch((error) => {
     console.error("[activateTrial] Salesforce sync enqueue failed:", error);

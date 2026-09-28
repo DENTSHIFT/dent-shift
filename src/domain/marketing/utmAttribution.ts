@@ -46,6 +46,48 @@ export function sanitizeUtmAttribution(input: Record<string, unknown>): UtmAttri
   };
 }
 
+/** DBのClinic.utmSource等(camelCase)に対応する形。 */
+export interface FirstTouchUtmColumns {
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  utmContent: string | null;
+  utmTerm: string | null;
+}
+
+/**
+ * 2026-09-29追加(PO承認、Salesforce連携P0): 「初回値を保持し、後続アクセスで
+ * 上書きしない」を機械的に保証する純粋関数。既存Clinicの列がすでに非null(=初回流入
+ * 済み)であれば、その列は今回のincoming値に関わらず変更しない(Prisma updateへは
+ * 含めない)。まだnullの列だけ、今回の値(あれば)で埋める。
+ *
+ * 戻り値は「変更が必要な列だけ」を持つオブジェクト(Prisma updateのdataへそのまま渡せる)。
+ * 変更対象が1つもなければ空オブジェクトを返す(呼び出し側でupdate自体をスキップできる)。
+ */
+export function firstTouchUtmUpdateData(
+  existing: FirstTouchUtmColumns,
+  incoming: UtmAttribution
+): Partial<FirstTouchUtmColumns> {
+  const update: Partial<FirstTouchUtmColumns> = {};
+  if (existing.utmSource === null && incoming.utm_source !== null) update.utmSource = incoming.utm_source;
+  if (existing.utmMedium === null && incoming.utm_medium !== null) update.utmMedium = incoming.utm_medium;
+  if (existing.utmCampaign === null && incoming.utm_campaign !== null) update.utmCampaign = incoming.utm_campaign;
+  if (existing.utmContent === null && incoming.utm_content !== null) update.utmContent = incoming.utm_content;
+  if (existing.utmTerm === null && incoming.utm_term !== null) update.utmTerm = incoming.utm_term;
+  return update;
+}
+
+/** UtmAttribution(snake_case)をClinic作成時のcamelCase列へ変換する。 */
+export function utmAttributionToClinicColumns(utm: UtmAttribution): FirstTouchUtmColumns {
+  return {
+    utmSource: utm.utm_source,
+    utmMedium: utm.utm_medium,
+    utmCampaign: utm.utm_campaign,
+    utmContent: utm.utm_content,
+    utmTerm: utm.utm_term,
+  };
+}
+
 /**
  * URLSearchParams(ブラウザ側でのクエリ読み取り)からUTM5項目を検証済みの形で取り出す。
  */

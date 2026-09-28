@@ -51,7 +51,16 @@ export async function POST(request: NextRequest) {
     payload: {
       email: diagnosis.clinic.contactEmail ?? "",
       clinic_name: diagnosis.clinic.name,
+      director_name: diagnosis.clinic.directorName,
       website_url: diagnosis.clinic.url,
+      // 2026-09-29追加(PO承認、Salesforce連携P0): 相談希望の意思表示イベントである旨を
+      // 明示する(online_consultation_clicked/phone_inquiry_clickedのいずれも該当)。
+      consultation_requested: true,
+      utm_source: diagnosis.clinic.utmSource,
+      utm_medium: diagnosis.clinic.utmMedium,
+      utm_campaign: diagnosis.clinic.utmCampaign,
+      utm_content: diagnosis.clinic.utmContent,
+      utm_term: diagnosis.clinic.utmTerm,
     },
   }).catch((error) => {
     console.error("[POST /api/events/track] Salesforce sync enqueue failed:", error);

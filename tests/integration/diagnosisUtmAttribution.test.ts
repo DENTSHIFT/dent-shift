@@ -73,7 +73,17 @@ beforeEach(async () => {
   mocks.currentContact.mockResolvedValue(null);
   mocks.resolveConfig.mockReturnValue({ provider: "mock" });
   mocks.createProvider.mockReturnValue({});
-  mocks.runFreeDiagnosis.mockResolvedValue({ clinicName: "UTMテスト歯科" });
+  mocks.runFreeDiagnosis.mockResolvedValue({
+    clinicName: "UTMテスト歯科",
+    measuredAt: "2026-09-29T00:00:00.000Z",
+    scoreBreakdown: {
+      totalPoints: 42,
+      domains: [
+        { domain: "AIO", status: "measured" },
+        { domain: "LLMO", status: "unavailable" },
+      ],
+    },
+  });
   mocks.saveDiagnosisResult.mockResolvedValue({ clinicId: "clinic-utm-test", diagnosisId: "diagnosis-utm-test" });
   mocks.updateEmailStatus.mockResolvedValue({ resultEmailStatus: "disabled", resultEmailSentAt: null });
   mocks.sendResultEmail.mockResolvedValue("disabled");
@@ -123,8 +133,15 @@ describe("POST /api/diagnosis: UTM値のdiagnosis_completedイベントへの記
     expect(payload).toEqual({
       email: "owner@example.com",
       clinic_name: "UTMテスト歯科",
+      director_name: "",
       website_url: "https://utm-test.example.com",
       phone: "03-1234-5678",
+      contact_id: null,
+      diagnosis_id: "diagnosis-utm-test",
+      diagnosis_measured_at: "2026-09-29T00:00:00.000Z",
+      total_score: 42,
+      aio_status: "measured",
+      llmo_status: "unavailable",
       utm_source: "instagram",
       utm_medium: "profile",
       utm_campaign: "launch",

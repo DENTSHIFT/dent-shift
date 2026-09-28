@@ -7,6 +7,11 @@ import {
   normalizeResultEmailDeliveryStatus,
   type ResultEmailDeliveryStatus,
 } from "@/domain/email/resultEmailDeliveryStatus";
+import {
+  firstTouchUtmUpdateData,
+  utmAttributionToClinicColumns,
+  type UtmAttribution,
+} from "@/domain/marketing/utmAttribution";
 
 /**
  * saveDiagnosisResult/getDiagnosisById(結果ページ用)は無料診断のUX上、認証なしで
@@ -62,6 +67,10 @@ export async function saveDiagnosisResult(
     gbpUrl?: string;
     bookingUrl?: string;
     existingClinicId?: string;
+    // 2026-09-29追加(PO承認、Salesforce連携P0): 初回流入UTM(first-touch)。
+    // 新規Clinic作成時はそのまま保存し、既存Clinicの場合はまだnullの列だけを埋める
+    // (firstTouchUtmUpdateData参照、既に値がある列は上書きしない)。
+    utm?: UtmAttribution;
   },
   result: RunFreeDiagnosisResult
 ) {
@@ -145,6 +154,9 @@ export async function saveDiagnosisResult(
           contactPhone: input.contactPhone?.trim(),
           gbpUrl: input.gbpUrl,
           bookingUrl: input.bookingUrl,
+          // 2026-09-29追加(PO承認、Salesforce連携P0): 新規Clinicは今回の流入がそのまま
+          // 初回流入(first-touch)のため、UTMをそのまま保存する。
+          ...(input.utm ? utmAttributionToClinicColumns(input.utm) : {}),
         },
       });
 
@@ -165,6 +177,24 @@ export async function saveDiagnosisResult(
       where: { id: clinic.id },
       data: { directorName: input.directorName.trim() },
     });
+  }
+  // 2026-09-29追加(PO承認、Salesforce連携P0): 既存Clinic(再診断)の場合、まだ
+  // 初回流入UTMが記録されていない列だけを今回の値で埋める(既に値がある列は
+  // 「初回値を保持し、後続アクセスで上書きしない」の指示どおり変更しない)。
+  if (input.existingClinicId && input.utm) {
+    const utmUpdate = firstTouchUtmUpdateData(
+      {
+        utmSource: clinic.utmSource,
+        utmMedium: clinic.utmMedium,
+        utmCampaign: clinic.utmCampaign,
+        utmContent: clinic.utmContent,
+        utmTerm: clinic.utmTerm,
+      },
+      input.utm
+    );
+    if (Object.keys(utmUpdate).length > 0) {
+      await prisma.clinic.update({ where: { id: clinic.id }, data: utmUpdate });
+    }
   }
 
   const measuredAt = new Date(result.measuredAt);

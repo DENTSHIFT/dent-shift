@@ -55,7 +55,13 @@ export async function verifyEmailToken(token: string): Promise<VerifyEmailTokenR
     eventType: "email_verified",
     clinicId: contact.clinicId,
     contactId: contact.id,
-    payload: { registration_step: updatedStep },
+    payload: {
+      registration_step: updatedStep,
+      // 2026-09-29追加(PO承認、Salesforce連携P0): メールアドレスが無いとLeadを
+      // 特定できないため追加する(このイベントはcontact自体がメール確認対象のため必ず値がある)。
+      email: contact.email,
+      consent_accepted_at: contact.consentAcceptedAt,
+    },
   }).catch((error) => {
     console.error("[verifyEmailToken] Salesforce sync enqueue failed:", error);
   });

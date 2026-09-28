@@ -52,6 +52,12 @@ beforeEach(() => {
     smsStatus: "sent",
     smsAttemptCount: 0,
     registrationStep: "sms",
+    consentAcceptedAt: null,
+    clinic: {
+      name: "テスト歯科",
+      directorName: "テスト院長",
+      url: "https://example.com",
+    },
   });
   mocks.resolveSmsConfig.mockReturnValue({
     provider: "twilio-verify",

@@ -52,6 +52,18 @@ model Clinic {
   // billingRepository.ts参照)。null→非nullの一方向のみで、Checkout作成時点では
   // 設定しない(TrialEntitlement側の予約状態と役割を分離する)。
   trialConsumedAt DateTime?
+
+  // 2026-09-29追加(PO承認、Salesforce連携P0): 初回流入時のUTMを医院単位で永続化する
+  // (first-touch attribution)。診断フォームのutmRef(URLクエリ由来、一時的でページ遷移後に
+  // 失われる)とは異なり、こちらはDBに一度だけ保存し、以後のイベント(トライアル開始・
+  // 契約開始等、別セッション・別リクエストで発生する)でも参照できるようにする。
+  // 「初回値を保持し、後続アクセスで上書きしない」という指示のとおり、一度nullでない値が
+  // 設定された列は二度と上書きしない(upsertFirstTouchUtmAttribution()参照)。
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
 }
 
 // 2026-09-27追加(PO承認、P0): 無料トライアルの「予約→消費/解放」ライフサイクルを
@@ -352,6 +364,11 @@ model IntegrationEvent {
   // 2026-09-24: ops再送管理画面の「最終試行日時」表示用。同期を試行するたび
   // (成功/失敗いずれも)更新する。既存行はnull(過去分は表示上「—」扱い)。
   lastAttemptedAt DateTime?
+  // 2026-09-29追加(PO承認、Salesforce連携P0): 指数バックオフの次回実行予定時刻を
+  // 永続化する(従来はcreatedAt+2^retryCountをその都度計算するだけで、値自体は
+  // 保存していなかった)。retryPendingIntegrationEvents()の判定・運用画面の
+  // 「次回再送予定」表示の両方でこの列を使う。pending初回時・synced確定時はnull。
+  nextRetryAt DateTime?
 
   // 2026-09-28追加(PO再指摘、P0-Checkout接続): 「同じ実世界の出来事」を表すイベントの
   // 重複記録を防ぐための冪等キー。例: "trial_activated:<externalSubscriptionId>"。

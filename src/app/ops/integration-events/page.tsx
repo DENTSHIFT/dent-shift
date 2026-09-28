@@ -126,6 +126,23 @@ export default async function OpsIntegrationEventsPage({
           <span className={styles.countBadge}>{total}件</span>
         </div>
 
+        <div style={{ marginBottom: 18 }}>
+          <a
+            href="/api/ops/integration-events/export"
+            style={{
+              display: "inline-block",
+              padding: "8px 14px",
+              borderRadius: 6,
+              border: "1px solid #d1d5db",
+              color: "#111827",
+              textDecoration: "none",
+              fontSize: 14,
+            }}
+          >
+            未同期・失敗分をCSV出力
+          </a>
+        </div>
+
         <form method="GET" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18, alignItems: "flex-end" }}>
           <label style={{ fontSize: 12, fontWeight: 650, color: "#40506a" }}>
             ステータス
