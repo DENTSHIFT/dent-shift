@@ -83,11 +83,21 @@ function validateField(name: FieldName, value: string): string | null {
   }
 }
 
-// 解析演出の合計時間(ms)。2026-09-06のユーザー指示「最低12秒にしてください。APIが500msで
-// 終わっても12秒未満では結果へ遷移しないこと。逆にAPIが12秒以上かかった場合はAPI完了まで
-// 待つこと」に対応する「最低表示時間」。実際の遷移可否はdiagnosisFlow.tsのshouldNavigateToResult
-// が判定する(analysisCompleted && apiCompleted の両方が必要)。
-const ANALYZING_DURATION_MS = 12000;
+// 2026-09-29修正(PO指示): 実測でAPI完了(13.5秒)後もさらに待たされる体感遅延が
+// 確認されたため、固定12秒の演出を廃止する。「最低表示時間」は画面の急な点滅を避ける
+// ためだけの短い時間(2〜3秒)にとどめ、それ以降はAPI完了(apiCompleted)を待つだけにする。
+// 実際の遷移可否は従来どおりdiagnosisFlow.tsのshouldNavigateToResultが判定する
+// (analysisCompleted && apiCompleted の両方が必要という条件自体は変更しない)。
+const MIN_DISPLAY_MS = 2500;
+// 最低表示時間の間に進捗バーを引き上げる上限(%)。ここで一旦止め、以後はAPI完了まで
+// ゆっくり進み続けているように見せる(進捗が完全に止まって見えないようにするため)。
+const STALL_DISPLAY_PERCENT = 92;
+// 90〜95%以降でAPIがまだ完了していない場合の追加案内文言(PO指示)はAnalyzingScreen.tsx側
+// (roundedPercent >= 90)で表示する。STALL_DISPLAY_PERCENT(92)がこの範囲に収まるよう揃える。
+// 2026-09-29追加(PO指示): 診断処理が異常に長引いた場合、無限に待たせず
+// エラー+再試行導線へ切り替えるタイムアウト。実測の外部AI呼び出しは最大13秒程度
+// だったため、通常の変動を吸収しつつ「行き止まり」を防ぐ値として45秒を設定する。
+const ANALYSIS_TIMEOUT_MS = 45000;
 
 export default function DiagnosisPage() {
   const router = useRouter();
@@ -111,7 +121,7 @@ export default function DiagnosisPage() {
   // 解析中演出の状態(2026-09-06 / 追加ユーザー指示: 実Macで「解析中画面がほぼ表示されず
   // 即時遷移する」問題への対応として、状態を明確な3つの独立フラグへ分離する)。
   // - flowState: "form" | "analyzing" | "error" (ユーザー指示の型をそのまま採用)
-  // - analysisCompleted: 最低表示時間(ANALYZING_DURATION_MS)が経過したか(UX表示専用)
+  // - analysisCompleted: 最低表示時間(MIN_DISPLAY_MS)が経過したか(UX表示専用)
   // - apiCompleted: POST /api/diagnosisが成功し、diagnosisIdを取得できたか
   // 結果画面への遷移可否は、この3つの状態から純粋関数shouldNavigateToResult()が判定し、
   // router.push呼び出しはファイル内でuseEffect 1箇所のみに限定する
@@ -129,6 +139,10 @@ export default function DiagnosisPage() {
   // submit/retryのたびに増分するリクエスト世代番号。古い(キャンセル済み)fetchの結果が
   // 後から解決しても、現在の世代と一致しない場合はstateを更新しない(2重送信・連打対策)。
   const requestGenerationRef = useRef(0);
+  // rAFのtick()クロージャ内から最新のapiCompletedを読むためのref(2026-09-29追加)。
+  // tick()はuseEffect実行時点でキャプチャされたクロージャのため、Reactのstate更新を
+  // 直接は読めない。apiCompletedのstate更新と同時にこのrefも更新する。
+  const apiCompletedRef = useRef(false);
   const allowDuplicateClinicRef = useRef(false);
   // 2026-09-24: Instagram等の流入チャネル別に診断「開始」と「完了」を比較するためのUTM値
   // (5項目)。URLのクエリから読み取るだけで、フォームUI上には表示しない(値はrefで保持)。
@@ -271,6 +285,7 @@ export default function DiagnosisPage() {
         return;
       }
       setDiagnosisId(data.diagnosisId);
+      apiCompletedRef.current = true;
       setApiCompleted(true);
     } catch {
       if (requestGenerationRef.current !== generation) return;
@@ -280,6 +295,9 @@ export default function DiagnosisPage() {
   }
 
   // 解析中フェーズに入ったら、最低表示時間の進捗アニメーションとAPI呼び出しを同時に開始する。
+  // 2026-09-29修正(PO指示): 「APIが速く終わっても最低表示時間(2〜3秒)より前には遷移しない
+  // (点滅防止)」「APIが遅い場合は進捗表示を止めず、90%以降は案内文言を出す」
+  // 「異常に長引いた場合はタイムアウトしてエラー+再試行導線を出す」の3点に対応する。
   useEffect(() => {
     if (flowState !== "analyzing") return;
     const generation = requestGenerationRef.current;
@@ -288,23 +306,52 @@ export default function DiagnosisPage() {
     function tick(now: number) {
       if (requestGenerationRef.current !== generation) return; // retry等で世代が進んだら停止
       const elapsed = now - startedAt;
-      const next = Math.min(100, (elapsed / ANALYZING_DURATION_MS) * 100);
-      setPercent(next);
-      if (next >= 100) {
+      const minDisplayElapsed = elapsed >= MIN_DISPLAY_MS;
+
+      if (minDisplayElapsed) {
+        // 最低表示時間の経過だけを表す(従来のanalysisCompletedの意味と同じ)。
+        // 以後の遷移可否はshouldNavigateToResult()がapiCompletedと合わせて判定する。
         setAnalysisCompleted(true);
-        rafRef.current = null;
-      } else {
-        rafRef.current = requestAnimationFrame(tick);
       }
+
+      if (minDisplayElapsed && apiCompletedRef.current) {
+        // 最低表示時間経過 かつ API完了済み: 演出を締めくくり、以後のフレームは不要。
+        setPercent(100);
+        rafRef.current = null;
+        return;
+      }
+
+      const next = minDisplayElapsed
+        ? // 最低表示時間経過後、API完了を待つ間も進捗が止まって見えないよう、
+          // STALL_DISPLAY_PERCENTから99%までゆっくり進み続ける(演出専用、実処理とは無関係)。
+          Math.min(99, STALL_DISPLAY_PERCENT + (elapsed - MIN_DISPLAY_MS) / 200)
+        : (elapsed / MIN_DISPLAY_MS) * STALL_DISPLAY_PERCENT;
+      setPercent(next);
+      rafRef.current = requestAnimationFrame(tick);
     }
     rafRef.current = requestAnimationFrame(tick);
     void submitDiagnosis(generation);
+
+    // 2026-09-29追加(PO指示): 診断処理が長時間終わらない場合の行き止まり防止。
+    const timeoutId = window.setTimeout(() => {
+      if (requestGenerationRef.current !== generation) return; // 既に完了/リトライ済みなら何もしない
+      requestGenerationRef.current += 1; // 後から遅れて届く結果を無視する
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      setApiErrorMessage(
+        "診断処理に時間がかかっています。時間をおいて再度お試しください。"
+      );
+      setFlowState("error");
+    }, ANALYSIS_TIMEOUT_MS);
 
     return () => {
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
+      window.clearTimeout(timeoutId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowState]);
@@ -329,6 +376,7 @@ export default function DiagnosisPage() {
   function startAnalysis(allowDuplicateClinic: boolean) {
     allowDuplicateClinicRef.current = allowDuplicateClinic;
     requestGenerationRef.current += 1;
+    apiCompletedRef.current = false;
     setPercent(0);
     setAnalysisCompleted(false);
     setApiCompleted(false);
@@ -391,6 +439,7 @@ export default function DiagnosisPage() {
 
   function handleRetry() {
     requestGenerationRef.current += 1; // 進行中のfetch/rAFの結果を無効化する
+    apiCompletedRef.current = false;
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;

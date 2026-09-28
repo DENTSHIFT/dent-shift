@@ -215,9 +215,12 @@ export function AnalyzingScreen({ percent, apiStatus, errorMessage, onRetry }: A
         ))}
       </div>
 
-      {apiStatus === "pending" && roundedPercent >= 100 && (
+      {/* 2026-09-29修正(PO指示): 従来は100%到達後のみ案内していたが、演出の最低表示時間を
+          2〜3秒へ短縮したことで、90〜95%の間はAPI完了待ちの状態が続くケースが増える。
+          その間も「止まっている」と感じさせないよう、90%以降は継続して案内文言を表示する。 */}
+      {apiStatus === "pending" && roundedPercent >= 90 && (
         <p style={{ margin: "16px 0 0", fontSize: 12, color: MUTED, textAlign: "center" }}>
-          結果を確認しています…
+          分析結果をまとめています。もう少しお待ちください。
         </p>
       )}
 
