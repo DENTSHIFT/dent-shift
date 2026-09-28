@@ -195,4 +195,50 @@ describe("POST /api/billing/webhook", () => {
       expect(response.status).toBe(200);
     });
   });
+
+  describe("2026-09-29追加(PO承認、Salesforce連携P0-2): subscription_canceledのDB記録と外部同期の分離", () => {
+    it("subscriptionCanceledIntegrationEventIdがある場合のみSalesforce同期を試行する", async () => {
+      mocks.apply.mockResolvedValue({
+        result: "processed",
+        notify: null,
+        trialActivated: null,
+        subscriptionActivated: null,
+        subscriptionActivatedIntegrationEventId: null,
+        subscriptionCanceled: { clinicId: "clinic-1", externalSubscriptionId: "sub_1" },
+        subscriptionCanceledIntegrationEventId: "integration-event-cancel-1",
+      });
+      const response = await POST(request());
+      expect(response.status).toBe(200);
+      expect(mocks.syncIntegrationEvent).toHaveBeenCalledWith("integration-event-cancel-1");
+    });
+
+    it("dedupeによりintegrationEventIdがnull(既に別経路が記録済み)の場合は同期を試行しない", async () => {
+      mocks.apply.mockResolvedValue({
+        result: "processed",
+        notify: null,
+        trialActivated: null,
+        subscriptionActivated: null,
+        subscriptionActivatedIntegrationEventId: null,
+        subscriptionCanceled: { clinicId: "clinic-1", externalSubscriptionId: "sub_1" },
+        subscriptionCanceledIntegrationEventId: null,
+      });
+      await POST(request());
+      expect(mocks.syncIntegrationEvent).not.toHaveBeenCalled();
+    });
+
+    it("同期失敗はWebhookの200応答をブロックしない(DB記録と外部同期の分離)", async () => {
+      mocks.apply.mockResolvedValue({
+        result: "processed",
+        notify: null,
+        trialActivated: null,
+        subscriptionActivated: null,
+        subscriptionActivatedIntegrationEventId: null,
+        subscriptionCanceled: { clinicId: "clinic-1", externalSubscriptionId: "sub_1" },
+        subscriptionCanceledIntegrationEventId: "integration-event-cancel-1",
+      });
+      mocks.syncIntegrationEvent.mockRejectedValue(new Error("salesforce timeout"));
+      const response = await POST(request());
+      expect(response.status).toBe(200);
+    });
+  });
 });

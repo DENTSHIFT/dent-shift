@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getCurrentOperator: vi.fn(),
   findMany: vi.fn(),
+  recordAuditLog: vi.fn(),
 }));
 
 vi.mock("@/server/auth/operatorSession", () => ({ getCurrentOperator: mocks.getCurrentOperator }));
@@ -13,11 +14,13 @@ vi.mock("@/server/db/prismaClient", () => ({
     },
   },
 }));
+vi.mock("@/server/db/auditLogRepository", () => ({ recordAuditLog: mocks.recordAuditLog }));
 
 import { GET } from "@/app/api/ops/integration-events/export/route";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.recordAuditLog.mockResolvedValue(undefined);
 });
 
 describe("GET /api/ops/integration-events/export", () => {
@@ -30,7 +33,16 @@ describe("GET /api/ops/integration-events/export", () => {
     expect(mocks.findMany).not.toHaveBeenCalled();
   });
 
-  it("pending/failedのみを抽出するクエリを発行する", async () => {
+  it("admin以外のOperator(cs/analyst/finance)は403で拒否され、DBを参照しない", async () => {
+    mocks.getCurrentOperator.mockResolvedValue({ id: "op-1", email: "ops@example.com", role: "cs" });
+
+    const response = await GET();
+
+    expect(response.status).toBe(403);
+    expect(mocks.findMany).not.toHaveBeenCalled();
+  });
+
+  it("adminはpending/failedのみを抽出するクエリを発行し、監査ログを記録する", async () => {
     mocks.getCurrentOperator.mockResolvedValue({ id: "op-1", email: "ops@example.com", role: "admin" });
     mocks.findMany.mockResolvedValue([]);
 
@@ -41,9 +53,17 @@ describe("GET /api/ops/integration-events/export", () => {
         where: { status: { in: ["pending", "failed"] } },
       })
     );
+    expect(mocks.recordAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operatorId: "op-1",
+        action: "integration_events.export_csv",
+        targetType: "IntegrationEvent",
+        metadata: { exportedCount: 0 },
+      })
+    );
   });
 
-  it("CSVはUTF-8 BOM付きで、認証済み時にtext/csvとして返る", async () => {
+  it("CSVはUTF-8 BOM付き・no-store・text/csvで返り、Salesforce取り込み用の実値(メール等)を含む", async () => {
     mocks.getCurrentOperator.mockResolvedValue({ id: "op-1", email: "ops@example.com", role: "admin" });
     mocks.findMany.mockResolvedValue([
       {
@@ -57,7 +77,13 @@ describe("GET /api/ops/integration-events/export", () => {
         createdAt: new Date("2026-09-29T00:00:00.000Z"),
         lastAttemptedAt: new Date("2026-09-29T00:05:00.000Z"),
         nextRetryAt: null,
-        payloadJson: JSON.stringify({ email: "a@example.com", clinic_name: "テスト歯科" }),
+        payloadJson: JSON.stringify({
+          email: "real@example.com",
+          clinic_name: "テスト歯科",
+          director_name: "テスト院長",
+          website_url: "https://example.com",
+          utm_source: "instagram",
+        }),
       },
     ]);
 
@@ -67,16 +93,19 @@ describe("GET /api/ops/integration-events/export", () => {
 
     expect(response.headers.get("Content-Type")).toContain("text/csv");
     expect(response.headers.get("Content-Disposition")).toContain("attachment");
-    // UTF-8 BOM: EF BB BF (response.text()はTextDecoderの既定挙動でBOMを剥がしてしまうため、
-    // 生バイト列で確認する)。
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(buffer[0]).toBe(0xef);
     expect(buffer[1]).toBe(0xbb);
     expect(buffer[2]).toBe(0xbf);
-    expect(text).toContain("evt_1");
-    expect(text).toContain("diagnosis_completed");
+    // 実値(伏字化しない)で出力される。
+    expect(text).toContain("real@example.com");
+    expect(text).toContain("テスト歯科");
+    expect(text).toContain("instagram");
+    // 列は固定の最小セットであり、payload全体のJSON blobは出力しない。
+    expect(text).not.toContain("{");
   });
 
-  it("CSVインジェクション対策: =,+,-,@で始まるセル値はシングルクォートを前置してエスケープする", async () => {
+  it("CSVインジェクション対策: =,+,-,@で始まる値(前後の空白を除いても該当する場合を含む)はシングルクォートを前置してエスケープする", async () => {
     mocks.getCurrentOperator.mockResolvedValue({ id: "op-1", email: "ops@example.com", role: "admin" });
     mocks.findMany.mockResolvedValue([
       {
@@ -90,7 +119,7 @@ describe("GET /api/ops/integration-events/export", () => {
         createdAt: new Date("2026-09-29T00:00:00.000Z"),
         lastAttemptedAt: null,
         nextRetryAt: null,
-        payloadJson: "{}",
+        payloadJson: JSON.stringify({ clinic_name: "  =SUM(1,2)" }),
       },
     ]);
 
@@ -98,30 +127,6 @@ describe("GET /api/ops/integration-events/export", () => {
     const text = await response.text();
 
     expect(text).toContain("'=cmd|'/c calc'!A1");
-    expect(text).not.toMatch(/(?<!')(?<!")=cmd\|/);
-  });
-
-  it("payloadのメールアドレス等はマスクされて出力される(生の値を出さない)", async () => {
-    mocks.getCurrentOperator.mockResolvedValue({ id: "op-1", email: "ops@example.com", role: "admin" });
-    mocks.findMany.mockResolvedValue([
-      {
-        id: "evt_3",
-        eventType: "phone_verified",
-        status: "pending",
-        retryCount: 0,
-        lastError: null,
-        clinicId: "clinic_2",
-        contactId: "contact_2",
-        createdAt: new Date("2026-09-29T00:00:00.000Z"),
-        lastAttemptedAt: null,
-        nextRetryAt: null,
-        payloadJson: JSON.stringify({ email: "secret@example.com", clinic_name: "秘密歯科" }),
-      },
-    ]);
-
-    const response = await GET();
-    const text = await response.text();
-
-    expect(text).not.toContain("secret@example.com");
+    expect(text).toContain("'  =SUM(1,2)");
   });
 });

@@ -245,6 +245,49 @@ describe("consumeTrialEntitlementFromWebhook", () => {
     expect(clinicAfter?.trialConsumedAt?.toISOString()).toBe("2026-09-27T00:00:00.000Z");
   });
 
+  it("2026-09-29追加(PO承認、Salesforce連携P0-2): trial_activatedのpayloadへContact ID・プラン・同意日時を含める", async () => {
+    const clinic = await createClinic("-consume-payload");
+    const contact = await prisma.contact.create({
+      data: {
+        clinicId: clinic.id,
+        email: `owner-${clinic.id}@example.com`,
+        passwordHash: "hash",
+        role: "owner",
+        consentAcceptedAt: new Date("2026-09-01T00:00:00Z"),
+      },
+    });
+    await prisma.subscription.create({
+      data: {
+        clinicId: clinic.id,
+        plan: "standard",
+        status: "trial",
+        externalSubscriptionId: "sub_consume_payload",
+      },
+    });
+    const entitlementId = await reserveAndAttach(clinic.id, "cs_consume_payload");
+
+    const result = await repo.consumeTrialEntitlementFromWebhook({
+      trialEntitlementId: entitlementId,
+      clinicId: clinic.id,
+      checkoutSessionId: "cs_consume_payload",
+      externalSubscriptionId: "sub_consume_payload",
+      occurredAt: new Date("2026-09-27T00:00:00Z"),
+    });
+    expect(result.integrationEventId).toEqual(expect.any(String));
+
+    const event = await prisma.integrationEvent.findUniqueOrThrow({
+      where: { id: result.integrationEventId! },
+    });
+    expect(event.contactId).toBe(contact.id);
+    const payload = JSON.parse(event.payloadJson);
+    expect(payload).toEqual({
+      contact_id: contact.id,
+      consent_accepted_at: "2026-09-01T00:00:00.000Z",
+      plan: "standard",
+      status: "trial",
+    });
+  });
+
   it("metadataのclinicIdが不一致なら消費しない", async () => {
     const clinic = await createClinic("-mismatch-clinic");
     const otherClinic = await createClinic("-mismatch-clinic-other");

@@ -304,7 +304,14 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
       expect(events).toHaveLength(1);
       expect(events[0]?.clinicId).toBe(clinic.id);
       const payload = JSON.parse(events[0]!.payloadJson);
-      expect(payload).toEqual({ plan: "light", from_status: "trial", to_status: "active", via_trial: false });
+      expect(payload).toEqual({
+        plan: "light",
+        from_status: "trial",
+        to_status: "active",
+        via_trial: false,
+        contact_id: null,
+        consent_accepted_at: null,
+      });
     });
 
     it("トライアルなしの初回activeでも1件記録される(checkout_completed、Premium即時課金相当)", async () => {
@@ -553,6 +560,148 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
       });
       expect(events).toHaveLength(1);
     });
+
+    it("契約Contactが存在する場合、payloadへcontact_id・consent_accepted_atが含まれる", async () => {
+      const clinic = await createClinic("sub-active-contact");
+      const contact = await prisma.contact.create({
+        data: {
+          clinicId: clinic.id,
+          email: `owner-${clinic.id}@example.com`,
+          passwordHash: "hash",
+          role: "owner",
+          consentAcceptedAt: new Date("2026-09-01T00:00:00Z"),
+        },
+      });
+      const externalSubscriptionId = `sub_active_contact_${clinic.id}`;
+
+      const result = await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sa_contact_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "active",
+          occurredAt: new Date("2026-09-28T00:00:00Z"),
+        })
+      );
+      expect(result.subscriptionActivatedIntegrationEventId).toEqual(expect.any(String));
+
+      const event = await prisma.integrationEvent.findFirstOrThrow({
+        where: { dedupeKey: `subscription_activated:${externalSubscriptionId}` },
+      });
+      expect(event.contactId).toBe(contact.id);
+      const payload = JSON.parse(event.payloadJson);
+      expect(payload.contact_id).toBe(contact.id);
+      expect(payload.consent_accepted_at).toBe("2026-09-01T00:00:00.000Z");
+    });
+  });
+
+  describe("2026-09-29追加(PO承認、Salesforce連携P0-2): subscription_canceled(解約)", () => {
+    it("active→cancelledで1件記録される", async () => {
+      const clinic = await createClinic("sub-cancel-1");
+      const externalSubscriptionId = `sub_cancel_${clinic.id}`;
+
+      await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sc_create_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "active",
+          occurredAt: new Date("2026-09-28T00:00:00Z"),
+        })
+      );
+
+      const canceled = await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sc_cancel_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "cancelled",
+          occurredAt: new Date("2026-09-28T02:00:00Z"),
+        })
+      );
+      expect(canceled.subscriptionCanceled).toEqual({
+        clinicId: clinic.id,
+        externalSubscriptionId,
+        plan: "light",
+        fromStatus: "active",
+      });
+      expect(canceled.subscriptionCanceledIntegrationEventId).toEqual(expect.any(String));
+
+      const events = await prisma.integrationEvent.findMany({
+        where: { dedupeKey: `subscription_canceled:${externalSubscriptionId}` },
+      });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.clinicId).toBe(clinic.id);
+      const payload = JSON.parse(events[0]!.payloadJson);
+      expect(payload).toEqual({
+        plan: "light",
+        from_status: "active",
+        to_status: "cancelled",
+        contact_id: null,
+        consent_accepted_at: null,
+      });
+    });
+
+    it("同一Webhookの再送(同一providerEventId)ではsubscriptionCanceledは返らず、イベントも増えない", async () => {
+      const clinic = await createClinic("sub-cancel-2");
+      const externalSubscriptionId = `sub_cancel_resend_${clinic.id}`;
+      await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sc_resend_create_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "active",
+          occurredAt: new Date("2026-09-28T00:00:00Z"),
+        })
+      );
+      const command = subscriptionStatusCommand({
+        providerEventId: `evt_sc_resend_${clinic.id}`,
+        externalSubscriptionId,
+        clinicId: clinic.id,
+        status: "cancelled",
+        occurredAt: new Date("2026-09-28T02:00:00Z"),
+      });
+      const first = await billingRepository.applyBillingWebhookEvent(command);
+      expect(first.subscriptionCanceled).not.toBeNull();
+
+      const resent = await billingRepository.applyBillingWebhookEvent(command);
+      expect(resent.result).toBe("duplicate");
+      expect(resent.subscriptionCanceled).toBeNull();
+
+      const count = await prisma.integrationEvent.count({
+        where: { dedupeKey: `subscription_canceled:${externalSubscriptionId}` },
+      });
+      expect(count).toBe(1);
+    });
+
+    it("trial→cancelledでも1件記録される(トライアル中の即時解約)", async () => {
+      const clinic = await createClinic("sub-cancel-3");
+      const externalSubscriptionId = `sub_cancel_trial_${clinic.id}`;
+      await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sc_trial_create_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "trial",
+          occurredAt: new Date("2026-09-28T00:00:00Z"),
+        })
+      );
+      const canceled = await billingRepository.applyBillingWebhookEvent(
+        subscriptionStatusCommand({
+          providerEventId: `evt_sc_trial_cancel_${clinic.id}`,
+          externalSubscriptionId,
+          clinicId: clinic.id,
+          status: "cancelled",
+          occurredAt: new Date("2026-09-28T01:00:00Z"),
+        })
+      );
+      expect(canceled.subscriptionCanceled).toEqual({
+        clinicId: clinic.id,
+        externalSubscriptionId,
+        plan: "light",
+        fromStatus: "trial",
+      });
+    });
   });
 
   describe("実在しない医院へのWebhook(orphan webhook)", () => {
@@ -578,6 +727,8 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
           trialActivated: null,
           subscriptionActivated: null,
           subscriptionActivatedIntegrationEventId: null,
+          subscriptionCanceled: null,
+          subscriptionCanceledIntegrationEventId: null,
         });
         expect(await prisma.subscription.count({ where: { clinicId: MISSING_CLINIC_ID } })).toBe(0);
         // 存在しないclinicIdを外部キー付きで保存せず、通知の再送は重複としても扱える形で記録する。
@@ -652,6 +803,8 @@ describe("applyBillingWebhookEvent: notify(通知トリガー)", () => {
         trialActivated: null,
         subscriptionActivated: null,
         subscriptionActivatedIntegrationEventId: null,
+        subscriptionCanceled: null,
+        subscriptionCanceledIntegrationEventId: null,
       });
       expect(await prisma.payment.count({ where: { externalPaymentId: "in_invoice_race" } })).toBe(0);
       expect(

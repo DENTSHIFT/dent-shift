@@ -3,7 +3,7 @@ import {
   BillingConfigError,
   resolveBillingConfigFromProcessEnv,
 } from "@/server/config/billingConfig";
-import { applyBillingWebhookEvent } from "@/server/db/billingRepository";
+import { applyBillingWebhookEvent, findPrimaryContactPayloadFields } from "@/server/db/billingRepository";
 import {
   normalizeStripeBillingEvent,
   normalizeStripeOneTimePurchaseEvent,
@@ -112,6 +112,8 @@ export async function POST(request: Request) {
       trialActivated,
       subscriptionActivated,
       subscriptionActivatedIntegrationEventId,
+      subscriptionCanceled,
+      subscriptionCanceledIntegrationEventId,
     } = await applyBillingWebhookEvent(command);
 
     // 契約作成前に先着したinvoiceイベント。処理済みにせず、Stripeの再送で取りこぼしなく反映する。
@@ -127,10 +129,26 @@ export async function POST(request: Request) {
     // 同一Webhookイベント自体の再送はproviderEventIdの一意制約で"duplicate"となり
     // trialActivatedがnullになるため、そもそもここへ到達しない)。
     if (trialActivated) {
+      // 2026-09-29追加(PO承認、Salesforce連携P0-2): payloadへContact ID・契約状態・
+      // プラン・同意日時を追加する(トランザクションcommit後の読み取り専用クエリ、
+      // 外部通信ではない)。
+      const [contactFields, subscriptionForPlan] = await Promise.all([
+        findPrimaryContactPayloadFields(prisma, trialActivated.clinicId),
+        prisma.subscription.findUnique({
+          where: { externalSubscriptionId: trialActivated.externalSubscriptionId },
+          select: { plan: true },
+        }),
+      ]);
       await enqueueIntegrationEvent({
         eventType: "trial_activated",
         clinicId: trialActivated.clinicId,
-        payload: {},
+        contactId: contactFields.contactId,
+        payload: {
+          contact_id: contactFields.contactId,
+          consent_accepted_at: contactFields.consentAcceptedAt,
+          plan: subscriptionForPlan?.plan ?? null,
+          status: "trial",
+        },
         dedupeKey: `trial_activated:${trialActivated.externalSubscriptionId}`,
       }).catch((error) => {
         console.error(
@@ -149,6 +167,18 @@ export async function POST(request: Request) {
       await syncIntegrationEvent(subscriptionActivatedIntegrationEventId).catch((syncError) => {
         console.error(
           "[POST /api/billing/webhook] subscription_activated event sync failed (will retry via pending-event job):",
+          syncError
+        );
+      });
+    }
+
+    // 2026-09-29追加(PO承認、Salesforce連携P0-2): "subscription_canceled"のDB記録
+    // (outbox)自体はapplyBillingWebhookEvent()内の同一トランザクションで既に確定済み。
+    // subscriptionActivatedと同じ方針(DB記録と外部同期の失敗を分離)。
+    if (subscriptionCanceled && subscriptionCanceledIntegrationEventId) {
+      await syncIntegrationEvent(subscriptionCanceledIntegrationEventId).catch((syncError) => {
+        console.error(
+          "[POST /api/billing/webhook] subscription_canceled event sync failed (will retry via pending-event job):",
           syncError
         );
       });

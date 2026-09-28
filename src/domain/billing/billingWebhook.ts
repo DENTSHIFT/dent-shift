@@ -98,6 +98,18 @@ export interface SubscriptionActivatedSignal {
   viaTrial: boolean;
 }
 
+// 2026-09-29追加(PO承認、Salesforce連携P0-2): subscriptionActivatedと同じ根拠
+// (Stripe Webhookの確定情報)でstatusが実際に"cancelled"へ遷移した場合のシグナル。
+// dedupeKey(`subscription_canceled:${externalSubscriptionId}`)のDBユニーク制約により、
+// 同一Subscriptionにつき生涯1件だけ記録される("cancelled"は終端状態のため再遷移はない)。
+export interface SubscriptionCanceledSignal {
+  clinicId: string;
+  externalSubscriptionId: string;
+  plan: PlanId;
+  // 遷移前のstatus。
+  fromStatus: SubscriptionStatus;
+}
+
 export interface BillingWebhookApplyOutcome {
   result: BillingWebhookApplyResult;
   notify: BillingStatusNotification | null;
@@ -115,4 +127,10 @@ export interface BillingWebhookApplyOutcome {
   // 場合(=既にその契約の初回active化が記録済み)はnull。呼び出し元(webhook route)が
   // 新規作成された場合のみベストエフォートでSalesforce同期を1回試行するために使う。
   subscriptionActivatedIntegrationEventId: string | null;
+  // 2026-09-29追加(PO承認、Salesforce連携P0-2): 解約(cancelled)への実際の遷移シグナル。
+  // subscriptionActivatedと同じ設計(dedupeによりSubscriptionにつき生涯1件)。
+  subscriptionCanceled: SubscriptionCanceledSignal | null;
+  // 上のsubscriptionCanceledに伴い、同一トランザクション内で新規作成された
+  // "subscription_canceled" IntegrationEvent行のid。新規作成されなかった場合はnull。
+  subscriptionCanceledIntegrationEventId: string | null;
 }

@@ -14,6 +14,7 @@ import type {
   BillingWebhookCommand,
   BillingWebhookIdentity,
   SubscriptionActivatedSignal,
+  SubscriptionCanceledSignal,
   TrialActivatedSignal,
 } from "@/domain/billing/billingWebhook";
 import { confirmAttributionForClinic } from "./ambassadorRepository";
@@ -102,6 +103,35 @@ export async function updateSubscriptionPaymentMethodStatus(input: {
     where: { id: input.subscriptionId },
     data: { paymentMethodStatus: input.paymentMethodStatus },
   });
+}
+
+/**
+ * 契約状態変化イベント(subscription_activated/subscription_canceled/trial_activated)の
+ * payloadに含めるContact ID・同意日時を1件だけ選んで返す(2026-09-29追加、PO承認、
+ * Salesforce連携P0-2)。医院に複数Contactが存在する場合、role="owner"を優先し、
+ * 無ければ最も古いContactを使う(Salesforce側でLeadと紐付ける代表者を1名に絞るため)。
+ * 外部通信は行わない(DB読み取りのみ)。tx・prismaのどちらからも呼べる。
+ */
+export async function findPrimaryContactPayloadFields(
+  db: Prisma.TransactionClient,
+  clinicId: string
+): Promise<{ contactId: string | null; consentAcceptedAt: string | null }> {
+  const owner = await db.contact.findFirst({
+    where: { clinicId, role: "owner" },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, consentAcceptedAt: true },
+  });
+  const contact =
+    owner ??
+    (await db.contact.findFirst({
+      where: { clinicId },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, consentAcceptedAt: true },
+    }));
+  return {
+    contactId: contact?.id ?? null,
+    consentAcceptedAt: contact?.consentAcceptedAt ? contact.consentAcceptedAt.toISOString() : null,
+  };
 }
 
 async function findOrCreateWebhookSubscription(
@@ -224,6 +254,8 @@ async function applyBillingWebhookEventOnce(
         trialActivated: null,
         subscriptionActivated: null,
         subscriptionActivatedIntegrationEventId: null,
+        subscriptionCanceled: null,
+        subscriptionCanceledIntegrationEventId: null,
       };
     }
 
@@ -233,6 +265,8 @@ async function applyBillingWebhookEventOnce(
     let trialActivated: TrialActivatedSignal | null = null;
     let subscriptionActivated: SubscriptionActivatedSignal | null = null;
     let subscriptionActivatedIntegrationEventId: string | null = null;
+    let subscriptionCanceled: SubscriptionCanceledSignal | null = null;
+    let subscriptionCanceledIntegrationEventId: string | null = null;
 
     if (input.action.kind === "ignored") {
       result = "ignored";
@@ -285,6 +319,8 @@ async function applyBillingWebhookEventOnce(
               trialActivated: null,
               subscriptionActivated: null,
               subscriptionActivatedIntegrationEventId: null,
+              subscriptionCanceled: null,
+              subscriptionCanceledIntegrationEventId: null,
             };
           }
         }
@@ -371,19 +407,60 @@ async function applyBillingWebhookEventOnce(
           // (=Subscription状態更新を含むこのトランザクション全体が問題なくCOMMITできる)。
           const dedupeKey = `subscription_activated:${subscriptionActivated.externalSubscriptionId}`;
           const newIntegrationEventId = crypto.randomUUID();
+          // 2026-09-29追加(PO承認、Salesforce連携P0-2): 契約状態変化の同期にContact ID・
+          // 同意日時を追加する(DB読み取りのみ、外部通信はしない)。
+          const contactFields = await findPrimaryContactPayloadFields(tx, subscriptionActivated.clinicId);
           const payloadJson = JSON.stringify({
             plan: subscriptionActivated.plan,
             from_status: subscriptionActivated.fromStatus ?? "none",
             to_status: "active",
             via_trial: subscriptionActivated.viaTrial,
+            contact_id: contactFields.contactId,
+            consent_accepted_at: contactFields.consentAcceptedAt,
           });
           const insertedRows = await tx.$queryRaw<{ id: string }[]>`
-            INSERT INTO "IntegrationEvent" ("id", "eventType", "payloadJson", "status", "clinicId", "dedupeKey")
-            VALUES (${newIntegrationEventId}, ${"subscription_activated"}, ${payloadJson}, ${"pending"}, ${subscriptionActivated.clinicId}, ${dedupeKey})
+            INSERT INTO "IntegrationEvent" ("id", "eventType", "payloadJson", "status", "clinicId", "contactId", "dedupeKey")
+            VALUES (${newIntegrationEventId}, ${"subscription_activated"}, ${payloadJson}, ${"pending"}, ${subscriptionActivated.clinicId}, ${contactFields.contactId}, ${dedupeKey})
             ON CONFLICT ("dedupeKey") DO NOTHING
             RETURNING "id"
           `;
           subscriptionActivatedIntegrationEventId = insertedRows[0]?.id ?? null;
+        }
+        // 2026-09-29追加(PO承認、Salesforce連携P0-2): statusが実際に(cancelled以外)→
+        // cancelledへ遷移した瞬間を検知する。"cancelled"は終端状態(遷移先を持たない)のため、
+        // 判定根拠はstatusBeforeTrialCheck(このWebhook処理が始まる前の実際の状態)で十分
+        // (subscriptionActivatedと同じ設計。同一Subscriptionにつき生涯1件だけ記録される)。
+        if (
+          subscription &&
+          subscription.status === "cancelled" &&
+          statusBeforeTrialCheck !== "cancelled" &&
+          statusBeforeTrialCheck !== null &&
+          subscription.externalSubscriptionId &&
+          isPlanId(subscription.plan)
+        ) {
+          subscriptionCanceled = {
+            clinicId: subscription.clinicId,
+            externalSubscriptionId: subscription.externalSubscriptionId,
+            plan: subscription.plan,
+            fromStatus: statusBeforeTrialCheck,
+          };
+          const cancelDedupeKey = `subscription_canceled:${subscriptionCanceled.externalSubscriptionId}`;
+          const newCancelIntegrationEventId = crypto.randomUUID();
+          const cancelContactFields = await findPrimaryContactPayloadFields(tx, subscriptionCanceled.clinicId);
+          const cancelPayloadJson = JSON.stringify({
+            plan: subscriptionCanceled.plan,
+            from_status: subscriptionCanceled.fromStatus,
+            to_status: "cancelled",
+            contact_id: cancelContactFields.contactId,
+            consent_accepted_at: cancelContactFields.consentAcceptedAt,
+          });
+          const insertedCancelRows = await tx.$queryRaw<{ id: string }[]>`
+            INSERT INTO "IntegrationEvent" ("id", "eventType", "payloadJson", "status", "clinicId", "contactId", "dedupeKey")
+            VALUES (${newCancelIntegrationEventId}, ${"subscription_canceled"}, ${cancelPayloadJson}, ${"pending"}, ${subscriptionCanceled.clinicId}, ${cancelContactFields.contactId}, ${cancelDedupeKey})
+            ON CONFLICT ("dedupeKey") DO NOTHING
+            RETURNING "id"
+          `;
+          subscriptionCanceledIntegrationEventId = insertedCancelRows[0]?.id ?? null;
         }
         if (input.action.kind === "invoice_status" && subscription) {
           await tx.payment.upsert({
@@ -431,6 +508,8 @@ async function applyBillingWebhookEventOnce(
       trialActivated,
       subscriptionActivated,
       subscriptionActivatedIntegrationEventId,
+      subscriptionCanceled,
+      subscriptionCanceledIntegrationEventId,
     };
   }, WEBHOOK_TRANSACTION_OPTIONS);
 }

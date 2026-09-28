@@ -7,7 +7,7 @@ import {
   isClinicTrialEligible,
   isTrialEntitlementStatus,
 } from "@/domain/billing/trialEntitlement";
-import { retryOnConcurrentWrite } from "./billingRepository";
+import { retryOnConcurrentWrite, findPrimaryContactPayloadFields } from "./billingRepository";
 
 export class TrialEntitlementRepositoryError extends Error {}
 
@@ -355,9 +355,24 @@ async function consumeTrialEntitlementFromWebhookOnce(input: {
     // trialEntitlementRepository.test.tsでSQLite上の動作を検証。PostgreSQL実接続での
     // 検証結果・可否は別途報告する)。
     const newIntegrationEventId = crypto.randomUUID();
+    // 2026-09-29追加(PO承認、Salesforce連携P0-2): trial_activatedのpayloadへ
+    // Contact ID・契約状態・プラン・同意日時を追加する(DB読み取りのみ、外部通信はしない)。
+    const [contactFields, subscriptionForPlan] = await Promise.all([
+      findPrimaryContactPayloadFields(tx, input.clinicId),
+      tx.subscription.findUnique({
+        where: { externalSubscriptionId: input.externalSubscriptionId },
+        select: { plan: true },
+      }),
+    ]);
+    const trialActivatedPayloadJson = JSON.stringify({
+      contact_id: contactFields.contactId,
+      consent_accepted_at: contactFields.consentAcceptedAt,
+      plan: subscriptionForPlan?.plan ?? null,
+      status: "trial",
+    });
     const insertedRows = await tx.$queryRaw<{ id: string }[]>`
-      INSERT INTO "IntegrationEvent" ("id", "eventType", "payloadJson", "status", "clinicId", "dedupeKey")
-      VALUES (${newIntegrationEventId}, ${"trial_activated"}, ${"{}"}, ${"pending"}, ${input.clinicId}, ${`trial_activated:${input.externalSubscriptionId}`})
+      INSERT INTO "IntegrationEvent" ("id", "eventType", "payloadJson", "status", "clinicId", "contactId", "dedupeKey")
+      VALUES (${newIntegrationEventId}, ${"trial_activated"}, ${trialActivatedPayloadJson}, ${"pending"}, ${input.clinicId}, ${contactFields.contactId}, ${`trial_activated:${input.externalSubscriptionId}`})
       ON CONFLICT ("dedupeKey") DO NOTHING
       RETURNING "id"
     `;

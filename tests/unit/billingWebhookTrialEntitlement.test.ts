@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => {
     retrieveStripeSubscription: vi.fn(),
     scheduleStripeSubscriptionCancellation: vi.fn(),
     syncIntegrationEvent: vi.fn(),
+    findPrimaryContactPayloadFields: vi.fn(),
+    subscriptionFindUnique: vi.fn(),
   };
 });
 
@@ -42,6 +44,7 @@ vi.mock("@/server/providers/billing/stripeWebhookProvider", () => ({
 }));
 vi.mock("@/server/db/billingRepository", () => ({
   applyBillingWebhookEvent: mocks.apply,
+  findPrimaryContactPayloadFields: mocks.findPrimaryContactPayloadFields,
 }));
 vi.mock("@/server/services/sendBillingStatusChangeEmail", () => ({
   sendBillingStatusChangeEmail: mocks.sendBillingStatusChangeEmail,
@@ -56,7 +59,10 @@ vi.mock("@/server/services/activateTrial", () => ({
   activateTrialIfEligible: mocks.activateTrialIfEligible,
 }));
 vi.mock("@/server/db/prismaClient", () => ({
-  prisma: { contact: { findMany: mocks.contactFindMany } },
+  prisma: {
+    contact: { findMany: mocks.contactFindMany },
+    subscription: { findUnique: mocks.subscriptionFindUnique },
+  },
 }));
 vi.mock("@/server/db/optionOrderRepository", () => ({ applyOptionOrderWebhookEvent: vi.fn() }));
 vi.mock("@/server/services/optionOrders/generateInstructionPdfArtifact", () => ({
@@ -142,6 +148,8 @@ beforeEach(() => {
   mocks.enqueueIntegrationEvent.mockResolvedValue(undefined);
   mocks.activateTrialIfEligible.mockResolvedValue(undefined);
   mocks.contactFindMany.mockResolvedValue([]);
+  mocks.findPrimaryContactPayloadFields.mockResolvedValue({ contactId: null, consentAcceptedAt: null });
+  mocks.subscriptionFindUnique.mockResolvedValue({ plan: "light" });
 });
 
 describe("POST /api/billing/webhook: TrialEntitlement消費(Stripe実データ検証あり)", () => {
@@ -267,6 +275,34 @@ describe("POST /api/billing/webhook: TrialEntitlement消費(Stripe実データ�
       expect.objectContaining({
         eventType: "trial_activated",
         dedupeKey: "trial_activated:sub_trial_1",
+      })
+    );
+  });
+
+  it("2026-09-29追加(PO承認、Salesforce連携P0-2): trial_activatedのpayloadにContact ID・プラン・同意日時・契約状態を含める", async () => {
+    mocks.apply.mockResolvedValue({
+      result: "processed",
+      notify: null,
+      trialActivated: { clinicId: "clinic-1", externalSubscriptionId: "sub_trial_1" },
+    });
+    mocks.findPrimaryContactPayloadFields.mockResolvedValue({
+      contactId: "contact-1",
+      consentAcceptedAt: "2026-09-01T00:00:00.000Z",
+    });
+    mocks.subscriptionFindUnique.mockResolvedValue({ plan: "standard" });
+
+    await POST(request());
+
+    expect(mocks.enqueueIntegrationEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "trial_activated",
+        contactId: "contact-1",
+        payload: {
+          contact_id: "contact-1",
+          consent_accepted_at: "2026-09-01T00:00:00.000Z",
+          plan: "standard",
+          status: "trial",
+        },
       })
     );
   });
