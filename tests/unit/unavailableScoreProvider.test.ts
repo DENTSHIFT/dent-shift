@@ -2,14 +2,41 @@ import { describe, expect, it } from "vitest";
 import { UnavailableScoreProvider } from "@/server/providers/scoring/unavailableScoreProvider";
 import { DOMAIN_CRITERIA, DOMAIN_ORDER } from "@/domain/diagnosis/scoreCriteria";
 import { calculateDomainScore, calculateScoreBreakdown } from "@/domain/diagnosis/scoring";
-import type { ScoreCriterionInput } from "@/server/providers/scoring/types";
+import type { CriterionScore, DomainKey } from "@/domain/diagnosis/types";
+import type { ScoreCriterionInput, ScoreProvider } from "@/server/providers/scoring/types";
 import type { AiObservationResult } from "@/server/providers/ai/types";
 
 /**
  * 2026-09-24: MockScoreProviderのseededRandomによる疑似乱数スコアを本番から排除する
  * ための回帰テスト。「実測できない領域には具体的な点数を出さない」「unavailable領域は
  * 総合スコアへ加算されない」ことを、実際のdomain層集計ロジック(scoring.ts)を通しても確認する。
+ *
+ * 2026-09-29修正(PO指示): LLMOはWebsiteAnalysisScoreProvider(実サイト取得)へ委譲される
+ * ようになったため、このファイルのテストでは実ネットワーク呼び出しを避けるべく、常に
+ * unavailableを返すfakeのLLMO providerを注入する(実際のLLMO実測挙動はwebsiteAnalysis
+ * ScoreProvider.test.tsでfake transport/HTML fixtureを使って個別に検証する)。
  */
+class AlwaysUnavailableFakeWebsiteProvider implements ScoreProvider {
+  readonly name = "fake-always-unavailable-website-provider";
+  async score(domain: DomainKey, input: ScoreCriterionInput): Promise<CriterionScore[]> {
+    void input;
+    return DOMAIN_CRITERIA[domain].map((def) => ({
+      key: def.key,
+      label: def.label,
+      maxScore: def.maxScore,
+      score: null,
+      status: "unavailable",
+      evidence: [{ summary: "fake: 実ネットワークを使わないテスト用スタブ", ruleKey: def.ruleKey }],
+      measuredAt: null,
+      dataSource: "website",
+      unavailableReason: "not_connected",
+    }));
+  }
+}
+
+function buildProvider(): UnavailableScoreProvider {
+  return new UnavailableScoreProvider(new AlwaysUnavailableFakeWebsiteProvider());
+}
 
 function buildAiObservations(): AiObservationResult[] {
   const base = {
@@ -45,7 +72,7 @@ function buildInput(overrides: Partial<ScoreCriterionInput> = {}): ScoreCriterio
 
 describe("UnavailableScoreProvider: 疑似乱数を使わないこと", () => {
   it("MEO/SEO/LLMO/WEB_BOOKING/REVIEWSは常にunavailableで、scoreはnull(具体的な点数を出さない)", async () => {
-    const provider = new UnavailableScoreProvider();
+    const provider = buildProvider();
     for (const domain of ["MEO", "SEO", "LLMO", "WEB_BOOKING", "REVIEWS"] as const) {
       const result = await provider.score(
         domain,
@@ -62,7 +89,7 @@ describe("UnavailableScoreProvider: 疑似乱数を使わないこと", () => {
   });
 
   it("AIOはai_search_presence/recommendation_rank/question_domain_coverageのみ値を持ち、citation_acquisition/information_accuracyはunavailable", async () => {
-    const provider = new UnavailableScoreProvider();
+    const provider = buildProvider();
     const result = await provider.score("AIO", buildInput());
 
     const grounded = ["ai_search_presence", "recommendation_rank", "question_domain_coverage"];
@@ -82,7 +109,7 @@ describe("UnavailableScoreProvider: 疑似乱数を使わないこと", () => {
   });
 
   it("どのdomain・criterionも'measured'を名乗らない(estimated/unavailableのみ)", async () => {
-    const provider = new UnavailableScoreProvider();
+    const provider = buildProvider();
     const input = buildInput({ gbpUrl: "https://maps.example.com/gbp", bookingUrl: "https://example.com/book" });
     for (const domain of DOMAIN_ORDER) {
       const result = await provider.score(domain, input);
@@ -95,7 +122,7 @@ describe("UnavailableScoreProvider: 疑似乱数を使わないこと", () => {
 
 describe("UnavailableScoreProvider × scoring.ts: 総合スコアへの反映", () => {
   it("unavailable領域は総合スコアのassessedMaxPoints/totalPointsに加算されない", async () => {
-    const provider = new UnavailableScoreProvider();
+    const provider = buildProvider();
     const input = buildInput({ gbpUrl: "https://maps.example.com/gbp", bookingUrl: "https://example.com/book" });
 
     const domainScores = await Promise.all(

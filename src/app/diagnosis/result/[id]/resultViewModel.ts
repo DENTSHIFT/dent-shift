@@ -55,7 +55,9 @@ export const UNAVAILABLE_REASON_LABEL_JA: Record<UnavailableReason, string> = {
 const DOMAIN_LABEL: Record<DomainKey, string> = {
   AIO: "AIO(AI検索最適化)",
   MEO: "MEO(地図検索)",
-  SEO: "SEO",
+  // 2026-09-29変更(PO承認): 表示ラベルのみ「SEO（検索エンジン上位表示）」に統一する
+  // (内部ID・DB値のDomainKey="SEO"自体は変更しない。全角括弧で統一)。
+  SEO: "SEO（検索エンジン上位表示）",
   LLMO: "LLMO(AI言語モデル最適化)",
   WEB_BOOKING: "Web予約",
   REVIEWS: "口コミ・信頼",
@@ -153,6 +155,8 @@ export interface DiagnosisResultData {
   totalStatus: OverallScoreStatus;
   scoreBreakdown: { domains: DomainScore[]; maxPoints: number; assessedMaxPoints: number; coverage: number };
   competitors: CompetitorClinic[];
+  // 2026-09-29追加(PO指示): 「現在の競合医院」の算出元となる生のAI観測(実データのみ)。
+  aiObservations: CurrentCompetitorRawObservation[];
   questionResults: PatientQuestionResult[];
   topImprovements: ImprovementCandidate[];
   adComplianceChecks: AdComplianceCheckResult;
@@ -414,6 +418,105 @@ export function buildCompetitorViewModels(competitors: CompetitorClinic[]): Comp
   }));
 }
 
+// 2026-09-29追加(PO指示): 「現在の競合医院」向けのAIプロバイダー内部識別子→院長向け表示名。
+// AiObservation.providerに保存される値("openai"等)を対象とする(既存PROVIDER_LABEL_JAは
+// evidence文字列内タグ("chatgpt"等)用の別語彙のため、ここでは混同せず専用の対応表を持つ)。
+const CURRENT_COMPETITOR_PROVIDER_LABEL_JA: Record<string, string> = {
+  openai: "ChatGPT",
+  gemini: "Gemini",
+};
+
+export interface CurrentCompetitorRawObservation {
+  question: string;
+  aiProvider: string;
+  competitorMentions: string[] | null;
+  capturedAt: Date | string;
+  // 2026-09-29追加(PO指示): AIO測定メタ情報(取得不能数)の算出にも同じ生観測を使う。
+  mentioned: boolean | null;
+}
+
+export interface CurrentCompetitorViewModel {
+  /** AI応答本文に実際に出現した名称そのもの(捏造・推測は一切含まない)。 */
+  name: string;
+  /** この名称が言及された、重複のない質問数。 */
+  mentionedQuestionCount: number;
+  /** この名称が言及された質問一覧(根拠質問への遷移用)。 */
+  mentionedQuestions: string[];
+  /** 測定に使われたAIプロバイダー(表示名)の一覧(重複排除)。 */
+  measurementProviders: string[];
+  /** 最も新しい測定日時(ISO文字列)。 */
+  measuredAt: string;
+}
+
+/**
+ * 「現在の競合医院」(2026-09-29追加、PO指示)。
+ *
+ * AiObservation.competitorsJson(実際にOpenAIの応答本文から検出された名称候補、
+ * competitorCandidateExtraction.tsが自院名を除外済みの実データ)だけを入力とする。
+ * ダミー名・推測名・架空名は一切生成しない(候補データが無ければ空配列を返すのみ)。
+ *
+ * 表記ゆれの正規化(normalizeForMatchingと同じ全角/半角統一・空白正規化)をキーにして
+ * 重複排除し、同一名称が複数質問で言及された場合は1件へ集約して言及質問数を集計する。
+ * 表示名(name)は正規化前の最初の出現時点の表記をそのまま使う(捏造しない)。
+ */
+export function buildCurrentCompetitorViewModels(
+  observations: CurrentCompetitorRawObservation[]
+): CurrentCompetitorViewModel[] {
+  // resultViewModel.tsは純粋なview-model層のため、normalizeForMatching自体は
+  // ここでは再実装せず、全角/半角・空白差だけを吸収する最小限の正規化に留める
+  // (このファイルからdomain/ai-measurement配下への依存を増やさないための判断。
+  // 実際の名寄せ精度はcompetitorCandidateExtraction.ts側の抽出品質に依る)。
+  const normalize = (name: string): string =>
+    name
+      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+      .replace(/[\s　]+/g, "")
+      .trim();
+
+  interface Aggregate {
+    name: string;
+    questions: Set<string>;
+    providers: Set<string>;
+    latestMeasuredAt: Date;
+  }
+  const byNormalizedName = new Map<string, Aggregate>();
+
+  for (const obs of observations) {
+    if (!obs.competitorMentions || obs.competitorMentions.length === 0) continue;
+    const providerLabel = CURRENT_COMPETITOR_PROVIDER_LABEL_JA[obs.aiProvider] ?? obs.aiProvider;
+    const capturedAt = obs.capturedAt instanceof Date ? obs.capturedAt : new Date(obs.capturedAt);
+    for (const rawName of obs.competitorMentions) {
+      const trimmed = rawName.trim();
+      if (trimmed.length === 0) continue;
+      const key = normalize(trimmed);
+      if (key.length === 0) continue;
+      const existing = byNormalizedName.get(key);
+      if (existing) {
+        existing.questions.add(obs.question);
+        existing.providers.add(providerLabel);
+        if (capturedAt > existing.latestMeasuredAt) existing.latestMeasuredAt = capturedAt;
+      } else {
+        byNormalizedName.set(key, {
+          name: trimmed,
+          questions: new Set([obs.question]),
+          providers: new Set([providerLabel]),
+          latestMeasuredAt: capturedAt,
+        });
+      }
+    }
+  }
+
+  return Array.from(byNormalizedName.values())
+    .map((agg) => ({
+      name: agg.name,
+      mentionedQuestionCount: agg.questions.size,
+      mentionedQuestions: Array.from(agg.questions),
+      measurementProviders: Array.from(agg.providers),
+      measuredAt: agg.latestMeasuredAt.toISOString(),
+    }))
+    // 言及質問数の多い順(同数の場合は名称の出現順を維持するためMapの挿入順に依存)。
+    .sort((a, b) => b.mentionedQuestionCount - a.mentionedQuestionCount);
+}
+
 export interface AdComplianceEvidenceViewModel {
   quotedText: string;
   sourceLocation: string;
@@ -571,6 +674,56 @@ export function buildMeasurementViewModel(
   };
 }
 
+// 2026-09-29追加(PO指示、10/1 P0範囲): AIOの測定メタ情報(プロバイダー・質問数・
+// 測定日時・取得不能数)を院長向けに明示する。Gemini/Google AIは実装が存在しないため、
+// 「実測済み」として表示するのはOpenAI(ChatGPT)の観測のみとする。
+const AIO_PROVIDER_LABEL_JA: Record<string, string> = {
+  openai: "ChatGPT",
+  chatgpt: "ChatGPT",
+  gemini: "Gemini",
+};
+
+export interface AioMeasurementRawObservation {
+  aiProvider: string;
+  /** null = provider障害等で取得不能(非言及と混同しない)。 */
+  mentioned: boolean | null;
+  capturedAt: Date | string;
+}
+
+export interface AioMeasurementSummaryViewModel {
+  /** 実際に測定を行ったプロバイダーの表示名一覧(重複排除)。観測が0件ならから配列。 */
+  providers: string[];
+  /** 対象質問数(=観測件数)。 */
+  questionCount: number;
+  /** 取得不能だった件数(provider障害等でmentionedがnullだった観測)。 */
+  unavailableCount: number;
+  /** 最も新しい測定日時(ISO文字列)。観測が0件ならnull。 */
+  measuredAtIso: string | null;
+}
+
+/**
+ * AIOの測定メタ情報を集計する(捏造せず、実際のaiObservationsだけから機械的に算出)。
+ */
+export function buildAioMeasurementSummary(
+  observations: AioMeasurementRawObservation[]
+): AioMeasurementSummaryViewModel {
+  const providers = new Set<string>();
+  let unavailableCount = 0;
+  let latest: Date | null = null;
+  for (const obs of observations) {
+    providers.add(AIO_PROVIDER_LABEL_JA[obs.aiProvider] ?? obs.aiProvider);
+    if (obs.mentioned === null) unavailableCount += 1;
+    const capturedAt = obs.capturedAt instanceof Date ? obs.capturedAt : new Date(obs.capturedAt);
+    if (!latest || capturedAt > latest) latest = capturedAt;
+  }
+  return {
+    providers: Array.from(providers),
+    questionCount: observations.length,
+    unavailableCount,
+    measuredAtIso: latest ? latest.toISOString() : null,
+  };
+}
+
 const LEGACY_DISCLAIMER_MARKERS = [
   "P0開発中のモックデータです",
   "実プロバイダーには接続していません",
@@ -611,6 +764,11 @@ export interface FreeDiagnosisResultViewModel {
   lossRootCauses: LossRootCauseViewModel[];
   topImprovements: ImprovementViewModel[];
   competitors: CompetitorViewModel[];
+  // 2026-09-29追加(PO指示): 「現在の競合医院」。旧competitors(UnavailableCompetitorProvider
+  // 由来、常に空)とは別の、実際のAI応答から検出された名称のみを持つ一覧。
+  currentCompetitors: CurrentCompetitorViewModel[];
+  // 2026-09-29追加(PO指示、10/1 P0範囲): AIOの測定メタ情報(プロバイダー/質問数/日時/取得不能数)。
+  aioMeasurement: AioMeasurementSummaryViewModel;
   adCompliance: AdComplianceViewModel;
   measurement: MeasurementViewModel;
 }
@@ -633,6 +791,8 @@ export function buildFreeDiagnosisResultViewModel(
     lossRootCauses: buildLossRootCauseViewModels(diagnosis.questionResults),
     topImprovements: buildImprovementViewModels(diagnosis.topImprovements),
     competitors: buildCompetitorViewModels(diagnosis.competitors),
+    currentCompetitors: buildCurrentCompetitorViewModels(diagnosis.aiObservations),
+    aioMeasurement: buildAioMeasurementSummary(diagnosis.aiObservations),
     adCompliance: buildAdComplianceViewModel(diagnosis.adComplianceChecks),
     measurement: buildMeasurementViewModel(
       diagnosis.measuredAt,

@@ -82,6 +82,89 @@ describe("ダッシュボードの正確性(未診断カードの文言・競合
     expect(source).toContain('<a href="#subscription">');
     expect(source).not.toContain('<Link href="#subscription">');
   });
+
+  // 2026-09-29追加(PO承認): 「相談は任意です。営業電話はありません。」等の表現を、
+  // 承認済みの統一文言(3行)へ置き換えた回帰テスト。
+  it("スペシャリスト相談の注記が、承認済みの統一文言(CSチーム対応・無理な営業なし)になっている", () => {
+    const source = dashboardSource();
+    expect(source).toContain("使い方や改善方法のご相談は、オンラインにてCSチームが対応します。");
+    expect(source).toContain("弊社から無理な営業は一切いたしません。");
+    expect(source).toContain("お気軽にご相談ください。");
+    expect(source).not.toContain("相談は任意です。営業電話はありません。");
+  });
+
+  // 2026-09-29追加(PO承認): AI集患総合スコアのドーナツ中央表示を「17」から「17点」へ
+  // (「点」は数値より小さいサイズで同一行に配置、実際の数値を動的に使用)。
+  it("AI集患総合スコアのドーナツ中央に、実際の数値+「点」を動的に表示する(固定値ではない)", () => {
+    const source = dashboardSource();
+    expect(source).toContain("{vm.result.overall.points}");
+    expect(source).toMatch(/\{vm\.result\.overall\.points\}\s*<span className=\{styles\.scoreUnit\}>点<\/span>/);
+  });
+
+  // 2026-09-29追加(PO承認): セクション順を「サンプル注意→AI集患総合スコア＋6領域スコア→
+  // AI選出率/優先課題数/取得状況→改善タスクと詳細」へ変更した回帰テスト。
+  it("overviewGrid(AI集患総合スコア＋6領域スコア)がmetricsGrid(簡易指標)より前に出現する", () => {
+    const source = dashboardSource();
+    const overviewIndex = source.indexOf('className={styles.overviewGrid}');
+    const metricsIndex = source.indexOf('className={styles.metricsGrid}');
+    expect(overviewIndex).toBeGreaterThan(-1);
+    expect(metricsIndex).toBeGreaterThan(-1);
+    expect(overviewIndex).toBeLessThan(metricsIndex);
+  });
+
+  it("簡易指標(metricsGrid)から重複する「総合スコア」カードが削除されている(AI選出率が最初のカード)", () => {
+    const source = dashboardSource();
+    const metricsIndex = source.indexOf('className={styles.metricsGrid}');
+    const nextCardMatch = source.slice(metricsIndex).match(/<p className=\{styles\.metricLabel\}>([^<]+)<\/p>/);
+    expect(nextCardMatch).not.toBeNull();
+    expect(nextCardMatch![1]).toBe("AI選出率");
+  });
+
+  it("改善TOP3(今月の優先改善 TOP3)はmetricsGridより後に出現する", () => {
+    const source = dashboardSource();
+    const metricsIndex = source.indexOf('className={styles.metricsGrid}');
+    const improvementsIndex = source.indexOf("今月の優先改善 TOP3");
+    expect(improvementsIndex).toBeGreaterThan(metricsIndex);
+  });
+});
+
+// 2026-09-29追加(PO承認): 診断結果画面の電話問い合わせCTA注記も、
+// 「ご不明点があれば〜こちらからの営業電話は一切行いません」から統一文言へ置き換えた回帰テスト。
+describe("診断結果画面のお電話問い合わせ注記の正確性", () => {
+  function resultPageSource(): string {
+    return readFileSync(
+      path.join(process.cwd(), "src/app/diagnosis/result/[id]/page.tsx"),
+      "utf8"
+    );
+  }
+
+  it("お電話でのお問い合わせ注記が、承認済みの統一文言(CSチーム対応・無理な営業なし)になっている", () => {
+    const source = resultPageSource();
+    expect(source).toContain("使い方や改善方法のご相談は、オンラインにてCSチームが対応します。");
+    expect(source).toContain("弊社から無理な営業は一切いたしません。");
+    expect(source).not.toContain(
+      "ご不明点があれば、お気軽にお電話ください。こちらからの営業電話は一切行いません。"
+    );
+  });
+
+  it("「相談は任意です」の別文脈(診断結果の閲覧・ご利用の条件ではない旨)は意味が異なるため維持する", () => {
+    const source = resultPageSource();
+    expect(source).toContain("相談は任意です。診断結果の閲覧・ご利用の条件ではありません。");
+  });
+
+  // 2026-09-29追加(PO承認): セクション順を「サンプル注意→AI集患総合スコア＋6領域スコア→
+  // AI選出率等の要約→改善タスクと詳細」へ変更した回帰テスト(order CSSの値を検証)。
+  it("6領域スコア(ds-order-domains)が要約(ds-order-summary)・改善TOP3(ds-order-top3)より前になるorder値である", () => {
+    const source = resultPageSource();
+    const orderOf = (cls: string): number => {
+      const match = source.match(new RegExp(`\\.${cls} \\{ order: (\\d+); \\}`));
+      expect(match).not.toBeNull();
+      return Number(match![1]);
+    };
+    expect(orderOf("ds-order-score")).toBeLessThan(orderOf("ds-order-domains"));
+    expect(orderOf("ds-order-domains")).toBeLessThan(orderOf("ds-order-summary"));
+    expect(orderOf("ds-order-summary")).toBeLessThan(orderOf("ds-order-top3"));
+  });
 });
 
 describe("オンボーディング導線の正確性", () => {

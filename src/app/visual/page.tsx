@@ -134,7 +134,7 @@ function PainPoints() {
 function WhatDiagnosisShows() {
   const domains = [
     { label: "MEO", desc: "Googleマップでの見え方" },
-    { label: "SEO", desc: "検索順位の状況" },
+    { label: "SEO（検索エンジン上位表示）", desc: "検索順位の状況" },
     { label: "LLMO", desc: "AI検索での引用されやすさ" },
     { label: "AIO", desc: "ChatGPT等での推薦状況" },
     { label: "口コミ", desc: "件数・鮮度・返信状況" },

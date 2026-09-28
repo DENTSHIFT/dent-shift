@@ -1,16 +1,37 @@
 import { describe, expect, it } from "vitest";
 import { UnavailableScoreProvider } from "@/server/providers/scoring/unavailableScoreProvider";
-import { DOMAIN_ORDER } from "@/domain/diagnosis/scoreCriteria";
+import { DOMAIN_CRITERIA, DOMAIN_ORDER } from "@/domain/diagnosis/scoreCriteria";
 import { calculateDomainScore, calculateScoreBreakdown } from "@/domain/diagnosis/scoring";
 import { buildTopImprovements } from "@/domain/improvement-task/priorityScoring";
-import type { ScoreCriterionInput } from "@/server/providers/scoring/types";
+import type { CriterionScore, DomainKey } from "@/domain/diagnosis/types";
+import type { ScoreCriterionInput, ScoreProvider } from "@/server/providers/scoring/types";
 import type { AiObservationResult } from "@/server/providers/ai/types";
 
 /**
  * 2026-09-24: UnavailableScoreProviderの出力を実際の改善TOP3生成パイプライン
  * (scoring.ts → priorityScoring.ts)へ通し、疑似乱数由来の「重大リスク」候補が
  * 二度と生成されないことをend-to-endに近い形で確認する回帰テスト。
+ *
+ * 2026-09-29修正(PO指示): LLMOはWebsiteAnalysisScoreProvider(実サイト取得)へ委譲される
+ * ようになったため、実ネットワーク呼び出しを避けるfakeのLLMO providerを注入する。
  */
+class AlwaysUnavailableFakeWebsiteProvider implements ScoreProvider {
+  readonly name = "fake-always-unavailable-website-provider";
+  async score(domain: DomainKey, input: ScoreCriterionInput): Promise<CriterionScore[]> {
+    void input;
+    return DOMAIN_CRITERIA[domain].map((def) => ({
+      key: def.key,
+      label: def.label,
+      maxScore: def.maxScore,
+      score: null,
+      status: "unavailable",
+      evidence: [{ summary: "fake: 実ネットワークを使わないテスト用スタブ", ruleKey: def.ruleKey }],
+      measuredAt: null,
+      dataSource: "website",
+      unavailableReason: "not_connected",
+    }));
+  }
+}
 function buildAiObservations(): AiObservationResult[] {
   const base = {
     aiProvider: "chatgpt" as const,
@@ -45,7 +66,7 @@ function buildInput(): ScoreCriterionInput {
 
 describe("UnavailableScoreProvider → 改善TOP3: 疑似データ由来の重大リスクが出ないこと", () => {
   it("改善TOP3には'risk_escalation'(重大リスク)候補が含まれず、'data_gap'候補のみになる", async () => {
-    const provider = new UnavailableScoreProvider();
+    const provider = new UnavailableScoreProvider(new AlwaysUnavailableFakeWebsiteProvider());
     const input = buildInput();
 
     const domainScores = await Promise.all(

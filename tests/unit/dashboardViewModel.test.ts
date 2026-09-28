@@ -38,6 +38,7 @@ function diagnosis(overrides: Partial<DiagnosisResultData> = {}): DiagnosisResul
       coverage: 1,
     },
     competitors: [],
+    aiObservations: [],
     questionResults: [
       {
         question: "質問1",

@@ -89,37 +89,20 @@ export interface AiProviderInfo {
 
 // 【重要】現時点でこの配列にClaudeは含めない(2026-09-06のユーザー指示: 「Claudeがこの医院の
 // 診断・分析を実行しているようには見せないでください」「ユーザー向け解析中画面には表示しない」)。
-// ChatGPT/Gemini/Google AIはP0のscoring/mockAiProvider側で実際にAI観点としてモデル化されて
-// いるためカード化しているが、Claudeは診断ロジック上のproviderではない。将来Claudeが正式な
-// 診断providerとして実装された場合のみ、この配列へ4件目のAiProviderInfo(displayName: "Claude"
-// 等)を追加し、下のpercentレンジ(15〜35%)を4分割し直せば、4枚目のAI観点カードへそのまま
-// 昇格できる。
+//
+// 2026-09-29修正(PO指示、10/1 P0範囲): Gemini/Google AIは実測を一切行っていない
+// (裏側の実装が存在しない)にもかかわらず「分析完了」と表示されており、虚偽表示に
+// あたるため削除する。実際に測定を行っているOpenAI(ChatGPT)のみを表示する。
+// 将来Gemini/Google AIの実測を実装した場合のみ、この配列へ追加しpercentレンジを
+// 再分割すること(未実装のまま表示だけ追加しない)。
 export const AI_PROVIDER_CARDS: AiProviderInfo[] = [
   {
     id: "chatgpt",
     displayName: "ChatGPT",
     shortLabel: "ChatGPT",
     logoSrc: null,
-    activeLabel: "ChatGPT観点を参考分析中",
+    activeLabel: "ChatGPT観点を分析中",
     from: 15,
-    to: 21.6667,
-  },
-  {
-    id: "gemini",
-    displayName: "Gemini",
-    shortLabel: "Gemini",
-    logoSrc: null,
-    activeLabel: "Gemini観点を参考分析中",
-    from: 21.6667,
-    to: 28.3333,
-  },
-  {
-    id: "google_ai",
-    displayName: "Google AI",
-    shortLabel: "Google AI",
-    logoSrc: null,
-    activeLabel: "Google AI検索観点を参考分析中",
-    from: 28.3333,
     to: 35,
   },
 ];

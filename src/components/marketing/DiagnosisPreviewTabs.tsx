@@ -78,7 +78,7 @@ function ScorePreview() {
         </div>
       </div>
       <div className={`${styles.cardGrid} ${styles.cardGrid3}`} style={{ marginTop: 16 }}>
-        {["AIO", "MEO", "SEO"].map((d, i) => (
+        {["AIO", "MEO", "SEO（検索エンジン上位表示）"].map((d, i) => (
           <div key={d} className={styles.card} style={{ padding: 12 }}>
             <p style={{ margin: 0, fontSize: 12, color: "#6B7280" }}>{d}</p>
             <p style={{ margin: "4px 0 0", fontSize: 15, fontWeight: 700, color: NAVY }}>{[70, 55, 60][i]}点</p>

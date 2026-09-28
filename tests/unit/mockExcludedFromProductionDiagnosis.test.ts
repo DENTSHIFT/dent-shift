@@ -5,6 +5,9 @@ import { UnavailableAiProvider } from "@/server/providers/ai/unavailableAiProvid
 import { UnavailableCompetitorProvider } from "@/server/providers/competitor/unavailableCompetitorProvider";
 import { UnavailableScoreProvider } from "@/server/providers/scoring/unavailableScoreProvider";
 import { UnavailableAdComplianceProvider } from "@/server/providers/ad-compliance/unavailableAdComplianceProvider";
+import { DOMAIN_CRITERIA } from "@/domain/diagnosis/scoreCriteria";
+import type { CriterionScore, DomainKey } from "@/domain/diagnosis/types";
+import type { ScoreCriterionInput, ScoreProvider } from "@/server/providers/scoring/types";
 
 /**
  * 2026-09-27(PO承認、P0最優先): 通常の無料診断(本番/testのcomposition rootと同じ
@@ -14,7 +17,30 @@ import { UnavailableAdComplianceProvider } from "@/server/providers/ad-complianc
  * tests/unit/runFreeDiagnosisCanonicalScoringIsolation.test.ts(2026-09-08承認の
  * 「canonical実測はscoreBreakdown/isSampleへ一切影響しない」分離)とは別の観点であり、
  * こちらは「legacy mockが一切影響しない」ことを保証する。
+ *
+ * 2026-09-29修正(PO指示): LLMOはWebsiteAnalysisScoreProvider(実サイト取得)へ委譲される
+ * ようになった。このテストの観点(mock混入が無いこと)とLLMO実測機能は無関係のため、
+ * 実ネットワーク呼び出しを避けるfakeのLLMO providerを注入し、「全領域unavailable」という
+ * このテスト本来の前提を維持する(LLMO実測自体の挙動はwebsiteAnalysisScoreProvider.test.ts
+ * で個別に検証する)。
  */
+class AlwaysUnavailableFakeWebsiteProvider implements ScoreProvider {
+  readonly name = "fake-always-unavailable-website-provider";
+  async score(domain: DomainKey, input: ScoreCriterionInput): Promise<CriterionScore[]> {
+    void input;
+    return DOMAIN_CRITERIA[domain].map((def) => ({
+      key: def.key,
+      label: def.label,
+      maxScore: def.maxScore,
+      score: null,
+      status: "unavailable",
+      evidence: [{ summary: "fake: 実ネットワークを使わないテスト用スタブ", ruleKey: def.ruleKey }],
+      measuredAt: null,
+      dataSource: "website",
+      unavailableReason: "not_connected",
+    }));
+  }
+}
 
 const PROD_LIKE_INPUT = {
   clinicName: "Mock除去検証歯科医院",
@@ -28,7 +54,7 @@ function prodLikeDeps(): RunFreeDiagnosisDeps {
   return {
     aiProvider: new UnavailableAiProvider(),
     competitorProvider: new UnavailableCompetitorProvider(),
-    scoreProvider: new UnavailableScoreProvider(),
+    scoreProvider: new UnavailableScoreProvider(new AlwaysUnavailableFakeWebsiteProvider()),
     adComplianceProvider: new UnavailableAdComplianceProvider(),
     // aiMeasurementProvider未指定 = AI_MEASUREMENT_PROVIDER="mock"(canonical無効)時と同じ状態
   };

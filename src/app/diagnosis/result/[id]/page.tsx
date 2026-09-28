@@ -34,6 +34,13 @@ const BG = "#F5F7FA";
 const BORDER = "#E5E9F0";
 const MUTED = "#6B7280";
 
+// 2026-09-29追加(PO指示): 「現在の競合医院」カードから、根拠となる患者質問行(QuestionRow)
+// へページ内リンクできるよう、質問文から安定したアンカーIDを生成する共通関数。
+// 質問文自体は診断のたびに固定リストから選ばれるため、同一診断内では常に一意。
+function questionAnchorId(question: string): string {
+  return `q-${encodeURIComponent(question)}`;
+}
+
 // 2026-09-22最終修正: 総合スコアだけでは良否が伝わらないため、点数帯ごとの評価ラベルを付す。
 function scoreEvaluationLabel(points: number): { label: string; color: string } {
   if (points >= 85) return { label: "優良", color: "#166534" };
@@ -108,6 +115,15 @@ export default async function DiagnosisResultPage({
       coverage: number;
     },
     competitors: diagnosis.competitors as CompetitorClinic[],
+    // 2026-09-29追加(PO指示): 「現在の競合医院」算出用。実測AI観測のうち
+    // 「現在の競合医院」表示に必要な4フィールドのみへ絞る(過剰な情報を渡さない)。
+    aiObservations: diagnosis.aiObservations.map((obs) => ({
+      question: obs.question,
+      aiProvider: obs.aiProvider,
+      competitorMentions: obs.competitorMentions,
+      capturedAt: obs.capturedAt,
+      mentioned: obs.mentioned,
+    })),
     questionResults: diagnosis.questionResults as PatientQuestionResult[],
     topImprovements: diagnosis.topImprovements as ImprovementCandidate[],
     adComplianceChecks: diagnosis.adComplianceChecks as AdComplianceCheckResult,
@@ -149,9 +165,12 @@ export default async function DiagnosisResultPage({
         }
         .ds-order-clinic { order: 1; }
         .ds-order-score { order: 2; }
-        .ds-order-summary { order: 3; }
-        .ds-order-top3 { order: 4; }
-        .ds-order-domains { order: 5; }
+        /* 2026-09-29修正(PO指示): 「サンプル注意→AI集患総合スコア＋6領域スコア→
+           AI選出率等の要約→改善タスクと詳細」の順にするため、6領域スコアを
+           総合スコア直後(要約・改善TOP3より前)へ移動した。 */
+        .ds-order-domains { order: 3; }
+        .ds-order-summary { order: 4; }
+        .ds-order-top3 { order: 5; }
         .ds-order-questions { order: 6; }
         .ds-order-rootcause { order: 7; }
         .ds-order-competitors { order: 8; }
@@ -334,6 +353,7 @@ export default async function DiagnosisResultPage({
                   >
                     <span style={{ fontSize: 44, fontWeight: 800, color: NAVY, lineHeight: 1 }}>
                       {vm.overall.points}
+                      <span style={{ fontSize: 20, fontWeight: 700, marginLeft: 1 }}>点</span>
                     </span>
                     <span style={{ fontSize: 12, color: MUTED }}>/ {vm.overall.maxPoints}点</span>
                     {!vm.overall.statusCaveat && (
@@ -415,6 +435,17 @@ export default async function DiagnosisResultPage({
                 根拠(evidence)は「詳細を見る」で展開。status・根拠データ自体は削除しない) */}
             <Card className="ds-order-questions">
               <SectionTitle title="患者質問ごとのAI表示状況" subtitle="AIに患者質問を投げ、自院が推薦されたかを確認しています" />
+              {/* 2026-09-29追加(PO指示、10/1 P0範囲): 測定プロバイダー・質問数・測定日時・
+                  取得不能数を明示する。実測しているのはOpenAI(ChatGPT)のみであり、
+                  Gemini/Google AIは実装が無いためここにも表示しない(虚偽の「分析完了」を防ぐ)。 */}
+              {vm.aioMeasurement.questionCount > 0 && (
+                <p style={{ margin: "-4px 0 12px", fontSize: 11, color: MUTED }}>
+                  測定プロバイダー: {vm.aioMeasurement.providers.join(", ") || "なし"} / 対象質問数:{" "}
+                  {vm.aioMeasurement.questionCount}件 / 測定日時:{" "}
+                  {vm.aioMeasurement.measuredAtIso ? formatMeasuredAtInJapan(vm.aioMeasurement.measuredAtIso) : "-"}{" "}
+                  / 取得不能: {vm.aioMeasurement.unavailableCount}件
+                </p>
+              )}
               <div style={{ display: "grid", gap: 10 }}>
                 {vm.questionResults.map((q) => (
                   <QuestionRow key={q.question} q={q} />
@@ -443,40 +474,61 @@ export default async function DiagnosisResultPage({
               )}
             </Card>
 
-            {/* 競合比較 */}
+            {/* 現在の競合医院(2026-09-29追加、PO指示): AI回答本文に実際に出現した医院名
+                候補(AiObservation.competitorsJson、自院名は抽出時点で除外済み)だけを表示する。
+                ダミー名・推測名は一切生成しない(0件ならその旨だけを表示)。
+                旧「近隣の競合医院」(常に空のUnavailableCompetitorProvider由来)は置き換える。 */}
             <Card className="ds-order-competitors">
-              <SectionTitle title="近隣の競合医院" subtitle="近隣競合との比較機能は準備中です" />
-              {vm.competitors.length > 0 ? (
+              <SectionTitle
+                title="現在の競合医院"
+                subtitle="AI回答で、同地域・診療領域の比較対象として確認された医院"
+              />
+              {vm.currentCompetitors.length > 0 ? (
                 <div style={{ display: "grid", gap: 8 }}>
-                  {vm.competitors.map((c, i) => (
+                  {vm.currentCompetitors.map((c) => (
                     <div
-                      key={`${c.name}-${i}`}
+                      key={c.name}
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
                         border: `1px solid ${BORDER}`,
                         borderRadius: 10,
                         padding: "10px 14px",
+                        display: "grid",
+                        gap: 4,
                       }}
                     >
-                      <span style={{ fontSize: 14, color: NAVY }}>
-                        {c.url ? (
-                          <a href={c.url} target="_blank" rel="noreferrer" style={{ color: NAVY }}>
-                            {c.name}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: NAVY }}>{c.name}</span>
+                        <span style={{ fontSize: 12, color: MUTED }}>
+                          言及された質問数: {c.mentionedQuestionCount}件
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11, color: MUTED }}>
+                        測定プロバイダー: {c.measurementProviders.join(", ")} / 測定日時:{" "}
+                        {formatMeasuredAtInJapan(c.measuredAt)}
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 2 }}>
+                        {c.mentionedQuestions.map((q) => (
+                          <a
+                            key={q}
+                            href={`#${questionAnchorId(q)}`}
+                            style={{
+                              fontSize: 11,
+                              color: BLUE,
+                              textDecoration: "none",
+                              border: `1px solid ${BORDER}`,
+                              borderRadius: 999,
+                              padding: "2px 8px",
+                            }}
+                          >
+                            根拠の質問を見る
                           </a>
-                        ) : (
-                          c.name
-                        )}
-                      </span>
-                      {c.distanceLabel && (
-                        <span style={{ fontSize: 12, color: MUTED }}>{c.distanceLabel}</span>
-                      )}
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <EmptyNote text="近隣競合比較は現在準備中です。対応が完了次第、この結果ページに反映されます。" />
+                <EmptyNote text="今回の測定では競合医院を確認できませんでした" />
               )}
             </Card>
 
@@ -845,10 +897,12 @@ function DomainCard({ domain }: { domain: DomainViewModel }) {
 function QuestionRow({ q }: { q: QuestionResultViewModel }) {
   return (
     <div
+      id={questionAnchorId(q.question)}
       style={{
         border: `1px solid ${BORDER}`,
         borderRadius: 10,
         padding: 14,
+        scrollMarginTop: 80,
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
@@ -1195,7 +1249,11 @@ function PhoneInquiryCta({ diagnosisId }: { diagnosisId: string }) {
         お電話でのお問い合わせ
       </h2>
       <p style={{ margin: "8px 0 0", fontSize: 13, color: "#374151", lineHeight: 1.7 }}>
-        ご不明点があれば、お気軽にお電話ください。こちらからの営業電話は一切行いません。
+        使い方や改善方法のご相談は、オンラインにてCSチームが対応します。
+        <br />
+        弊社から無理な営業は一切いたしません。
+        <br />
+        お気軽にご相談ください。
       </p>
       <TrackedCtaLink
         diagnosisId={diagnosisId}

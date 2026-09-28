@@ -1,6 +1,7 @@
 import { DOMAIN_CRITERIA } from "@/domain/diagnosis/scoreCriteria";
 import type { CriterionScore, DomainKey, UnavailableReason } from "@/domain/diagnosis/types";
 import type { ScoreCriterionInput, ScoreProvider } from "./types";
+import { WebsiteAnalysisScoreProvider } from "./websiteAnalysisScoreProvider";
 
 /**
  * 2026-09-24のユーザー指示: 疑似乱数(seededRandom)で生成した具体的な点数を、
@@ -14,17 +15,30 @@ import type { ScoreCriterionInput, ScoreProvider } from "./types";
  * information_accuracyは実測観測だけでは判定できず疑似乱数に依存していたため、
  * こちらはunavailableへ変更する)。
  *
- * MEO/SEO/LLMO/WEB_BOOKING/REVIEWSは実データ取得基盤(GBP/Search Console/GA4/
- * ページ本文解析等)が未実装のため、常にunavailableを返す。将来、実データ連携
- * providerへ差し替える際は、この同じScoreProviderインターフェースの別実装を追加すれば
- * domain層(scoring.ts)・サービス層は変更不要(MockScoreProviderと同じ設計方針)。
+ * MEO/SEO/WEB_BOOKING/REVIEWSは実データ取得基盤(GBP/Search Console/GA4等)が
+ * 未実装のため、常にunavailableを返す。
+ *
+ * 2026-09-29追加(PO指示、10/1 P0範囲): LLMOのみ、医院サイトの実取得に基づく
+ * WebsiteAnalysisScoreProviderへ委譲する(crawler_access/structured_data/
+ * content_clarityの3項目を実測。info_consistency/content_provenanceはこの
+ * provider内で引き続きunavailableを返す)。将来、他領域も実データ連携providerへ
+ * 差し替える際は、この同じScoreProviderインターフェースの別実装を追加すれば
+ * domain層(scoring.ts)・サービス層は変更不要(既存設計方針を踏襲)。
  */
 export class UnavailableScoreProvider implements ScoreProvider {
   readonly name = "unavailable-score-provider";
+  private readonly websiteAnalysisScoreProvider: ScoreProvider;
+
+  constructor(websiteAnalysisScoreProvider: ScoreProvider = new WebsiteAnalysisScoreProvider()) {
+    this.websiteAnalysisScoreProvider = websiteAnalysisScoreProvider;
+  }
 
   async score(domain: DomainKey, input: ScoreCriterionInput): Promise<CriterionScore[]> {
     if (domain === "AIO") {
       return this.scoreAioGroundedOnly(input);
+    }
+    if (domain === "LLMO") {
+      return this.websiteAnalysisScoreProvider.score(domain, input);
     }
     return this.unavailableAll(domain, `${domain}の実測連携は現在準備中です`, "not_connected");
   }

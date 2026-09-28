@@ -4,6 +4,8 @@ import {
   DOMAIN_DISPLAY_ORDER,
   buildAdComplianceViewModel,
   buildCompetitorViewModels,
+  buildCurrentCompetitorViewModels,
+  buildAioMeasurementSummary,
   buildDomainViewModel,
   buildDomainViewModels,
   buildFreeDiagnosisResultViewModel,
@@ -212,6 +214,14 @@ describe("buildDomainViewModels(6領域の表示順)", () => {
     const vms = buildDomainViewModels(domains);
     expect(vms.map((v) => v.domain)).toEqual(DOMAIN_DISPLAY_ORDER);
   });
+
+  // 2026-09-29追加(PO承認): 表示ラベルのみ「SEO（検索エンジン上位表示）」へ統一する
+  // (内部ID・DB値のDomainKey="SEO"自体は変更しない、全角括弧で統一)。
+  it("SEOの表示ラベルは「SEO（検索エンジン上位表示）」であり、内部ID(domain)は\"SEO\"のまま", () => {
+    const vms = buildDomainViewModels([domainScore({ domain: "SEO" })]);
+    expect(vms[0]!.domain).toBe("SEO");
+    expect(vms[0]!.label).toBe("SEO（検索エンジン上位表示）");
+  });
 });
 
 describe("buildQuestionResultViewModel(患者質問別のAI表示状況)", () => {
@@ -412,6 +422,92 @@ describe("buildCompetitorViewModels(競合比較。捏造禁止)", () => {
   });
 });
 
+// 2026-09-29追加(PO指示): 「現在の競合医院」。AiObservation.competitorsJson(実際に
+// AI応答本文から検出された名称候補)だけを入力とする回帰テスト群。ダミー名・推測名は
+// 一切生成しない。
+describe("buildCurrentCompetitorViewModels(現在の競合医院。実データのみ・ダミー禁止)", () => {
+  it("実データが無い場合(competitorMentionsが空/null)は空配列を返す(ダミー生成しない)", () => {
+    expect(
+      buildCurrentCompetitorViewModels([
+        { question: "q1", aiProvider: "openai", competitorMentions: [], capturedAt: "2026-01-01T00:00:00.000Z", mentioned: true },
+        { question: "q2", aiProvider: "openai", competitorMentions: null, capturedAt: "2026-01-01T00:00:00.000Z", mentioned: null },
+      ])
+    ).toEqual([]);
+  });
+
+  it("同一名称(表記ゆれの空白差)を1件へ正規化・集約し、言及質問数を集計する", () => {
+    const result = buildCurrentCompetitorViewModels([
+      {
+        question: "駅前のおすすめ歯医者は?",
+        aiProvider: "openai",
+        competitorMentions: ["山田歯科クリニック"],
+        capturedAt: "2026-01-01T00:00:00.000Z",
+        mentioned: true,
+      },
+      {
+        question: "土日診療している歯科は?",
+        aiProvider: "openai",
+        competitorMentions: ["山田歯科クリニック"], // 別質問でも同一名称
+        capturedAt: "2026-01-02T00:00:00.000Z",
+        mentioned: false,
+      },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe("山田歯科クリニック");
+    expect(result[0]!.mentionedQuestionCount).toBe(2);
+    expect(result[0]!.mentionedQuestions).toEqual([
+      "駅前のおすすめ歯医者は?",
+      "土日診療している歯科は?",
+    ]);
+    // 最新の測定日時を採用する
+    expect(result[0]!.measuredAt).toBe("2026-01-02T00:00:00.000Z");
+  });
+
+  it("測定プロバイダーの表示名(ChatGPT等)を含む", () => {
+    const result = buildCurrentCompetitorViewModels([
+      {
+        question: "q1",
+        aiProvider: "openai",
+        competitorMentions: ["A歯科"],
+        capturedAt: "2026-01-01T00:00:00.000Z",
+        mentioned: true,
+      },
+    ]);
+    expect(result[0]!.measurementProviders).toEqual(["ChatGPT"]);
+  });
+
+  it("言及質問数の多い順に並ぶ", () => {
+    const result = buildCurrentCompetitorViewModels([
+      { question: "q1", aiProvider: "openai", competitorMentions: ["A歯科"], capturedAt: "2026-01-01T00:00:00.000Z", mentioned: true },
+      { question: "q2", aiProvider: "openai", competitorMentions: ["B歯科"], capturedAt: "2026-01-01T00:00:00.000Z", mentioned: true },
+      { question: "q3", aiProvider: "openai", competitorMentions: ["B歯科"], capturedAt: "2026-01-01T00:00:00.000Z", mentioned: true },
+    ]);
+    expect(result.map((r) => r.name)).toEqual(["B歯科", "A歯科"]);
+  });
+});
+
+describe("buildAioMeasurementSummary(AIO測定メタ情報。OpenAIのみ実測扱い)", () => {
+  it("観測が0件の場合は質問数0・測定日時nullを返す", () => {
+    const summary = buildAioMeasurementSummary([]);
+    expect(summary.questionCount).toBe(0);
+    expect(summary.providers).toEqual([]);
+    expect(summary.measuredAtIso).toBeNull();
+    expect(summary.unavailableCount).toBe(0);
+  });
+
+  it("プロバイダー・質問数・最新測定日時・取得不能数(mentioned===null)を集計する", () => {
+    const summary = buildAioMeasurementSummary([
+      { aiProvider: "openai", mentioned: true, capturedAt: "2026-01-01T00:00:00.000Z" },
+      { aiProvider: "openai", mentioned: null, capturedAt: "2026-01-02T00:00:00.000Z" },
+      { aiProvider: "openai", mentioned: false, capturedAt: "2026-01-03T00:00:00.000Z" },
+    ]);
+    expect(summary.providers).toEqual(["ChatGPT"]);
+    expect(summary.questionCount).toBe(3);
+    expect(summary.unavailableCount).toBe(1);
+    expect(summary.measuredAtIso).toBe("2026-01-03T00:00:00.000Z");
+  });
+});
+
 function adFinding(overrides: Partial<AdRiskFinding> = {}): AdRiskFinding {
   return {
     id: "f1",
@@ -606,6 +702,7 @@ describe("buildFreeDiagnosisResultViewModel(統合)", () => {
         coverage: 1,
       },
       competitors: [{ id: "c1", name: "競合A" }],
+      aiObservations: [],
       questionResults: [
         questionResult({
           question: "質問A",

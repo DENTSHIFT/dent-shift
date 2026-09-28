@@ -160,7 +160,13 @@ function DashboardNav({
           <a className={styles.sideConsultLink} href={bookingUrl} target="_blank" rel="noreferrer">
             日程を選ぶ
           </a>
-          <p className={styles.sideConsultNote}>相談は任意です。営業電話はありません。</p>
+          <p className={styles.sideConsultNote}>
+            使い方や改善方法のご相談は、オンラインにてCSチームが対応します。
+            <br />
+            弊社から無理な営業は一切いたしません。
+            <br />
+            お気軽にご相談ください。
+          </p>
         </section>
       )}
     </aside>
@@ -465,43 +471,84 @@ export default async function DashboardPage() {
                 </div>
               )}
 
-              {/* 2026-09-22最終修正: 最上段を4KPI(総合スコア/AI選出率/優先課題数/取得状況)に整理。
-                  既存の算出値(overall.points/shareOfVoice/questionSummary/measurement)をそのまま
-                  再利用するだけで、新しい集計ロジックは追加しない。
-                  2026-09-29追加(PO指示): 総合スコア・AI選出率をドーナツ表示に、取得状況を
+              {/* 2026-09-29修正(PO指示): セクション順を「サンプル注意→AI集患総合スコア＋
+                  6領域スコア→簡易指標(AI選出率/優先課題数/取得状況)→改善タスクと詳細」へ変更。
+                  ユーザーが最初に全体評価と課題領域を理解できる順番にするため、この
+                  overviewGrid(旧: metricsGridより下に配置)を最上段直下へ移動した。
+                  表示内容・算出ロジックは一切変更していない(順序のみの変更)。 */}
+              <section className={styles.overviewGrid} aria-label="診断スコア概要">
+                <div className={`${styles.card} ${styles.scoreCard}`}>
+                  <h2 className={styles.sectionLabel}>AI集患総合スコア</h2>
+                  {vm.result.overall.totalStatus === "unavailable" ? (
+                    // 2026-09-27追加(PO承認): 全領域未測定時はゲージ・数値を出さず、
+                    // 算定不可であることのみを明示する。
+                    <p className={styles.scoreCaveat} style={{ marginTop: 8 }}>
+                      現在、算定可能な実測データが不足しています
+                    </p>
+                  ) : (
+                    <>
+                      <div
+                        className={styles.gauge}
+                        style={{
+                          background: `conic-gradient(#2563EB ${Math.max(
+                            0,
+                            Math.min(100, vm.result.overall.points)
+                          )}%, #E5E9F0 0)`,
+                        }}
+                      >
+                        <div className={styles.gaugeInner}>
+                          <span className={styles.scoreNumber}>
+                            {vm.result.overall.points}
+                            <span className={styles.scoreUnit}>点</span>
+                          </span>
+                          <span className={styles.scoreMax}>/ {vm.result.overall.maxPoints}点</span>
+                        </div>
+                      </div>
+                      <span className={trendClass(vm.trend.tone)}>{vm.trend.label}</span>
+                      {vm.result.overall.statusCaveat && (
+                        <p className={styles.scoreCaveat}>{vm.result.overall.statusCaveat}</p>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className={styles.card}>
+                  <h2 className={styles.sectionLabel}>6領域スコア</h2>
+                  <div className={styles.domainsGrid}>
+                    {vm.result.domains.map((domain) => (
+                      <div className={styles.domainCard} key={domain.domain}>
+                        <div className={styles.domainHeader}>
+                          <span className={styles.domainIdentity}>
+                            <span className={styles.domainIcon} aria-hidden="true">
+                              {DOMAIN_ICONS[domain.domain] ?? "✦"}
+                            </span>
+                            <span>{domain.label}</span>
+                          </span>
+                          {domain.showEstimatedBadge && <span className={styles.badge}>推定</span>}
+                        </div>
+                        <p className={styles.domainPoints}>{domain.pointsLabel}</p>
+                        {domain.percent !== null && (
+                          <div className={styles.bar} aria-hidden="true">
+                            <div className={styles.barFill} style={{ width: `${domain.percent}%` }} />
+                          </div>
+                        )}
+                        {(domain.unavailableReasonLabel || domain.partialNote) && (
+                          <p className={styles.domainNote}>{domain.unavailableReasonLabel ?? domain.partialNote}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              {/* 2026-09-22最終修正: 簡易指標(AI選出率/優先課題数/取得状況)。
+                  2026-09-29修正(PO指示): 上段のAI集患総合スコア(overviewGrid)と重複するため、
+                  「総合スコア」カードは削除し、残り3カードで均等幅にする(dashboard.module.cssの
+                  .metricsGridを3カラム均等定義に変更)。
+                  2026-09-29追加(PO指示): AI選出率をドーナツ表示に、取得状況を
                   円グラフ表示に変更。数値算出そのものは変更せず、既存の.gauge同様の
                   conic-gradientで視覚化するのみ。色だけに依存しないよう数値・ラベルは残す。 */}
               <section className={styles.metricsGrid} aria-label="サマリーKPI">
-                <div className={styles.metricCard}>
-                  <p className={styles.metricLabel}>総合スコア</p>
-                  {vm.result.overall.totalStatus === "unavailable" ? (
-                    <>
-                      <p className={styles.metricValue} style={{ fontSize: 14 }}>算定不可</p>
-                      <p className={styles.metricNote}>実測データが不足しています</p>
-                    </>
-                  ) : (
-                    <div className={styles.metricDonutRow}>
-                      <div
-                        className={styles.metricDonut}
-                        style={{
-                          background: `conic-gradient(#2563eb ${Math.max(
-                            0,
-                            Math.min(100, (vm.result.overall.points / vm.result.overall.maxPoints) * 100)
-                          )}%, #e5e9f0 0)`,
-                        }}
-                        role="img"
-                        aria-label={`総合スコア ${vm.result.overall.points}/${vm.result.overall.maxPoints}点`}
-                      >
-                        <div className={styles.metricDonutInner}>
-                          <span className={styles.metricDonutValue}>
-                            {vm.result.overall.points}/{vm.result.overall.maxPoints}
-                          </span>
-                        </div>
-                      </div>
-                      <p className={styles.metricNote}>{vm.trend.label}</p>
-                    </div>
-                  )}
-                </div>
                 <div className={styles.metricCard}>
                   <p className={styles.metricLabel}>AI選出率</p>
                   {vm.result.shareOfVoice.status === "measured" ? (
@@ -625,68 +672,6 @@ export default async function DashboardPage() {
                   {httpsAdvisory && <HttpsAdvisoryItem advisory={httpsAdvisory} />}
                 </div>
               </article>
-
-              <section className={styles.overviewGrid} aria-label="診断スコア概要">
-                <div className={`${styles.card} ${styles.scoreCard}`}>
-                  <h2 className={styles.sectionLabel}>AI集患総合スコア</h2>
-                  {vm.result.overall.totalStatus === "unavailable" ? (
-                    // 2026-09-27追加(PO承認): 全領域未測定時はゲージ・数値を出さず、
-                    // 算定不可であることのみを明示する。
-                    <p className={styles.scoreCaveat} style={{ marginTop: 8 }}>
-                      現在、算定可能な実測データが不足しています
-                    </p>
-                  ) : (
-                    <>
-                      <div
-                        className={styles.gauge}
-                        style={{
-                          background: `conic-gradient(#2563EB ${Math.max(
-                            0,
-                            Math.min(100, vm.result.overall.points)
-                          )}%, #E5E9F0 0)`,
-                        }}
-                      >
-                        <div className={styles.gaugeInner}>
-                          <span className={styles.scoreNumber}>{vm.result.overall.points}</span>
-                          <span className={styles.scoreMax}>/ {vm.result.overall.maxPoints}点</span>
-                        </div>
-                      </div>
-                      <span className={trendClass(vm.trend.tone)}>{vm.trend.label}</span>
-                      {vm.result.overall.statusCaveat && (
-                        <p className={styles.scoreCaveat}>{vm.result.overall.statusCaveat}</p>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                <div className={styles.card}>
-                  <h2 className={styles.sectionLabel}>6領域スコア</h2>
-                  <div className={styles.domainsGrid}>
-                    {vm.result.domains.map((domain) => (
-                      <div className={styles.domainCard} key={domain.domain}>
-                        <div className={styles.domainHeader}>
-                          <span className={styles.domainIdentity}>
-                            <span className={styles.domainIcon} aria-hidden="true">
-                              {DOMAIN_ICONS[domain.domain] ?? "✦"}
-                            </span>
-                            <span>{domain.label}</span>
-                          </span>
-                          {domain.showEstimatedBadge && <span className={styles.badge}>推定</span>}
-                        </div>
-                        <p className={styles.domainPoints}>{domain.pointsLabel}</p>
-                        {domain.percent !== null && (
-                          <div className={styles.bar} aria-hidden="true">
-                            <div className={styles.barFill} style={{ width: `${domain.percent}%` }} />
-                          </div>
-                        )}
-                        {(domain.unavailableReasonLabel || domain.partialNote) && (
-                          <p className={styles.domainNote}>{domain.unavailableReasonLabel ?? domain.partialNote}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
 
               <section className={styles.twoColumn} id="ai-search">
                 <div className={styles.stack}>
