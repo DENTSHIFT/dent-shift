@@ -2,6 +2,13 @@ import { defineConfig } from "vitest/config";
 import path from "node:path";
 
 export default defineConfig({
+  // 2026-09-29追加: MarketingHeader(サーバーコンポーネント)のレンダリングテストを
+  // 追加するためJSXの自動変換を有効化する。tsconfig.jsonのjsx:"preserve"は
+  // Next.js本体のビルドで使われる設定でありここでは変更しない。Vitest実行時
+  // (esbuildによるtransform)にのみ影響し、production build/実行には無関係。
+  esbuild: {
+    jsx: "automatic",
+  },
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
