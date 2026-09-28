@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentContact } from "@/server/auth/session";
 import { requestInviteCheckout, InviteCheckoutError } from "@/server/services/invites/requestInviteCheckout";
+import { resolveInviteFeatureConfigFromProcessEnv } from "@/server/config/inviteFeatureConfig";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ code: string }> }
 ) {
+  if (!resolveInviteFeatureConfigFromProcessEnv().enabled) {
+    return NextResponse.json({ error: "招待機能は現在利用できません。" }, { status: 404 });
+  }
+
   const currentContact = await getCurrentContact();
   if (!currentContact) {
     return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });

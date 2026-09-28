@@ -6,12 +6,20 @@ import {
   resolveInviteConfigFromProcessEnv,
   InviteConfigError,
 } from "@/server/config/inviteConfig";
+import { resolveInviteFeatureConfigFromProcessEnv } from "@/server/config/inviteFeatureConfig";
 
 /**
  * 運営側(Operator)専用の招待発行API。通常ユーザーは絶対に到達できない
  * (/ops配下と同じOperatorセッションを要求する)。
+ *
+ * 2026-09-29: 招待機能全体をINVITE_FEATURE_ENABLEDで休眠させるため、
+ * 発行そのものをここで拒否する(既存の招待データ・Stripe Priceは削除しない)。
  */
 export async function POST(request: NextRequest) {
+  if (!resolveInviteFeatureConfigFromProcessEnv().enabled) {
+    return NextResponse.json({ error: "招待機能は現在利用できません。" }, { status: 404 });
+  }
+
   const operator = await getCurrentOperator();
   if (!operator) {
     return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });

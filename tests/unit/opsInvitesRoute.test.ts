@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   createInvite: vi.fn(),
   recordAuditLog: vi.fn(),
   resolveInviteConfig: vi.fn(),
+  resolveInviteFeatureConfig: vi.fn(),
 }));
 
 vi.mock("@/server/auth/operatorSession", () => ({ getCurrentOperator: mocks.getCurrentOperator }));
@@ -17,6 +18,9 @@ vi.mock("@/server/config/inviteConfig", async () => {
   );
   return { ...actual, resolveInviteConfigFromProcessEnv: mocks.resolveInviteConfig };
 });
+vi.mock("@/server/config/inviteFeatureConfig", () => ({
+  resolveInviteFeatureConfigFromProcessEnv: mocks.resolveInviteFeatureConfig,
+}));
 
 import { POST } from "@/app/api/ops/invites/route";
 import { InviteConfigError } from "@/server/config/inviteConfig";
@@ -31,6 +35,7 @@ function request(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.resolveInviteFeatureConfig.mockReturnValue({ enabled: true });
   mocks.getCurrentOperator.mockResolvedValue({ id: "operator-1", email: "ops@example.com", role: "admin" });
   mocks.resolveInviteConfig.mockReturnValue({ defaultStripePriceId: "price_invite_monitor" });
   mocks.createInvite.mockResolvedValue({
@@ -44,6 +49,13 @@ beforeEach(() => {
 });
 
 describe("POST /api/ops/invites", () => {
+  it("2026-09-29: INVITE_FEATURE_ENABLED=falseなら、Operatorログイン済みでも404で招待発行を拒否する", async () => {
+    mocks.resolveInviteFeatureConfig.mockReturnValue({ enabled: false });
+    const response = await POST(request({ clinicName: "テスト歯科", email: "a@example.com" }));
+    expect(response.status).toBe(404);
+    expect(mocks.createInvite).not.toHaveBeenCalled();
+  });
+
   it("未ログイン(Operatorセッションなし)は401", async () => {
     mocks.getCurrentOperator.mockResolvedValue(null);
     const response = await POST(request({ clinicName: "テスト歯科", email: "a@example.com" }));

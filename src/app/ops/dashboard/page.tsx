@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireOperator } from "@/server/auth/requireOperator";
 import { prisma } from "@/server/db/prismaClient";
 import { recordAuditLog } from "@/server/db/auditLogRepository";
+import { resolveInviteFeatureConfigFromProcessEnv } from "@/server/config/inviteFeatureConfig";
 import { OpsLogoutButton } from "./OpsLogoutButton";
 import styles from "../ops.module.css";
 
@@ -12,6 +13,7 @@ import styles from "../ops.module.css";
  */
 export default async function OpsDashboardPage() {
   const operator = await requireOperator();
+  const inviteFeatureEnabled = resolveInviteFeatureConfigFromProcessEnv().enabled;
 
   const clinics = await prisma.clinic.findMany({
     orderBy: { createdAt: "desc" },
@@ -69,9 +71,11 @@ export default async function OpsDashboardPage() {
         </div>
 
         <p style={{ margin: "0 0 18px", display: "flex", gap: 16 }}>
-          <Link href="/ops/invites" style={{ color: "#2563eb", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
-            招待URL管理(1円モニター利用)へ →
-          </Link>
+          {inviteFeatureEnabled && (
+            <Link href="/ops/invites" style={{ color: "#2563eb", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+              招待URL管理(1円モニター利用)へ →
+            </Link>
+          )}
           <Link href="/ops/integration-events" style={{ color: "#2563eb", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
             Salesforce連携キュー管理へ →
           </Link>

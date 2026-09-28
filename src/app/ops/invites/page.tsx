@@ -1,7 +1,9 @@
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireOperator } from "@/server/auth/requireOperator";
 import { listInvites } from "@/server/db/inviteRepository";
 import { recordAuditLog } from "@/server/db/auditLogRepository";
+import { resolveInviteFeatureConfigFromProcessEnv } from "@/server/config/inviteFeatureConfig";
 import { OpsLogoutButton } from "../dashboard/OpsLogoutButton";
 import { CreateInviteForm } from "./CreateInviteForm";
 import styles from "../ops.module.css";
@@ -23,6 +25,10 @@ function formatDate(value: Date | null | undefined) {
  * 通常のOperatorセッションを要求し、通常ユーザーは絶対に到達できない経路にする。
  */
 export default async function OpsInvitesPage() {
+  if (!resolveInviteFeatureConfigFromProcessEnv().enabled) {
+    notFound();
+  }
+
   const operator = await requireOperator();
   const invites = await listInvites();
 

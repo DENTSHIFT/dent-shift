@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 const mocks = vi.hoisted(() => ({
   currentContact: vi.fn(),
   requestInviteCheckout: vi.fn(),
+  resolveInviteFeatureConfig: vi.fn(),
 }));
 
 vi.mock("@/server/auth/session", () => ({ getCurrentContact: mocks.currentContact }));
@@ -13,6 +14,9 @@ vi.mock("@/server/services/invites/requestInviteCheckout", async () => {
   >("@/server/services/invites/requestInviteCheckout");
   return { ...actual, requestInviteCheckout: mocks.requestInviteCheckout };
 });
+vi.mock("@/server/config/inviteFeatureConfig", () => ({
+  resolveInviteFeatureConfigFromProcessEnv: mocks.resolveInviteFeatureConfig,
+}));
 
 import { POST } from "@/app/api/invites/[code]/checkout/route";
 import { InviteCheckoutError } from "@/server/services/invites/requestInviteCheckout";
@@ -29,11 +33,19 @@ function params(code = "ABC123") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.resolveInviteFeatureConfig.mockReturnValue({ enabled: true });
   mocks.currentContact.mockResolvedValue({ id: "contact-1", clinicId: "clinic-1", email: "owner@example.com" });
   mocks.requestInviteCheckout.mockResolvedValue({ checkoutUrl: "https://checkout.stripe.com/c/pay/invite" });
 });
 
 describe("POST /api/invites/[code]/checkout", () => {
+  it("2026-09-29: INVITE_FEATURE_ENABLED=falseなら、ログイン済みでも404で招待Checkoutを拒否する", async () => {
+    mocks.resolveInviteFeatureConfig.mockReturnValue({ enabled: false });
+    const response = await POST(request(), params());
+    expect(response.status).toBe(404);
+    expect(mocks.requestInviteCheckout).not.toHaveBeenCalled();
+  });
+
   it("未ログインは401", async () => {
     mocks.currentContact.mockResolvedValue(null);
     const response = await POST(request(), params());

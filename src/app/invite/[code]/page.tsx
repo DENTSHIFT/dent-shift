@@ -1,8 +1,10 @@
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getInviteByCode } from "@/server/db/inviteRepository";
 import { validateInvite } from "@/domain/invite/inviteCode";
 import { getCurrentContact } from "@/server/auth/session";
 import { resolvePilotInviteConfigFromProcessEnv } from "@/server/config/pilotInviteConfig";
+import { resolveInviteFeatureConfigFromProcessEnv } from "@/server/config/inviteFeatureConfig";
 import styles from "../../auth.module.css";
 import { InviteCheckoutButton } from "./InviteCheckoutButton";
 import { PilotActivateButton } from "./PilotActivateButton";
@@ -15,6 +17,10 @@ import { PilotActivateButton } from "./PilotActivateButton";
  * 無効・期限切れ・使用済みの場合も存在有無を詳細に区別せず、一律の案内文にする。
  */
 export default async function InvitePage({ params }: { params: Promise<{ code: string }> }) {
+  if (!resolveInviteFeatureConfigFromProcessEnv().enabled) {
+    notFound();
+  }
+
   const { code } = await params;
   const invite = await getInviteByCode(code);
   const contact = await getCurrentContact();

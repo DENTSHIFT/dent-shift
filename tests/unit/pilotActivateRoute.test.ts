@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 const mocks = vi.hoisted(() => ({
   currentContact: vi.fn(),
   activatePilotInvite: vi.fn(),
+  resolveInviteFeatureConfig: vi.fn(),
 }));
 
 vi.mock("@/server/auth/session", () => ({ getCurrentContact: mocks.currentContact }));
@@ -13,6 +14,9 @@ vi.mock("@/server/services/invites/activatePilotInvite", async () => {
   >("@/server/services/invites/activatePilotInvite");
   return { ...actual, activatePilotInvite: mocks.activatePilotInvite };
 });
+vi.mock("@/server/config/inviteFeatureConfig", () => ({
+  resolveInviteFeatureConfigFromProcessEnv: mocks.resolveInviteFeatureConfig,
+}));
 
 import { POST } from "@/app/api/invites/[code]/pilot-activate/route";
 import { PilotInviteError } from "@/server/services/invites/activatePilotInvite";
@@ -29,6 +33,7 @@ function params(code = "PILOT123") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.resolveInviteFeatureConfig.mockReturnValue({ enabled: true });
   mocks.currentContact.mockResolvedValue({ id: "contact-1", clinicId: "clinic-1", email: "sensei@example.com" });
   mocks.activatePilotInvite.mockResolvedValue({
     subscriptionId: "sub-1",
@@ -38,6 +43,13 @@ beforeEach(() => {
 });
 
 describe("POST /api/invites/[code]/pilot-activate", () => {
+  it("2026-09-29: INVITE_FEATURE_ENABLED=falseなら、ログイン済みでも404でPilotアクティベートを拒否する", async () => {
+    mocks.resolveInviteFeatureConfig.mockReturnValue({ enabled: false });
+    const response = await POST(request(), params());
+    expect(response.status).toBe(404);
+    expect(mocks.activatePilotInvite).not.toHaveBeenCalled();
+  });
+
   it("未ログインは401", async () => {
     mocks.currentContact.mockResolvedValue(null);
     const response = await POST(request(), params());
