@@ -273,9 +273,6 @@ export default async function DiagnosisResultPage({
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "24px 24px 0" }}>
 
         <div style={{ display: "grid", gap: 8 }}>
-          {vm.sampleBanner.show && (
-            <Banner tone="sample" title={vm.sampleBanner.title} text={vm.sampleBanner.subtitle} />
-          )}
           <Banner
             tone={resultEmailNotice.tone}
             title={resultEmailNotice.title}
@@ -707,6 +704,16 @@ export default async function DiagnosisResultPage({
         <p style={{ fontSize: 12, color: "#9CA3AF", marginTop: 24, textAlign: "center" }}>
           本レポートはAIによる参考情報です。医療広告・法的判断についての最終判断は医院または専門家が行ってください。
         </p>
+
+        {/* 2026-09-29修正(PO承認): サンプル診断の注記は、ページ上部の黄色い警告バナーを廃止し、
+            スコアより目立たない控えめな注記としてページ最下部へ移動する。背景色・警告色は
+            使わず、小さめのグレー文字のみ。実データの診断結果では表示しない
+            (vm.sampleBanner.show=isSampleの場合のみ)。 */}
+        {vm.sampleBanner.show && (
+          <p style={{ fontSize: 11, color: "#9CA3AF", marginTop: 12, textAlign: "center", lineHeight: 1.6 }}>
+            {vm.sampleBanner.text}
+          </p>
+        )}
       </div>
     </main>
   );

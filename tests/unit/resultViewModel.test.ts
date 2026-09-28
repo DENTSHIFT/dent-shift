@@ -83,10 +83,19 @@ describe("buildSampleBanner(sample/mockのUI明示)", () => {
     expect(banner.show).toBe(false);
   });
 
-  it("isSample=trueのときは「サンプル診断」であることを明確に表示する", () => {
+  it("isSample=trueのときは表示イメージ・参考データが含まれる旨を明示する", () => {
     const banner = buildSampleBanner(true);
     expect(banner.show).toBe(true);
-    expect(banner.title).toContain("サンプル診断");
+    expect(banner.text).toContain("参考データ");
+  });
+
+  // 2026-09-29追加(PO承認): 黄色の警告バナーを廃止し、ページ最下部の控えめな注記へ
+  // 変更した承認済み文言の回帰テスト。
+  it("承認済みの新しい文言(表示イメージ・参考データ・推定値・実際の診断結果とは異なる場合がある旨)になっている", () => {
+    const banner = buildSampleBanner(true);
+    expect(banner.text).toBe(
+      "本画面は表示イメージです。掲載内容には参考データおよび推定値が含まれており、実際の診断結果とは異なる場合があります。"
+    );
   });
 });
 

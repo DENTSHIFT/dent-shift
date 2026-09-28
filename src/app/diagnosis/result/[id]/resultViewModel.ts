@@ -167,26 +167,27 @@ export interface DiagnosisResultData {
 
 export interface SampleBannerViewModel {
   show: boolean;
-  title: string;
-  subtitle: string;
+  text: string;
 }
 
 /**
  * 2026-09-06のユーザー指示⑦: 「サンプル診断」であることは明確に維持しつつ、ページ全体が
  * 警告画面のように見えないよう文章量を少し抑える(意味は変更しない=サンプルデータが
  * 含まれる旨と、実データと異なりうる旨の2点は必ず残す)。
+ *
+ * 2026-09-29修正(PO承認): 黄色の警告バナー(ページ上部)を廃止し、ページ最下部の
+ * 控えめな注記(グレー文字・警告色なし)へ変更する。法的・説明上必要な情報(サンプル・
+ * 推定データが含まれる旨、実際の結果と異なりうる旨)は維持しつつ、スコアより目立たない
+ * 扱いにする(承認済み文言をそのまま使用、タイトル+コロンの構成はやめ一文にする)。
  */
 export function buildSampleBanner(isSample: boolean): SampleBannerViewModel {
   if (!isSample) {
-    return { show: false, title: "", subtitle: "" };
+    return { show: false, text: "" };
   }
   return {
     show: true,
-    title: "サンプル診断",
-    // 2026-09-27修正(PO承認): 「実際の医院データとは異なる場合がある」という弱い表現から、
-    // 契約判断・競合比較の根拠に使えないことを明示する表現へ強化する。
-    subtitle:
-      "この結果にはサンプル・推定データが含まれます。正式な医院評価、競合比較、契約判断の根拠としては利用できません。",
+    text:
+      "本画面は表示イメージです。掲載内容には参考データおよび推定値が含まれており、実際の診断結果とは異なる場合があります。",
   };
 }
 

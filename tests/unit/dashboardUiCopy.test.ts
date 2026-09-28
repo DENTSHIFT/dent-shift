@@ -126,6 +126,35 @@ describe("ダッシュボードの正確性(未診断カードの文言・競合
     const improvementsIndex = source.indexOf("今月の優先改善 TOP3");
     expect(improvementsIndex).toBeGreaterThan(metricsIndex);
   });
+
+  // 2026-09-29追加(PO承認): サンプル診断の注記を、ページ上部の黄色い警告バナーから
+  // ページ最下部の控えめな注記(警告色なし)へ移動した回帰テスト。
+  it("黄色い警告バナー(styles.sampleBanner)のCSSクラスがdashboard.module.cssから削除されている", () => {
+    const cssSource = readFileSync(
+      path.join(process.cwd(), "src/app/dashboard/dashboard.module.css"),
+      "utf8"
+    );
+    expect(cssSource).not.toMatch(/\.sampleBanner\s*\{/);
+  });
+
+  it("サンプル注記はoverviewGridより後(ページ末尾側、SupportPhoneFooterの直前)に配置されている", () => {
+    const source = dashboardSource();
+    const overviewIndex = source.indexOf('className={styles.overviewGrid}');
+    const noteIndex = source.indexOf("vm.result.sampleBanner.show");
+    const footerIndex = source.indexOf("<SupportPhoneFooter />");
+    expect(noteIndex).toBeGreaterThan(overviewIndex);
+    expect(noteIndex).toBeLessThan(footerIndex);
+  });
+
+  it("サンプル注記は警告色を使わずグレー文字で表示する", () => {
+    const source = dashboardSource();
+    const noteBlock = source.slice(
+      source.indexOf("vm.result.sampleBanner.show"),
+      source.indexOf("vm.result.sampleBanner.show") + 300
+    );
+    expect(noteBlock).toContain("#9CA3AF");
+    expect(noteBlock).not.toMatch(/background|#fcd34d|#fffbeb|#854d0e/);
+  });
 });
 
 // 2026-09-29追加(PO承認): 診断結果画面の電話問い合わせCTA注記も、
@@ -154,6 +183,23 @@ describe("診断結果画面のお電話問い合わせ注記の正確性", () =
 
   // 2026-09-29追加(PO承認): セクション順を「サンプル注意→AI集患総合スコア＋6領域スコア→
   // AI選出率等の要約→改善タスクと詳細」へ変更した回帰テスト(order CSSの値を検証)。
+  // 2026-09-29追加(PO承認): サンプル診断の注記を、ページ上部の警告バナー(Banner
+  // tone="sample")からページ最下部の控えめな注記(警告色なし)へ移動した回帰テスト。
+  it("上部にBanner tone=\"sample\"は使われていない(黄色い警告バナーを廃止)", () => {
+    const source = resultPageSource();
+    expect(source).not.toContain('tone="sample"');
+  });
+
+  it("サンプル注記はページ末尾(本レポートはAI参考情報の注記の直後)に、警告色を使わず配置されている", () => {
+    const source = resultPageSource();
+    const footerNoteIndex = source.indexOf("本レポートはAIによる参考情報です");
+    const sampleNoteIndex = source.indexOf("vm.sampleBanner.show");
+    expect(sampleNoteIndex).toBeGreaterThan(footerNoteIndex);
+    const noteBlock = source.slice(sampleNoteIndex, sampleNoteIndex + 300);
+    expect(noteBlock).toContain("#9CA3AF");
+    expect(noteBlock).not.toMatch(/background|#FEF3C7|#F59E0B|#92400E/);
+  });
+
   it("6領域スコア(ds-order-domains)が要約(ds-order-summary)・改善TOP3(ds-order-top3)より前になるorder値である", () => {
     const source = resultPageSource();
     const orderOf = (cls: string): number => {

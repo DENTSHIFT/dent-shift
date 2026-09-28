@@ -465,12 +465,6 @@ export default async function DashboardPage() {
             </section>
           ) : (
             <>
-              {vm.result.sampleBanner.show && (
-                <div className={styles.sampleBanner}>
-                  <strong>{vm.result.sampleBanner.title}：</strong>{vm.result.sampleBanner.subtitle}
-                </div>
-              )}
-
               {/* 2026-09-29修正(PO指示): セクション順を「サンプル注意→AI集患総合スコア＋
                   6領域スコア→簡易指標(AI選出率/優先課題数/取得状況)→改善タスクと詳細」へ変更。
                   ユーザーが最初に全体評価と課題領域を理解できる順番にするため、この
@@ -764,6 +758,16 @@ export default async function DashboardPage() {
                   )}
                 </div>
               </section>
+
+              {/* 2026-09-29修正(PO承認): サンプル診断の注記は、ページ上部の黄色い警告バナーを
+                  廃止し、スコアより目立たない控えめな注記としてページ最下部へ移動する。
+                  背景色・警告色は使わず、小さめのグレー文字のみ。実データの診断結果では
+                  表示しない(vm.result.sampleBanner.show=isSampleの場合のみ)。 */}
+              {vm.result.sampleBanner.show && (
+                <p style={{ fontSize: 11, color: "#9CA3AF", marginTop: 20, textAlign: "center", lineHeight: 1.6 }}>
+                  {vm.result.sampleBanner.text}
+                </p>
+              )}
             </>
           )}
           <SupportPhoneFooter />
