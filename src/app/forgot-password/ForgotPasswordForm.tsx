@@ -131,7 +131,24 @@ export function ForgotPasswordForm() {
     <form onSubmit={handleRequest} className={styles.form}>
       <label className={styles.field}>
         <span>登録メールアドレス</span>
-        <input className={styles.input} required type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input
+          className={styles.input}
+          required
+          type="email"
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value.trim());
+            if (error) setError(null);
+          }}
+          onInvalid={(e) => {
+            e.preventDefault();
+            setError(
+              e.currentTarget.validity.valueMissing
+                ? "メールアドレスを入力してください"
+                : "メールアドレスの形式が正しくありません。コピー&ペースト時に不要な文字が含まれていないかご確認ください"
+            );
+          }}
+        />
       </label>
       {method === "sms" && (
         <p className={styles.description}>
