@@ -21,6 +21,7 @@ import {
   diagnosisStartedFiredMarker,
   isDiagnosisStartedAlreadyFired,
 } from "./diagnosisStartedTracking";
+import { createAnonymousSessionReadinessGate } from "./anonymousSessionReadiness";
 
 // DENT SHIFT正式カラー(public/brand/logo/README_使用ガイド.md「正式カラー」節が正本)。
 // 結果画面(src/app/diagnosis/result/[id]/page.tsx)と同じ値をこの画面でも使用する。
@@ -191,6 +192,26 @@ export default function DiagnosisPage() {
     }
   }, []);
 
+  // 2026-09-29追加(PO指摘、匿名Cookie初回リクエスト対策P0、2回目): 匿名利用者の
+  // 冪等性principalKeyに使うセッションcookieを、診断フォーム送信(POST /api/diagnosis)
+  // より前に確立しておく。実際のゲートロジック(anonymousSessionReadiness.ts)は
+  // DOM/Reactに依存しない純粋な関数として切り出してあり、「取得が遅い」「取得が
+  // 失敗する」場合のテストはそちらのユニットテストで検証する(このコンポーネントは
+  // その関数を1回だけ生成して使うだけ)。ページ表示時点で1回先行試行するが、
+  // それだけでは「取得中にちょうど送信した」場合をカバーできないため、
+  // submitDiagnosis()側でこの関数の完了(成功)を必ず待ってから初めてPOSTへ進む
+  // (PO指摘: 取得失敗時は診断POSTを送らず、入力内容を保持して再試行を案内する)。
+  const ensureAnonymousDiagnosisSessionReady = useRef(createAnonymousSessionReadinessGate()).current;
+
+  useEffect(() => {
+    ensureAnonymousDiagnosisSessionReady().catch(() => {
+      // ページ表示時点の先行試行はベストエフォート。ここでの失敗は握りつぶし、
+      // 実際に送信するタイミング(submitDiagnosis)で改めて確実に待ち、
+      // 失敗時はPOST自体を止める。
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 医院名・URL等いずれかのフィールドへ最初に入力した時点を「診断開始」とみなし、
   // 1回だけ匿名イベントを送る(ページを開いただけの離脱はカウントしない)。
   // 2026-09-24修正: useRefだけではページ再読み込み・戻る操作でリセットされ、
@@ -277,6 +298,22 @@ export default function DiagnosisPage() {
   // /api/diagnosisへ同じフィールドをPOSTするだけ)。ここではapiCompleted/diagnosisId/
   // flowStateの更新のみを行い、router.push は一切呼ばない(遷移は下のuseEffectに一本化)。
   async function submitDiagnosis(generation: number) {
+    // 2026-09-29追加(PO指摘、匿名Cookie初回リクエスト対策P0、2回目): 匿名主体の
+    // principalKeyに使うセッションcookieの確立を必ず待ってから送信する。取得に
+    // 失敗した場合はPOST /api/diagnosis自体を送らない(冪等性principalKeyが
+    // セッションごとに変わり続け、再送のたびにprincipal_mismatchで拒否される
+    // 状態を避けるため)。入力内容(values)は一切変更せず保持したまま、
+    // エラー画面から「もう一度診断する」で再試行できるようにする。
+    try {
+      await ensureAnonymousDiagnosisSessionReady();
+    } catch {
+      if (requestGenerationRef.current !== generation) return;
+      setApiErrorMessage(
+        "通信状態を確認できませんでした。入力内容はそのまま残っています。もう一度お試しください。"
+      );
+      setFlowState("error");
+      return;
+    }
     try {
       const res = await fetch("/api/diagnosis", {
         method: "POST",

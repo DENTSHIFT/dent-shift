@@ -6,6 +6,7 @@ import {
   combineDiagnosisRateLimitDecisions,
   type DiagnosisRateLimitScopeConfig,
 } from "@/domain/diagnosis/rateLimit";
+import { DIAGNOSIS_FUNCTION_MAX_DURATION_MS } from "@/server/config/diagnosisFunctionDuration";
 
 /**
  * 2026-09-29追加(PO承認、再診断ループの連続実行対策P0)。
@@ -200,13 +201,21 @@ export async function releaseDiagnosisSlot(
 }
 
 /**
- * 実行中ロックのTTL。PO指摘「90秒経過だけで重複防止を保証しない。サーバーの最大処理
- * 時間との整合を確認する」に対応し、Vercel Runtime LogsでこのFunctionの実測上限
- * (Execution Duration / Maximum欄、2026-09-29確認時点で5分=300秒)に安全マージンを
- * 加えた値を使う。実際の診断処理は通常13〜23秒程度で完了する(2026-09-29のE2E実測)が、
- * OpenAI側のretry(最大3回×該当質問数)を考慮し、プラットフォームの上限そのものを
- * 基準にする。
+ * 実行中ロックのTTL。PO指摘(2026-09-29、2回目)「TTLの根拠は、実測時間ではなく
+ * デプロイの設定上限と処理の終了条件で確認すること」に対応し、Vercel Runtime Logs等の
+ * 実測値ではなく、コード上の2つの根拠だけを使う。
+ * 1. デプロイの設定上限: /api/diagnosis Route Handler自体に明示設定した
+ *    `maxDuration`(src/app/api/diagnosis/route.ts)。Vercelはこの上限を超えたFunction
+ *    実行を強制終了するため、これが処理時間の絶対的な上限になる。
+ * 2. 処理の終了条件: canonical AI計測(OpenAI呼び出し)は
+ *    timeoutMs×maxAttempts+backoff(src/server/config/aiMeasurementConfig.ts)で
+ *    自ら打ち切られるよう設計されており、質問間はPromise.allで並列実行のため
+ *    直列には積み上がらない。
+ * 両方の根拠となる値は`DIAGNOSIS_FUNCTION_MAX_DURATION_MS`
+ * (src/server/config/diagnosisFunctionDuration.ts)に一元化してある。
+ * このTTLは、Functionが強制終了された後もロックだけがinFlight状態で残り続けない
+ * よう、その値に安全マージンを加えた値にする。
  */
-export const DIAGNOSIS_MAX_EXECUTION_MS = 5 * 60 * 1000;
+export const DIAGNOSIS_MAX_EXECUTION_MS = DIAGNOSIS_FUNCTION_MAX_DURATION_MS;
 const LOCK_SAFETY_MARGIN_MS = 30 * 1000;
 export const DIAGNOSIS_INFLIGHT_LOCK_TTL_MS = DIAGNOSIS_MAX_EXECUTION_MS + LOCK_SAFETY_MARGIN_MS;

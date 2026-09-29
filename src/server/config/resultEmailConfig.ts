@@ -86,6 +86,19 @@ export function resolveResultEmailConfigFromProcessEnv(): ResultEmailConfig {
  * 設定された場合のみAPP_BASE_URLの代わりに使う(未設定時は常にAPP_BASE_URLのまま、
  * 本番の挙動は一切変わらない)。
  *
+ * 【ホスト許可リスト(2026-09-29のPO指摘への対応)】
+ * HTTPSであることだけでは、EMAIL_LINK_BASE_URLの値を勝手に外部から書き換えられた
+ * 場合の防御にならない(schemeを満たす任意ホストを許可してしまう)。そのため、
+ * `EMAIL_LINK_ALLOWED_HOSTS`(カンマ区切りのホスト名リスト)を別途用意し、
+ * EMAIL_LINK_BASE_URLのホスト名がこのリストに含まれる場合のみ採用する。
+ * 許可リスト自体が未設定の場合は、EMAIL_LINK_BASE_URLが設定されていても採用せず、
+ * 従来どおりAPP_BASE_URLを使う動作へフォールバックする(「許可リストが無ければ
+ * 何でも許可」にはしない。メール送信自体を止めるものではなく、あくまで
+ * EMAIL_LINK_BASE_URL導入前の標準動作に戻るだけ)。
+ * 対象ブランチのPreview環境変数として、そのブランチのAlias/デプロイ固有ホスト名
+ * だけを`EMAIL_LINK_ALLOWED_HOSTS`へ設定する運用を想定する(下記
+ * resolveEmailLinkBaseUrlFromProcessEnv側のコメント参照)。
+ *
  * 値はHTTPSのみ許可する(HTTP・その他schemeは拒否)。このヘルパーはメール確認
  * (sendEmailVerification.ts)とパスワード再設定(sendContactPasswordResetEmail.ts)の
  * 2箇所からのみ呼ぶ想定(PO指示の適用範囲)。Stripe Checkout等、他の`appBaseUrl`
@@ -112,6 +125,26 @@ export function resolveEmailLinkBaseUrl(
     console.warn("[resolveEmailLinkBaseUrl] EMAIL_LINK_BASE_URL must use https; falling back to APP_BASE_URL.");
     return fallbackAppBaseUrl;
   }
+
+  const allowedHosts = (env.EMAIL_LINK_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((host) => host.trim().toLowerCase())
+    .filter((host) => host.length > 0);
+  if (allowedHosts.length === 0) {
+    console.warn(
+      "[resolveEmailLinkBaseUrl] EMAIL_LINK_ALLOWED_HOSTS is not set (HTTPS alone is not a host " +
+        "allow-list); EMAIL_LINK_BASE_URL is not applied and email links fall back to the standard " +
+        "APP_BASE_URL behavior."
+    );
+    return fallbackAppBaseUrl;
+  }
+  if (!allowedHosts.includes(url.hostname.toLowerCase())) {
+    console.warn(
+      "[resolveEmailLinkBaseUrl] EMAIL_LINK_BASE_URL host is not in EMAIL_LINK_ALLOWED_HOSTS; falling back to APP_BASE_URL."
+    );
+    return fallbackAppBaseUrl;
+  }
+
   return url.origin;
 }
 

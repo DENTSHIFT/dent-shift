@@ -16,7 +16,10 @@ CREATE TABLE "DiagnosisIdempotencyLock" (
     "status" TEXT NOT NULL,
     "diagnosisId" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "completedAt" DATETIME
+    "completedAt" DATETIME,
+    "principalKey" TEXT NOT NULL DEFAULT '',
+    "inputHash" TEXT NOT NULL DEFAULT '',
+    "executionId" TEXT
 );
 
 -- CreateIndex

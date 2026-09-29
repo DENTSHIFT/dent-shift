@@ -141,3 +141,63 @@ describe("進捗更新はrequestAnimationFrameではなくsetIntervalを使う",
     expect(source).toContain("tickIntervalRef");
   });
 });
+
+/**
+ * 2026-09-29追加(PO指摘、匿名Cookie初回リクエスト対策P0、2回目: 診断送信処理で
+ * セッション取得の完了を必ず待つこと。取得失敗時は診断POSTを送らず、入力内容を
+ * 保持して再試行を案内すること)。
+ *
+ * ゲート関数自体の非同期挙動(遅延・失敗・再試行)はanonymousSessionReadiness.test.ts
+ * (jsdom不要のPromiseベースの直接テスト)で検証する。このファイルはそれを
+ * submitDiagnosis()が実際に正しい順序・正しい失敗時挙動で呼んでいることの
+ * ソースレベル回帰テスト(diagnosisAnalyzingTiming.test.tsの既存パターンを踏襲)。
+ */
+describe("診断送信は匿名セッションcookieの確立を待ってからPOSTする", () => {
+  function pageSource(): string {
+    return readFileSync(path.join(process.cwd(), "src/app/diagnosis/page.tsx"), "utf8");
+  }
+
+  it("submitDiagnosisは、POST /api/diagnosisより前にensureAnonymousDiagnosisSessionReady()をawaitする", () => {
+    const source = pageSource();
+    const submitFnMatch = source.match(
+      /async function submitDiagnosis\(generation: number\) \{([\s\S]*?)\n  \}/
+    );
+    expect(submitFnMatch).not.toBeNull();
+    const body = submitFnMatch![1]!;
+    const readyIndex = body.indexOf("await ensureAnonymousDiagnosisSessionReady()");
+    const postIndex = body.indexOf('fetch("/api/diagnosis"');
+    expect(readyIndex).toBeGreaterThan(-1);
+    expect(postIndex).toBeGreaterThan(-1);
+    expect(readyIndex).toBeLessThan(postIndex);
+  });
+
+  it("セッション取得に失敗した場合、POST /api/diagnosisを送らずerror状態へ切り替える(入力値(values)は一切変更しない)", () => {
+    const source = pageSource();
+    const submitFnMatch = source.match(
+      /async function submitDiagnosis\(generation: number\) \{([\s\S]*?)\n  \}/
+    );
+    const body = submitFnMatch![1]!;
+    // ensureAnonymousDiagnosisSessionReady()呼び出し直後のcatchブロックを取り出す。
+    const readySection = body.slice(
+      body.indexOf("await ensureAnonymousDiagnosisSessionReady()"),
+      body.indexOf('fetch("/api/diagnosis"')
+    );
+    expect(readySection).toMatch(/catch\s*\{/);
+    expect(readySection).toContain('setFlowState("error")');
+    // このブロック内でPOSTへ進む分岐(fetch呼び出し)が存在しないこと(必ずreturnで抜ける)。
+    expect(readySection).not.toContain("fetch(");
+    expect(readySection).toMatch(/return;/);
+    // setValues(フォーム入力のリセット)は呼ばれない。
+    expect(readySection).not.toContain("setValues(");
+  });
+
+  it("ensureAnonymousDiagnosisSessionReadyはDOMに依存しない純粋なゲート関数(anonymousSessionReadiness.ts)から生成される", () => {
+    const source = pageSource();
+    expect(source).toContain(
+      'import { createAnonymousSessionReadinessGate } from "./anonymousSessionReadiness";'
+    );
+    expect(source).toContain(
+      "const ensureAnonymousDiagnosisSessionReady = useRef(createAnonymousSessionReadinessGate()).current;"
+    );
+  });
+});

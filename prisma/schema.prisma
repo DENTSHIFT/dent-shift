@@ -749,6 +749,18 @@ model DiagnosisIdempotencyLock {
   diagnosisId     String?
   createdAt       DateTime  @default(now())
   completedAt     DateTime?
+  // 2026-09-29追加(PO指摘、冪等性の主体紐付け・同時実行の正確な引き継ぎP0):
+  // このclientRequestIdを最初に使った主体(ログイン中はcontactId、匿名はIPハッシュ)。
+  // 別の主体が同じclientRequestIdを送っても、他人の診断結果(diagnosisId)を
+  // 取得できないようにする。
+  principalKey    String    @default("")
+  // 同じclientRequestIdで異なる入力(医院名・URL等)が送られた場合に拒否するための、
+  // 初回リクエスト本文のハッシュ(SHA-256)。
+  inputHash       String    @default("")
+  // レート制限側のexecutionIdと同じ考え方。TTL経過による引き継ぎ後、古い実行の
+  // 完了処理(markCompleted/markFailed)が新しい実行の状態を誤って上書きしないよう、
+  // 発行元の実行だけが自分のexecutionIdで更新できるようにする。
+  executionId     String?
 
   @@index([createdAt])
 }

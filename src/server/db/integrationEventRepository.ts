@@ -5,12 +5,7 @@ import { syncIntegrationEvent, MAX_RETRY_COUNT } from "@/server/services/salesfo
 
 export class IntegrationEventRepositoryError extends Error {}
 
-/**
- * Salesforce同期イベントをDBへ積み、直後に1回だけ同期を試行する(専用キュー基盤が無いため。
- * plan.mdの方式)。失敗してもpendingのまま残り、後続の再試行ジョブが処理する。
- * enqueue自体は呼び出し元のメイン処理(診断・登録・認証)を絶対にブロックしない。
- */
-export async function enqueueIntegrationEvent(input: {
+interface IntegrationEventInput {
   eventType: string;
   clinicId?: string | null;
   contactId?: string | null;
@@ -21,15 +16,31 @@ export async function enqueueIntegrationEvent(input: {
   // 行が既にあれば新規作成をスキップし(P2002)、既存行に対して再度同期を試行しない
   // (=イベントは最終的に必ず1件だけになる)。
   dedupeKey?: string | null;
-}): Promise<void> {
+}
+
+/**
+ * 2026-09-29追加(PO指摘、3回目: 診断・冪等性完了・Salesforce送信待ちイベントを
+ * 同一トランザクションで保存すること)。
+ *
+ * DBへ"pending"行を作るところまでだけを行う、副作用(ネットワーク呼び出し)を
+ * 含まない純粋なDB書き込み。tx clientを受け取れるようにし、
+ * saveDiagnosisResultIfIdempotencyLockCurrent()(diagnosisRepository.ts)が
+ * Clinic/Diagnosis保存・冪等性ロック完了記録と同じトランザクションの中でこれを
+ * 呼べるようにする(=診断結果とSalesforce送信待ちイベントが、DB上は常に
+ * セットで存在する。診断だけ保存されてイベントが無い、という状態を作らない)。
+ * 戻り値がnullの場合はdedupeKeyによるスキップ(呼び出し元は同期試行不要)。
+ */
+export async function createPendingIntegrationEventInTransaction(
+  tx: Prisma.TransactionClient,
+  input: IntegrationEventInput
+): Promise<{ id: string } | null> {
   if (!isIntegrationEventType(input.eventType)) {
     throw new IntegrationEventRepositoryError(`Unknown integration event type: ${input.eventType}`);
   }
   assertNoForbiddenPayloadKeys(input.payload);
 
-  let event;
   try {
-    event = await prisma.integrationEvent.create({
+    const event = await tx.integrationEvent.create({
       data: {
         eventType: input.eventType,
         clinicId: input.clinicId ?? null,
@@ -39,23 +50,46 @@ export async function enqueueIntegrationEvent(input: {
         dedupeKey: input.dedupeKey ?? null,
       },
     });
+    return { id: event.id };
   } catch (error) {
     const code = (error as { code?: unknown } | null)?.code;
     if (input.dedupeKey && code === "P2002") {
-      // 既に同じ出来事のイベントが(このパスまたは別のWebhook経路から)記録済み。
-      // 二重記録・二重同期を避けるため、ここで静かに終える(再試行ジョブも不要)。
       console.info(
         `[integrationEventRepository] duplicate event skipped via dedupeKey: ${input.eventType}`
       );
-      return;
+      return null;
     }
     throw error;
   }
+}
+
+/**
+ * 2026-09-29修正: DB作成(createPendingIntegrationEventInTransaction)と、その直後の
+ * 同期試行(ネットワーク呼び出し、失敗してもpendingのまま残す)を分離した。
+ * signup/webhook等、診断保存とのトランザクション同期が不要な既存呼び出し元は、
+ * 引き続きこの1関数で「作成してすぐ1回試行する」までを行える。
+ */
+export async function enqueueIntegrationEvent(input: IntegrationEventInput): Promise<void> {
+  const event = await createPendingIntegrationEventInTransaction(prisma, input);
+  if (!event) return;
 
   // enqueue呼び出し元(signup/diagnosis/webhook等)をSalesforce障害で失敗させないよう、
   // 同期試行の例外はここで握りつぶし、pendingのままDBに残す(再試行ジョブが処理)。
   await syncIntegrationEvent(event.id).catch((error) => {
     console.error(`[integrationEventRepository] initial sync attempt failed for ${event.id}:`, error);
+  });
+}
+
+/**
+ * 2026-09-29追加: 診断保存トランザクション内で作成済みのpendingイベントに対し、
+ * トランザクションのコミット後に同期を1回試行する(ネットワーク呼び出しをDB
+ * トランザクションの中では行わない。Prismaのトランザクションは長時間の外部I/Oを
+ * 抱えるとタイムアウト・ロック保持時間の悪化を招くため)。失敗してもpendingの
+ * ままDBに残る(既存の再試行ジョブが処理)。
+ */
+export async function attemptIntegrationEventSync(eventId: string): Promise<void> {
+  await syncIntegrationEvent(eventId).catch((error) => {
+    console.error(`[integrationEventRepository] initial sync attempt failed for ${eventId}:`, error);
   });
 }
 

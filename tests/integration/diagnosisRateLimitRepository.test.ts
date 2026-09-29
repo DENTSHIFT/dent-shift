@@ -18,6 +18,23 @@ let rateLimitRepo: typeof import("@/server/db/diagnosisRateLimitRepository");
 let idempotencyRepo: typeof import("@/server/db/diagnosisIdempotencyRepository");
 let prisma: import("@prisma/client").PrismaClient;
 
+/**
+ * markDiagnosisIdempotencyLockCompletedInTransaction()はtxクライアント専用のため、
+ * テストからは1ステップだけの$transactionでラップして呼ぶ(本番のroute.ts経路では
+ * saveDiagnosisResultIfIdempotencyLockCurrent()がClinic/Diagnosis保存と同じ
+ * トランザクションの中で呼ぶ)。
+ */
+async function markCompletedForTest(clientRequestId: string, executionId: string, diagnosisId: string) {
+  await prisma.$transaction(async (tx) => {
+    await idempotencyRepo.markDiagnosisIdempotencyLockCompletedInTransaction(
+      tx,
+      clientRequestId,
+      executionId,
+      diagnosisId
+    );
+  });
+}
+
 beforeAll(async () => {
   const testTmpRoot =
     process.platform === "darwin" ? realpathSync("/tmp") : realpathSync(tmpdir());
@@ -167,33 +184,57 @@ describe("reserveDiagnosisSlot: 並列リクエストの排他制御", () => {
   });
 });
 
+const PRINCIPAL_A = "contact:aaa";
+const PRINCIPAL_B = "contact:bbb";
+const INPUT_HASH_1 = "hash-1";
+const INPUT_HASH_2 = "hash-2";
+
 describe("acquireDiagnosisIdempotencyLock: タイムアウト後の再送で外部AIを再実行しない", () => {
   it("初回はnewを返し、進行中の同じclientRequestIdの再送はin_progressを返す(AI再実行させない)", async () => {
-    const first = await idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-1");
-    expect(first).toEqual({ kind: "new" });
+    const first = await idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-1", PRINCIPAL_A, INPUT_HASH_1);
+    expect(first.kind).toBe("new");
 
-    const retryWhileInProgress = await idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-1");
+    const retryWhileInProgress = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "idem-test-1",
+      PRINCIPAL_A,
+      INPUT_HASH_1
+    );
     expect(retryWhileInProgress).toEqual({ kind: "in_progress" });
   });
 
   it("完了済みのclientRequestIdの再送は、同じdiagnosisIdをそのまま返す(AI再実行なし)", async () => {
-    await idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-2");
-    await idempotencyRepo.markDiagnosisIdempotencyLockCompleted("idem-test-2", "diagnosis-abc");
+    const created = await idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-2", PRINCIPAL_A, INPUT_HASH_1);
+    if (created.kind !== "new") throw new Error("expected new");
+    await markCompletedForTest("idem-test-2", created.executionId, "diagnosis-abc");
 
-    const retryAfterCompletion = await idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-2");
+    const retryAfterCompletion = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "idem-test-2",
+      PRINCIPAL_A,
+      INPUT_HASH_1
+    );
     expect(retryAfterCompletion).toEqual({ kind: "completed", diagnosisId: "diagnosis-abc" });
   });
 
   it("失敗(failed)扱いになったclientRequestIdは、再送時に新規実行として引き継がれる", async () => {
-    await idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-3");
-    await idempotencyRepo.markDiagnosisIdempotencyLockFailed("idem-test-3");
+    const created = await idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-3", PRINCIPAL_A, INPUT_HASH_1);
+    if (created.kind !== "new") throw new Error("expected new");
+    await idempotencyRepo.markDiagnosisIdempotencyLockFailed("idem-test-3", created.executionId);
 
-    const retryAfterFailure = await idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-3");
-    expect(retryAfterFailure).toEqual({ kind: "new" });
+    const retryAfterFailure = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "idem-test-3",
+      PRINCIPAL_A,
+      INPUT_HASH_1
+    );
+    expect(retryAfterFailure.kind).toBe("new");
   });
 
   it("TTLを超えてin_progressのままの古いロックは、新しい実行が引き継ぐ(サーバークラッシュ等からの復旧)", async () => {
-    await idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-4");
+    const original = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "idem-test-4",
+      PRINCIPAL_A,
+      INPUT_HASH_1
+    );
+    if (original.kind !== "new") throw new Error("expected new");
     await prisma.diagnosisIdempotencyLock.update({
       where: { clientRequestId: "idem-test-4" },
       data: {
@@ -201,15 +242,119 @@ describe("acquireDiagnosisIdempotencyLock: タイムアウト後の再送で外�
       },
     });
 
-    const takenOver = await idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-4");
-    expect(takenOver).toEqual({ kind: "new" });
+    const takenOver = await idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-4", PRINCIPAL_A, INPUT_HASH_1);
+    expect(takenOver.kind).toBe("new");
+    if (takenOver.kind !== "new") throw new Error("expected new");
+    expect(takenOver.executionId).not.toBe(original.executionId);
+
+    // TTL経過後に引き継がれた古い実行(original.executionId)が、後になって遅れて
+    // 完了/失敗を書き込もうとしても、新しい実行(takenOver)の状態を上書きしない。
+    await markCompletedForTest("idem-test-4", original.executionId, "stale-diagnosis");
+    const stateAfterStaleWrite = await prisma.diagnosisIdempotencyLock.findUnique({
+      where: { clientRequestId: "idem-test-4" },
+    });
+    expect(stateAfterStaleWrite?.status).toBe("in_progress");
+    expect(stateAfterStaleWrite?.diagnosisId).toBeNull();
+    expect(stateAfterStaleWrite?.executionId).toBe(takenOver.executionId);
   });
 
   it("同時に同じclientRequestIdで10件到達しても、newは1件だけになる(二重送信・二重クリック対策)", async () => {
     const results = await Promise.all(
-      Array.from({ length: 10 }, () => idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-parallel"))
+      Array.from({ length: 10 }, () =>
+        idempotencyRepo.acquireDiagnosisIdempotencyLock("idem-test-parallel", PRINCIPAL_A, INPUT_HASH_1)
+      )
     );
     const newCount = results.filter((r) => r.kind === "new").length;
     expect(newCount).toBe(1);
+  });
+
+  it("別の主体(別アカウント・別匿名IP)が同じclientRequestIdを使うとprincipal_mismatchを返し、diagnosisIdを返さない", async () => {
+    const created = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "idem-test-principal",
+      PRINCIPAL_A,
+      INPUT_HASH_1
+    );
+    if (created.kind !== "new") throw new Error("expected new");
+    await markCompletedForTest("idem-test-principal", created.executionId, "diagnosis-should-not-leak");
+
+    const fromOtherPrincipal = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "idem-test-principal",
+      PRINCIPAL_B,
+      INPUT_HASH_1
+    );
+    expect(fromOtherPrincipal).toEqual({ kind: "principal_mismatch" });
+  });
+
+  it("同じ主体でも入力(inputHash)が異なる再送はinput_mismatchで拒否する", async () => {
+    const created = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "idem-test-input",
+      PRINCIPAL_A,
+      INPUT_HASH_1
+    );
+    expect(created.kind).toBe("new");
+
+    const withDifferentInput = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "idem-test-input",
+      PRINCIPAL_A,
+      INPUT_HASH_2
+    );
+    expect(withDifferentInput).toEqual({ kind: "input_mismatch" });
+  });
+});
+
+describe("claimDiagnosisIdempotencyLockExecutionInTransaction: 重複診断保存の防止(PO指摘、2回目)", () => {
+  it("引き継がれていない場合はtrueを返す(トランザクション内)", async () => {
+    const created = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "idem-test-current-1",
+      PRINCIPAL_A,
+      INPUT_HASH_1
+    );
+    if (created.kind !== "new") throw new Error("expected new");
+
+    const claimed = await prisma.$transaction((tx) =>
+      idempotencyRepo.claimDiagnosisIdempotencyLockExecutionInTransaction(
+        tx,
+        "idem-test-current-1",
+        created.executionId
+      )
+    );
+    expect(claimed).toBe(true);
+  });
+
+  it("TTL経過で別の実行に引き継がれた後は、古いexecutionIdに対してfalseを返す(トランザクション開始時点でロールバックの判断材料になる)", async () => {
+    const original = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "idem-test-current-2",
+      PRINCIPAL_A,
+      INPUT_HASH_1
+    );
+    if (original.kind !== "new") throw new Error("expected new");
+    await prisma.diagnosisIdempotencyLock.update({
+      where: { clientRequestId: "idem-test-current-2" },
+      data: { createdAt: new Date(Date.now() - 6 * 60 * 1000) },
+    });
+    const takenOver = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "idem-test-current-2",
+      PRINCIPAL_A,
+      INPUT_HASH_1
+    );
+    if (takenOver.kind !== "new") throw new Error("expected new");
+
+    const staleClaim = await prisma.$transaction((tx) =>
+      idempotencyRepo.claimDiagnosisIdempotencyLockExecutionInTransaction(
+        tx,
+        "idem-test-current-2",
+        original.executionId
+      )
+    );
+    expect(staleClaim).toBe(false);
+
+    const currentClaim = await prisma.$transaction((tx) =>
+      idempotencyRepo.claimDiagnosisIdempotencyLockExecutionInTransaction(
+        tx,
+        "idem-test-current-2",
+        takenOver.executionId
+      )
+    );
+    expect(currentClaim).toBe(true);
   });
 });

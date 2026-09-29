@@ -1,4 +1,11 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./prismaClient";
+import {
+  claimDiagnosisIdempotencyLockExecutionInTransaction,
+  markDiagnosisIdempotencyLockCompletedInTransaction,
+  type DiagnosisIdempotencyTransactionClient,
+} from "./diagnosisIdempotencyRepository";
+import { createPendingIntegrationEventInTransaction } from "./integrationEventRepository";
 import type { RunFreeDiagnosisResult } from "@/server/services/runFreeDiagnosis";
 import type { AdComplianceCheckResult } from "@/domain/ad-compliance/types";
 import { validateAiMeasurementObservation } from "@/domain/ai-measurement/invariants";
@@ -14,6 +21,15 @@ import {
   type FirstTouchUtmColumns,
   type UtmAttribution,
 } from "@/domain/marketing/utmAttribution";
+
+/**
+ * 2026-09-29追加(PO指摘、重複診断保存対策P0、2回目): 冪等性ロックの実行権確認
+ * (claimDiagnosisIdempotencyLockExecutionInTransaction)と、Clinic/Diagnosis保存
+ * (persistDiagnosisResult)と、完了記録(markDiagnosisIdempotencyLockCompletedInTransaction)
+ * を同じDBトランザクションの中で行うため、通常のprisma clientとtx clientの
+ * 両方を受け付けられるよう、実際の保存ロジックをこの型でパラメータ化する。
+ */
+type DiagnosisWriteClient = typeof prisma | Prisma.TransactionClient;
 
 /**
  * saveDiagnosisResult/getDiagnosisById(結果ページ用)は無料診断のUX上、認証なしで
@@ -60,20 +76,23 @@ export function resolveMeasurementStatusForNewObservation(
   );
 }
 
-export async function saveDiagnosisResult(
-  input: {
-    clinicUrl: string;
-    directorName: string;
-    contactEmail: string;
-    contactPhone?: string;
-    gbpUrl?: string;
-    bookingUrl?: string;
-    existingClinicId?: string;
-    // 2026-09-29追加(PO承認、Salesforce連携P0): 初回流入UTM(first-touch)。
-    // 新規Clinic作成時はそのまま保存し、既存Clinicの場合はまだnullの列だけを埋める
-    // (firstTouchUtmUpdateData参照、既に値がある列は上書きしない)。
-    utm?: UtmAttribution;
-  },
+interface SaveDiagnosisResultInput {
+  clinicUrl: string;
+  directorName: string;
+  contactEmail: string;
+  contactPhone?: string;
+  gbpUrl?: string;
+  bookingUrl?: string;
+  existingClinicId?: string;
+  // 2026-09-29追加(PO承認、Salesforce連携P0): 初回流入UTM(first-touch)。
+  // 新規Clinic作成時はそのまま保存し、既存Clinicの場合はまだnullの列だけを埋める
+  // (firstTouchUtmUpdateData参照、既に値がある列は上書きしない)。
+  utm?: UtmAttribution;
+}
+
+async function persistDiagnosisResult(
+  db: DiagnosisWriteClient,
+  input: SaveDiagnosisResultInput,
   result: RunFreeDiagnosisResult
 ) {
   // 2026-09-07のユーザー指示: measurementStatusの決定(=legacy live観測の拒否判定)は、
@@ -143,8 +162,8 @@ export async function saveDiagnosisResult(
   // API routeがセッションから解決したexistingClinicIdを渡し、同じClinicへ履歴を追加する。
   // clientのリクエストbodyからclinicIdを受け取らないことで、他院への書き込みを防ぐ。
   const clinic = input.existingClinicId
-    ? await prisma.clinic.findUnique({ where: { id: input.existingClinicId } })
-    : await prisma.clinic.create({
+    ? await db.clinic.findUnique({ where: { id: input.existingClinicId } })
+    : await db.clinic.create({
         data: {
           name: result.clinicName,
           directorName: input.directorName.trim(),
@@ -168,14 +187,14 @@ export async function saveDiagnosisResult(
 
   // 電話番号必須化前に登録された医院は、最初の再診断時に今回の入力で補完する。
   if (input.existingClinicId && !clinic.contactPhone && input.contactPhone?.trim()) {
-    await prisma.clinic.update({
+    await db.clinic.update({
       where: { id: clinic.id },
       data: { contactPhone: input.contactPhone.trim() },
     });
   }
   // 院長名必須化(Ver3.3)前に登録された医院も、同様に最初の再診断時に補完する。
   if (input.existingClinicId && !clinic.directorName && input.directorName.trim()) {
-    await prisma.clinic.update({
+    await db.clinic.update({
       where: { id: clinic.id },
       data: { directorName: input.directorName.trim() },
     });
@@ -199,7 +218,7 @@ export async function saveDiagnosisResult(
   if (input.existingClinicId && input.utm) {
     const utmUpdate = firstTouchUtmUpdateData(persistedUtmColumns, input.utm);
     if (Object.keys(utmUpdate).length > 0) {
-      await prisma.clinic.update({ where: { id: clinic.id }, data: utmUpdate });
+      await db.clinic.update({ where: { id: clinic.id }, data: utmUpdate });
       persistedUtmColumns = { ...persistedUtmColumns, ...utmUpdate };
     }
   }
@@ -208,7 +227,7 @@ export async function saveDiagnosisResult(
 
   const measuredAt = new Date(result.measuredAt);
 
-  const diagnosis = await prisma.diagnosis.create({
+  const diagnosis = await db.diagnosis.create({
     data: {
       clinicId: clinic.id,
       totalPoints: result.scoreBreakdown.totalPoints,
@@ -248,6 +267,91 @@ export async function saveDiagnosisResult(
     diagnosisId: diagnosis.id,
     persistedUtm: clinicColumnsToUtmAttribution(persistedUtmColumns),
   };
+}
+
+/**
+ * テスト・既存呼び出し元(2026-09-29以前からの契約)向けの、冪等性ロックとは
+ * 無関係な素のsaveDiagnosisResult。diagnosis API route以外の呼び出し元
+ * (結合テスト等)は、依然としてこちらを使う。
+ */
+export async function saveDiagnosisResult(
+  input: SaveDiagnosisResultInput,
+  result: RunFreeDiagnosisResult
+) {
+  return persistDiagnosisResult(prisma, input, result);
+}
+
+/**
+ * 2026-09-29追加(PO指摘、重複診断保存対策P0、2回目): 「確認してから保存する」の
+ * 2段階方式では、確認と保存の間に別の実行が実行権を取得する窓(TOCTOU)が残る。
+ * この関数は、
+ *   1. 冪等性ロックの実行権を条件付きで確定させる(claim)、
+ *   2. Clinic/Diagnosisを保存する(persistDiagnosisResult)、
+ *   3. 冪等性ロックを完了として記録する、
+ * の3つを同じ`prisma.$transaction`の中で行い、1つのDBトランザクションとして
+ * 原子的に確定させる。1が失敗した場合(TTL経過で既に他の実行が引き継いでいた場合)は
+ * DiagnosisIdempotencyLockSupersededErrorをthrowしてトランザクション全体を
+ * ロールバックし、Clinic/Diagnosisのいずれも保存しない。
+ *
+ * これにより、「確認直後に別処理が実行権を取得する」競合を、DBのトランザクション
+ * 分離レベルそのものに委ねる(アプリケーション側の2段階チェックに頼らない)。
+ */
+export class DiagnosisIdempotencyLockSupersededError extends Error {}
+
+/**
+ * 2026-09-29追加(PO指摘、3回目: 診断・冪等性完了・Salesforce送信待ちイベントを
+ * 同一トランザクションで保存すること)。呼び出し元(diagnosis API route)が
+ * saveDiagnosisResultIfIdempotencyLockCurrent()に渡す、Salesforce同期イベントの
+ * payload組み立て関数。persistDiagnosisResult()の結果(clinicId/diagnosisId/
+ * persistedUtm)が確定した直後、同じトランザクション内で呼ばれる。nullを返した場合は
+ * イベントを作成しない(現状は常に作成する想定だが、将来の分岐に備えて許容する)。
+ */
+export type BuildIntegrationEventForSave = (
+  saved: Awaited<ReturnType<typeof persistDiagnosisResult>>
+) => {
+  eventType: string;
+  clinicId?: string | null;
+  contactId?: string | null;
+  payload: Record<string, unknown>;
+} | null;
+
+export async function saveDiagnosisResultIfIdempotencyLockCurrent(
+  input: SaveDiagnosisResultInput,
+  result: RunFreeDiagnosisResult,
+  idempotency: { clientRequestId: string; executionId: string },
+  buildIntegrationEvent?: BuildIntegrationEventForSave
+) {
+  return prisma.$transaction(async (tx: DiagnosisIdempotencyTransactionClient) => {
+    const claimed = await claimDiagnosisIdempotencyLockExecutionInTransaction(
+      tx,
+      idempotency.clientRequestId,
+      idempotency.executionId
+    );
+    if (!claimed) {
+      throw new DiagnosisIdempotencyLockSupersededError(
+        `Idempotency lock for clientRequestId=${idempotency.clientRequestId} was superseded before save.`
+      );
+    }
+
+    const saved = await persistDiagnosisResult(tx, input, result);
+
+    // 2026-09-29追加(PO指摘、3回目): Salesforce送信待ちイベントのDB作成(pending行)を
+    // 診断保存と同じトランザクションに含める。ネットワーク呼び出し(実際の同期試行)は
+    // トランザクションの外(コミット後)で行う(下記の戻り値経由で呼び出し元が行う)。
+    const integrationEventInput = buildIntegrationEvent?.(saved) ?? null;
+    const integrationEvent = integrationEventInput
+      ? await createPendingIntegrationEventInTransaction(tx, integrationEventInput)
+      : null;
+
+    await markDiagnosisIdempotencyLockCompletedInTransaction(
+      tx,
+      idempotency.clientRequestId,
+      idempotency.executionId,
+      saved.diagnosisId
+    );
+
+    return { ...saved, integrationEventId: integrationEvent?.id ?? null };
+  });
 }
 
 /**
@@ -371,9 +475,34 @@ export async function getDiagnosesByClinicId(clinicId: string) {
  * ops専用(2026-09-24): 結果メール送信に失敗した診断をクロステナントで一覧する。
  * 診断本体・JSON列は読み込まず、再送に必要な最小限のみ取得する。
  */
-export async function listFailedResultEmailDiagnosesForOps(limit = 50) {
+/**
+ * 2026-09-29修正(PO指摘、3回目: メールの未送信状態を保存し、途中終了後も回収可能に
+ * すること)。
+ *
+ * resultEmailStatusは診断保存トランザクション内でDiagnosis作成と同時にDBの既定値
+ * "pending"として確定する(スキーマのDEFAULT。src/app/api/diagnosis/route.tsの
+ * atomic saveの一部)。そのため「未送信状態の保存」自体は既に保証されているが、
+ * これまでこの一覧は"failed"(=sendDiagnosisResultEmail()が例外を投げ、catchが
+ * 明示的にstatusをfailedへ更新できたケース)だけを対象にしていた。Function自体が
+ * メール送信の途中で強制終了した場合はupdateDiagnosisResultEmailStatus()自体が
+ * 呼ばれず、statusは"pending"のまま残り続けるが、この一覧には一切表示されず
+ * 運営側が把握・回収する手段がなかった(pending=「これから送る」と「送信試行中に
+ * 消えた」を区別できていなかった)。
+ *
+ * 対応: "failed"に加えて、作成から一定時間(staleAfterMs、既定30分。診断保存直後に
+ * 同期的に送信を試行する設計のため、正常系では数秒〜数十秒でresultEmailStatusは
+ * pending以外へ確定する)経過してもなお"pending"のままの行を「送信試行中に
+ * 消えた」ものとみなし、同じ一覧・同じ手動再送ボタンで回収できるようにする。
+ */
+export async function listFailedResultEmailDiagnosesForOps(limit = 50, staleAfterMs = 30 * 60 * 1000) {
+  const staleCutoff = new Date(Date.now() - staleAfterMs);
   return prisma.diagnosis.findMany({
-    where: { resultEmailStatus: "failed" },
+    where: {
+      OR: [
+        { resultEmailStatus: "failed" },
+        { resultEmailStatus: "pending", measuredAt: { lt: staleCutoff } },
+      ],
+    },
     orderBy: { measuredAt: "desc" },
     take: limit,
     select: {

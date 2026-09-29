@@ -33,6 +33,7 @@ let testDbDir: string;
 let repo: typeof import("@/server/db/diagnosisRepository");
 let duplicateRepo: typeof import("@/server/db/clinicDuplicateRepository");
 let billingRepo: typeof import("@/server/db/billingRepository");
+let idempotencyRepo: typeof import("@/server/db/diagnosisIdempotencyRepository");
 let prisma: import("@prisma/client").PrismaClient;
 
 beforeAll(async () => {
@@ -52,6 +53,7 @@ beforeAll(async () => {
   repo = await import("@/server/db/diagnosisRepository");
   duplicateRepo = await import("@/server/db/clinicDuplicateRepository");
   billingRepo = await import("@/server/db/billingRepository");
+  idempotencyRepo = await import("@/server/db/diagnosisIdempotencyRepository");
   const clientModule = await import("@/server/db/prismaClient");
   prisma = clientModule.prisma;
 }, 60000);
@@ -1030,5 +1032,189 @@ describe("BillingRepository: 契約状態の医院スコープ", () => {
     expect(
       await prisma.billingWebhookEvent.count({ where: { providerEventId: "evt_wrong_clinic" } })
     ).toBe(0);
+  });
+});
+
+/**
+ * 2026-09-29追加(PO指摘、重複診断保存対策P0、2回目): 「実行権を確認した直後に
+ * 別処理が実行権を取得すると、古い処理も保存できてしまう」という指摘への対応
+ * (saveDiagnosisResultIfIdempotencyLockCurrent()、diagnosisRepository.ts参照)を、
+ * 実DB(SQLite)に対して検証する。
+ */
+describe("saveDiagnosisResultIfIdempotencyLockCurrent: 実行権確認とDB保存の原子性(PO指摘、2回目)", () => {
+  it("実行権が現在も有効なら、Clinic/Diagnosis保存と冪等性ロックの完了記録が同じトランザクションで確定する", async () => {
+    const acquired = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "atomic-save-test-1",
+      "anon:atomic-1",
+      "hash-1"
+    );
+    if (acquired.kind !== "new") throw new Error("expected new");
+
+    const result = await runFreeDiagnosis(buildInput("原子的保存検証歯科医院1"), deps);
+    const saved = await repo.saveDiagnosisResultIfIdempotencyLockCurrent(
+      { clinicUrl: "https://atomic-1.example.com", directorName: "テスト院長", contactEmail: "atomic-1@example.com" },
+      result,
+      { clientRequestId: "atomic-save-test-1", executionId: acquired.executionId }
+    );
+
+    const diagnosis = await prisma.diagnosis.findUnique({ where: { id: saved.diagnosisId } });
+    expect(diagnosis).not.toBeNull();
+
+    const lock = await prisma.diagnosisIdempotencyLock.findUnique({
+      where: { clientRequestId: "atomic-save-test-1" },
+    });
+    expect(lock?.status).toBe("completed");
+    expect(lock?.diagnosisId).toBe(saved.diagnosisId);
+  });
+
+  it("実行権の確認(claim)後に別処理が既に実行権を取得していた場合、Clinic/Diagnosisを一切保存しない(TOCTOUを許さない)", async () => {
+    const original = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "atomic-save-test-2",
+      "anon:atomic-2",
+      "hash-1"
+    );
+    if (original.kind !== "new") throw new Error("expected new");
+
+    // originalのexecutionId取得後、AI呼び出し中に相当する時間が経過し、TTLを超過した
+    // ものとして別の実行(retake)が引き継いだ状態を再現する(実行権の「割り込み」)。
+    await prisma.diagnosisIdempotencyLock.update({
+      where: { clientRequestId: "atomic-save-test-2" },
+      data: { createdAt: new Date(Date.now() - 6 * 60 * 1000) },
+    });
+    const retake = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "atomic-save-test-2",
+      "anon:atomic-2",
+      "hash-1"
+    );
+    if (retake.kind !== "new") throw new Error("expected new");
+    expect(retake.executionId).not.toBe(original.executionId);
+
+    const clinicCountBefore = await prisma.clinic.count();
+    const diagnosisCountBefore = await prisma.diagnosis.count();
+
+    // 古い実行(original)がAI呼び出し完了後に保存しようとするが、既にretakeへ
+    // 実行権が渡っているため、Clinic/Diagnosisのいずれも保存されず例外がthrowされる。
+    const result = await runFreeDiagnosis(buildInput("原子的保存検証歯科医院2"), deps);
+    await expect(
+      repo.saveDiagnosisResultIfIdempotencyLockCurrent(
+        { clinicUrl: "https://atomic-2.example.com", directorName: "テスト院長", contactEmail: "atomic-2@example.com" },
+        result,
+        { clientRequestId: "atomic-save-test-2", executionId: original.executionId }
+      )
+    ).rejects.toBeInstanceOf(repo.DiagnosisIdempotencyLockSupersededError);
+
+    expect(await prisma.clinic.count()).toBe(clinicCountBefore);
+    expect(await prisma.diagnosis.count()).toBe(diagnosisCountBefore);
+
+    // ロック自体もoriginalによって書き換えられていない(retakeの状態のまま)。
+    const lock = await prisma.diagnosisIdempotencyLock.findUnique({
+      where: { clientRequestId: "atomic-save-test-2" },
+    });
+    expect(lock?.executionId).toBe(retake.executionId);
+    expect(lock?.status).toBe("in_progress");
+  });
+
+  it("Salesforce送信待ちイベント(IntegrationEvent)がDiagnosis保存と同じトランザクションで作られる(PO指摘、3回目)", async () => {
+    const acquired = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "atomic-save-test-3",
+      "anon:atomic-3",
+      "hash-1"
+    );
+    if (acquired.kind !== "new") throw new Error("expected new");
+
+    const result = await runFreeDiagnosis(buildInput("原子的保存検証歯科医院3"), deps);
+    const saved = await repo.saveDiagnosisResultIfIdempotencyLockCurrent(
+      { clinicUrl: "https://atomic-3.example.com", directorName: "テスト院長", contactEmail: "atomic-3@example.com" },
+      result,
+      { clientRequestId: "atomic-save-test-3", executionId: acquired.executionId },
+      (savedInTx) => ({
+        eventType: "diagnosis_completed",
+        clinicId: savedInTx.clinicId,
+        contactId: null,
+        payload: { diagnosis_id: savedInTx.diagnosisId },
+      })
+    );
+
+    expect(saved.integrationEventId).not.toBeNull();
+    const event = await prisma.integrationEvent.findUnique({
+      where: { id: saved.integrationEventId! },
+    });
+    expect(event).not.toBeNull();
+    expect(event?.status).toBe("pending");
+    expect(event?.clinicId).toBe(saved.clinicId);
+  });
+
+  it("実行権が取れなかった場合、Salesforce送信待ちイベントも一切作られない(トランザクション全体がロールバックする)", async () => {
+    const original = await idempotencyRepo.acquireDiagnosisIdempotencyLock(
+      "atomic-save-test-4",
+      "anon:atomic-4",
+      "hash-1"
+    );
+    if (original.kind !== "new") throw new Error("expected new");
+    await prisma.diagnosisIdempotencyLock.update({
+      where: { clientRequestId: "atomic-save-test-4" },
+      data: { createdAt: new Date(Date.now() - 6 * 60 * 1000) },
+    });
+    await idempotencyRepo.acquireDiagnosisIdempotencyLock("atomic-save-test-4", "anon:atomic-4", "hash-1");
+
+    const integrationEventCountBefore = await prisma.integrationEvent.count();
+    const result = await runFreeDiagnosis(buildInput("原子的保存検証歯科医院4"), deps);
+    await expect(
+      repo.saveDiagnosisResultIfIdempotencyLockCurrent(
+        { clinicUrl: "https://atomic-4.example.com", directorName: "テスト院長", contactEmail: "atomic-4@example.com" },
+        result,
+        { clientRequestId: "atomic-save-test-4", executionId: original.executionId },
+        (savedInTx) => ({
+          eventType: "diagnosis_completed",
+          clinicId: savedInTx.clinicId,
+          contactId: null,
+          payload: { diagnosis_id: savedInTx.diagnosisId },
+        })
+      )
+    ).rejects.toBeInstanceOf(repo.DiagnosisIdempotencyLockSupersededError);
+
+    expect(await prisma.integrationEvent.count()).toBe(integrationEventCountBefore);
+  });
+});
+
+describe("listFailedResultEmailDiagnosesForOps: メール未送信状態の回収(PO指摘、3回目)", () => {
+  it("resultEmailStatus='failed'は常に一覧へ含まれる", async () => {
+    const result = await runFreeDiagnosis(buildInput("メール失敗回収検証歯科医院1"), deps);
+    const saved = await repo.saveDiagnosisResult(
+      { clinicUrl: "https://email-failed.example.com", directorName: "テスト院長", contactEmail: "email-failed@example.com" },
+      result
+    );
+    await repo.updateDiagnosisResultEmailStatus(saved.diagnosisId, "failed");
+
+    const list = await repo.listFailedResultEmailDiagnosesForOps(50, 30 * 60 * 1000);
+    expect(list.some((d) => d.id === saved.diagnosisId)).toBe(true);
+  });
+
+  it("resultEmailStatus='pending'のまま長時間経過した行(=送信試行中にFunctionが消えたと推定される)も回収一覧へ含まれる", async () => {
+    const result = await runFreeDiagnosis(buildInput("メール未送信回収検証歯科医院2"), deps);
+    const saved = await repo.saveDiagnosisResult(
+      { clinicUrl: "https://email-stuck-pending.example.com", directorName: "テスト院長", contactEmail: "email-stuck-pending@example.com" },
+      result
+    );
+    // resultEmailStatusはDiagnosis作成時点の既定値"pending"のまま。
+    // measuredAtを「十分に古い」時刻へ書き換え、staleAfterMsを超過させる。
+    await prisma.diagnosis.update({
+      where: { id: saved.diagnosisId },
+      data: { measuredAt: new Date(Date.now() - 60 * 60 * 1000) },
+    });
+
+    const list = await repo.listFailedResultEmailDiagnosesForOps(50, 30 * 60 * 1000);
+    expect(list.some((d) => d.id === saved.diagnosisId)).toBe(true);
+  });
+
+  it("resultEmailStatus='pending'でもstaleAfterMs未満(=まだ送信試行中の可能性がある)の行は一覧へ含めない", async () => {
+    const result = await runFreeDiagnosis(buildInput("メール送信中検証歯科医院3"), deps);
+    const saved = await repo.saveDiagnosisResult(
+      { clinicUrl: "https://email-in-progress.example.com", directorName: "テスト院長", contactEmail: "email-in-progress@example.com" },
+      result
+    );
+
+    const list = await repo.listFailedResultEmailDiagnosesForOps(50, 30 * 60 * 1000);
+    expect(list.some((d) => d.id === saved.diagnosisId)).toBe(false);
   });
 });

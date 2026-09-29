@@ -11,6 +11,10 @@ import { applyPrismaMigrationsToTestDatabase } from "../helpers/testDatabase";
  * 実DBに対して確認する結合テスト。
  */
 
+const { DiagnosisIdempotencyLockSupersededError } = vi.hoisted(() => ({
+  DiagnosisIdempotencyLockSupersededError: class DiagnosisIdempotencyLockSupersededError extends Error {},
+}));
+
 const mocks = vi.hoisted(() => ({
   currentContact: vi.fn(),
   runFreeDiagnosis: vi.fn(),
@@ -19,15 +23,20 @@ const mocks = vi.hoisted(() => ({
   resolveConfig: vi.fn(),
   createProvider: vi.fn(),
   sendResultEmail: vi.fn(),
+  anonymousDiagnosisSessionId: vi.fn(),
 }));
 
 vi.mock("@/server/auth/session", () => ({ getCurrentContact: mocks.currentContact }));
+vi.mock("@/server/auth/anonymousDiagnosisSession", () => ({
+  getOrCreateAnonymousDiagnosisSessionId: mocks.anonymousDiagnosisSessionId,
+}));
 vi.mock("@/server/services/runFreeDiagnosis", () => ({
   runFreeDiagnosis: mocks.runFreeDiagnosis,
   InvalidDiagnosisInputError: class InvalidDiagnosisInputError extends Error {},
 }));
 vi.mock("@/server/db/diagnosisRepository", () => ({
-  saveDiagnosisResult: mocks.saveDiagnosisResult,
+  saveDiagnosisResultIfIdempotencyLockCurrent: mocks.saveDiagnosisResult,
+  DiagnosisIdempotencyLockSupersededError,
   updateDiagnosisResultEmailStatus: mocks.updateEmailStatus,
 }));
 vi.mock("@/server/config/aiMeasurementConfig", () => ({
@@ -71,6 +80,7 @@ beforeEach(async () => {
   await prisma.integrationEvent.deleteMany();
   vi.clearAllMocks();
   mocks.currentContact.mockResolvedValue(null);
+  mocks.anonymousDiagnosisSessionId.mockResolvedValue("test-anon-session-id");
   mocks.resolveConfig.mockReturnValue({ provider: "mock" });
   mocks.createProvider.mockReturnValue({});
   mocks.runFreeDiagnosis.mockResolvedValue({
@@ -88,18 +98,50 @@ beforeEach(async () => {
   // persistedUtm(実際にDBへ確定したUTM)を使うようになった。このテストは常に匿名の
   // 新規Clinic作成経路(currentContact=null)のみを扱うため、persistedUtm=input.utmで
   // 実際のrepositoryの新規Clinic時の挙動(今回の入力がそのままfirst-touchになる)を再現する。
-  mocks.saveDiagnosisResult.mockImplementation((input: { utm?: Record<string, string | null> }) =>
-    Promise.resolve({
-      clinicId: "clinic-utm-test",
-      diagnosisId: "diagnosis-utm-test",
-      persistedUtm: input.utm ?? {
-        utm_source: null,
-        utm_medium: null,
-        utm_campaign: null,
-        utm_content: null,
-        utm_term: null,
-      },
-    })
+  // 2026-09-29修正(PO指摘、3回目): 診断保存トランザクション内でSalesforce送信待ち
+  // イベントも作成するようになった(saveDiagnosisResultIfIdempotencyLockCurrentの
+  // 第4引数のbuilder)。このテストはsaveDiagnosisResultIfIdempotencyLockCurrent自体を
+  // モックしているため、実際のトランザクションは走らないが、route.tsが渡す
+  // builderコールバックを呼び出し、実DBへIntegrationEvent行を作ることで、
+  // 「診断payload→IntegrationEvent.payloadJson」という実際の経路を引き続き検証する。
+  mocks.saveDiagnosisResult.mockImplementation(
+    async (
+      input: { utm?: Record<string, string | null> },
+      _result: unknown,
+      _idempotency: unknown,
+      buildIntegrationEvent?: (saved: {
+        clinicId: string;
+        diagnosisId: string;
+        persistedUtm: Record<string, string | null>;
+      }) => { eventType: string; clinicId?: string | null; contactId?: string | null; payload: Record<string, unknown> } | null
+    ) => {
+      const saved = {
+        clinicId: "clinic-utm-test",
+        diagnosisId: "diagnosis-utm-test",
+        persistedUtm: input.utm ?? {
+          utm_source: null,
+          utm_medium: null,
+          utm_campaign: null,
+          utm_content: null,
+          utm_term: null,
+        },
+      };
+      const eventInput = buildIntegrationEvent?.(saved) ?? null;
+      let integrationEventId: string | null = null;
+      if (eventInput) {
+        const event = await prisma.integrationEvent.create({
+          data: {
+            eventType: eventInput.eventType,
+            clinicId: eventInput.clinicId ?? null,
+            contactId: eventInput.contactId ?? null,
+            payloadJson: JSON.stringify(eventInput.payload),
+            status: "pending",
+          },
+        });
+        integrationEventId = event.id;
+      }
+      return { ...saved, integrationEventId };
+    }
   );
   mocks.updateEmailStatus.mockResolvedValue({ resultEmailStatus: "disabled", resultEmailSentAt: null });
   mocks.sendResultEmail.mockResolvedValue("disabled");

@@ -19,6 +19,9 @@ CREATE TABLE "DiagnosisIdempotencyLock" (
     "diagnosisId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "completedAt" TIMESTAMP(3),
+    "principalKey" TEXT NOT NULL DEFAULT '',
+    "inputHash" TEXT NOT NULL DEFAULT '',
+    "executionId" TEXT,
 
     CONSTRAINT "DiagnosisIdempotencyLock_pkey" PRIMARY KEY ("clientRequestId")
 );

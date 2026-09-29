@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
+const { DiagnosisIdempotencyLockSupersededError } = vi.hoisted(() => ({
+  DiagnosisIdempotencyLockSupersededError: class DiagnosisIdempotencyLockSupersededError extends Error {},
+}));
+
 const mocks = vi.hoisted(() => ({
   currentContact: vi.fn(),
   runFreeDiagnosis: vi.fn(),
@@ -11,14 +15,18 @@ const mocks = vi.hoisted(() => ({
   findDuplicate: vi.fn(),
   sendResultEmail: vi.fn(),
   acquireIdempotencyLock: vi.fn(),
-  markIdempotencyCompleted: vi.fn(),
   markIdempotencyFailed: vi.fn(),
   reserveDiagnosisSlot: vi.fn(),
   releaseDiagnosisSlot: vi.fn(),
+  anonymousDiagnosisSessionId: vi.fn(),
 }));
 
 vi.mock("@/server/auth/session", () => ({
   getCurrentContact: mocks.currentContact,
+}));
+
+vi.mock("@/server/auth/anonymousDiagnosisSession", () => ({
+  getOrCreateAnonymousDiagnosisSessionId: mocks.anonymousDiagnosisSessionId,
 }));
 
 vi.mock("@/server/services/runFreeDiagnosis", () => ({
@@ -27,7 +35,8 @@ vi.mock("@/server/services/runFreeDiagnosis", () => ({
 }));
 
 vi.mock("@/server/db/diagnosisRepository", () => ({
-  saveDiagnosisResult: mocks.saveDiagnosisResult,
+  saveDiagnosisResultIfIdempotencyLockCurrent: mocks.saveDiagnosisResult,
+  DiagnosisIdempotencyLockSupersededError,
   updateDiagnosisResultEmailStatus: mocks.updateEmailStatus,
 }));
 
@@ -50,7 +59,6 @@ vi.mock("@/server/services/sendDiagnosisResultEmail", () => ({
 
 vi.mock("@/server/db/diagnosisIdempotencyRepository", () => ({
   acquireDiagnosisIdempotencyLock: mocks.acquireIdempotencyLock,
-  markDiagnosisIdempotencyLockCompleted: mocks.markIdempotencyCompleted,
   markDiagnosisIdempotencyLockFailed: mocks.markIdempotencyFailed,
 }));
 
@@ -99,8 +107,8 @@ beforeEach(() => {
   });
   mocks.findDuplicate.mockResolvedValue(null);
   mocks.sendResultEmail.mockResolvedValue("disabled");
-  mocks.acquireIdempotencyLock.mockResolvedValue({ kind: "new" });
-  mocks.markIdempotencyCompleted.mockResolvedValue(undefined);
+  mocks.acquireIdempotencyLock.mockResolvedValue({ kind: "new", executionId: "test-execution-id" });
+  mocks.anonymousDiagnosisSessionId.mockResolvedValue("test-anon-session-id");
   mocks.markIdempotencyFailed.mockResolvedValue(undefined);
   mocks.reserveDiagnosisSlot.mockResolvedValue({ allowed: true, executionId: "exec-1" });
   mocks.releaseDiagnosisSlot.mockResolvedValue(undefined);
@@ -150,7 +158,9 @@ describe("POST /api/diagnosis: 再診断の医院スコープ", () => {
         contactEmail: "registered@example.com",
         contactPhone: "03-1234-5678",
       }),
-      diagnosisResult
+      diagnosisResult,
+      expect.objectContaining({ clientRequestId: expect.any(String), executionId: expect.any(String) }),
+      expect.any(Function)
     );
     expect(mocks.saveDiagnosisResult.mock.calls[0]![0]).not.toHaveProperty("clinicId");
     expect(mocks.findDuplicate).not.toHaveBeenCalled();
@@ -207,7 +217,9 @@ describe("POST /api/diagnosis: 再診断の医院スコープ", () => {
     expect(response.status).toBe(201);
     expect(mocks.saveDiagnosisResult).toHaveBeenCalledWith(
       expect.objectContaining({ existingClinicId: undefined }),
-      diagnosisResult
+      diagnosisResult,
+      expect.objectContaining({ clientRequestId: expect.any(String), executionId: expect.any(String) }),
+      expect.any(Function)
     );
   });
 
@@ -254,8 +266,30 @@ describe("POST /api/diagnosis: 再診断の医院スコープ", () => {
     expect(mocks.findDuplicate).not.toHaveBeenCalled();
     expect(mocks.saveDiagnosisResult).toHaveBeenCalledWith(
       expect.objectContaining({ existingClinicId: undefined }),
-      diagnosisResult
+      diagnosisResult,
+      expect.objectContaining({ clientRequestId: expect.any(String), executionId: expect.any(String) }),
+      expect.any(Function)
     );
+  });
+
+  it("保存トランザクション内でexecutionIdの実行権を確保できなかった場合(TTL経過で別の実行が既に取って代わった)は、診断レコードを保存せず409を返す", async () => {
+    mocks.currentContact.mockResolvedValue(null);
+    mocks.saveDiagnosisResult.mockRejectedValue(
+      new DiagnosisIdempotencyLockSupersededError("superseded")
+    );
+
+    const response = await POST(
+      request({
+        clinicName: "取って代わられた歯科",
+        clinicUrl: "https://superseded.example.com",
+        contactEmail: "owner@example.com",
+        contactPhone: "03-1234-5678",
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.code).toBe("execution_superseded");
   });
 });
 
