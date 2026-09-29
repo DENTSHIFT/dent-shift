@@ -2,6 +2,7 @@ import { DOMAIN_CRITERIA } from "@/domain/diagnosis/scoreCriteria";
 import type { CriterionScore, DomainKey, UnavailableReason } from "@/domain/diagnosis/types";
 import type { ScoreCriterionInput, ScoreProvider } from "./types";
 import { WebsiteAnalysisScoreProvider } from "./websiteAnalysisScoreProvider";
+import type { AiMeasurementObservation } from "@/domain/ai-measurement/types";
 
 /**
  * 2026-09-24のユーザー指示: 疑似乱数(seededRandom)で生成した具体的な点数を、
@@ -67,19 +68,81 @@ export class UnavailableScoreProvider implements ScoreProvider {
   }
 
   /**
-   * AIOのうち、実際のAI観測結果(aiObservations)だけから機械的に算出できる3criterion
+   * AIOのうち、実際のAI観測結果だけから機械的に算出できる3criterion
    * (ai_search_presence/recommendation_rank/question_domain_coverage)のみ値を返す。
    * citation_acquisition/information_accuracyは実測手段が未接続のためunavailableにする
    * (旧MockScoreProviderではこの2つを疑似乱数で埋めていたが、本番では表示しない)。
+   *
+   * 2026-09-29修正(PO指示、AIO/LLMO実測不整合の是正): 実OpenAI観測(input.
+   * aiMeasurementObservations、measurementStatus==="measured")が1件でもあれば、それを
+   * 優先してAIOを算出する(status="measured")。実観測が0件(=API呼び出し自体が全て
+   * 失敗・timeout等)の場合のみunavailableとする。以前は常にlegacyのaiObservations
+   * (通常診断ではUnavailableAiProviderにより常に空配列)だけを見ており、実OpenAI観測が
+   * 成功していてもAIOが「取得不能」表示になる不整合があった。
+   * aiMeasurementObservationsが未指定(aiMeasurementProvider自体が渡されていない/
+   * 設定不備で無効)の場合のみ、従来通りlegacyのaiObservationsで算出する
+   * (status="estimated"のまま、既存のmock診断・テスト挙動を変えない)。
    */
   private scoreAioGroundedOnly(input: ScoreCriterionInput): CriterionScore[] {
-    const observations = input.aiObservations;
+    if (input.aiMeasurementObservations !== undefined) {
+      return this.scoreAioFromCanonicalObservations(input.aiMeasurementObservations);
+    }
+    return this.scoreAioFromLegacyObservations(input.aiObservations);
+  }
+
+  private scoreAioFromCanonicalObservations(
+    observations: AiMeasurementObservation[]
+  ): CriterionScore[] {
+    const measured = observations.filter((o) => o.measurementStatus === "measured");
+    // 実観測を1件も取得できなかった場合(全質問がprovider障害・timeout等でunavailable/
+    // referenceのみ)は、他領域と同じくunavailableとして扱う(未測定を0点扱いしない)。
+    if (measured.length === 0) {
+      return this.unavailableAll(
+        "AIO",
+        "AIの実測観測が取得できなかったため、AIOは測定できませんでした",
+        "insufficient_data"
+      );
+    }
+    return this.buildAioGroundedCriteria(
+      measured.map((o) => ({
+        question: o.question,
+        mentioned: o.mentioned === true,
+        recommendationRank: o.recommendationRank,
+      })),
+      "measured",
+      "実測AI観測(OpenAI)に基づく値"
+    );
+  }
+
+  private scoreAioFromLegacyObservations(observations: ScoreCriterionInput["aiObservations"]): CriterionScore[] {
     // 2026-09-27修正(PO承認): 観測が0件(=通常診断からMockAiProviderを除外した結果、
     // 実測手段も未接続の状態)の場合、mentionRate=0等の疑似的な「0点」を出さず、
     // 他5領域と同じくAIOの3criterionもunavailableとして扱う(未測定を0点扱いしない)。
     if (observations.length === 0) {
       return this.unavailableAll("AIO", "AIOの実測連携は現在準備中です", "not_connected");
     }
+    return this.buildAioGroundedCriteria(
+      observations.map((o) => ({
+        question: o.question,
+        mentioned: o.mentioned,
+        recommendationRank: o.recommendationRank,
+      })),
+      "estimated",
+      "実測AI観測に基づく参考値"
+    );
+  }
+
+  /**
+   * ai_search_presence/recommendation_rank/question_domain_coverageの3criterionを、
+   * 質問単位の観測(mentioned/recommendationRank)から機械的に算出する共通ロジック。
+   * canonical(実測、status="measured")・legacy(参考値、status="estimated")のどちらの
+   * 観測配列でも同じ集計式を使う(値の意味自体は呼び出し元のstatus/evidence文言で区別する)。
+   */
+  private buildAioGroundedCriteria(
+    observations: Array<{ question: string; mentioned: boolean; recommendationRank: number | null }>,
+    status: "measured" | "estimated",
+    evidenceSuffix: string
+  ): CriterionScore[] {
     const now = new Date().toISOString();
     const mentioned = observations.filter((o) => o.mentioned);
     const mentionRate = observations.length === 0 ? 0 : mentioned.length / observations.length;
@@ -109,7 +172,8 @@ export class UnavailableScoreProvider implements ScoreProvider {
     return DOMAIN_CRITERIA.AIO.map((def) => {
       const g = grounded[def.key];
       if (!g) {
-        // citation_acquisition / information_accuracy: 実測手段が未接続のためunavailable。
+        // citation_acquisition / information_accuracy: 実測手段が未接続のためunavailable
+        // (canonical/legacyいずれの経路でも、この2つは測定済み扱いにしない)。
         return {
           key: def.key,
           label: def.label,
@@ -130,10 +194,10 @@ export class UnavailableScoreProvider implements ScoreProvider {
         label: def.label,
         maxScore: def.maxScore,
         score: value,
-        status: "estimated" as const,
+        status,
         evidence: [
           {
-            summary: `${def.label}: ${g.observedValue}(実測AI観測に基づく参考値)`,
+            summary: `${def.label}: ${g.observedValue}(${evidenceSuffix})`,
             ruleKey: def.ruleKey,
             observedValue: g.observedValue,
           },

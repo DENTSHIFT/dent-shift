@@ -1,5 +1,6 @@
 import type { CriterionScore, DomainKey } from "@/domain/diagnosis/types";
 import type { AiObservationResult } from "@/server/providers/ai/types";
+import type { AiMeasurementObservation } from "@/domain/ai-measurement/types";
 
 export interface ScoreCriterionInput {
   clinicName: string;
@@ -8,6 +9,10 @@ export interface ScoreCriterionInput {
   bookingUrl?: string;
   // AIO領域はAI観測結果(mock/実測いずれも将来対応)を根拠として使う
   aiObservations: AiObservationResult[];
+  // 2026-09-29修正(PO指示): AIOスコアリングをcanonical AI計測(実OpenAI観測)へ接続する。
+  // 指定時(aiMeasurementProviderがrunFreeDiagnosisへ渡された場合)のみ非undefinedになる。
+  // 未指定時はlegacyのaiObservationsのみでAIOを算出する(既存挙動を維持)。
+  aiMeasurementObservations?: AiMeasurementObservation[];
 }
 
 /**

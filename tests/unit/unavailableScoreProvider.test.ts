@@ -5,6 +5,7 @@ import { calculateDomainScore, calculateScoreBreakdown } from "@/domain/diagnosi
 import type { CriterionScore, DomainKey } from "@/domain/diagnosis/types";
 import type { ScoreCriterionInput, ScoreProvider } from "@/server/providers/scoring/types";
 import type { AiObservationResult } from "@/server/providers/ai/types";
+import type { AiMeasurementObservation } from "@/domain/ai-measurement/types";
 
 /**
  * 2026-09-24: MockScoreProviderのseededRandomによる疑似乱数スコアを本番から排除する
@@ -116,6 +117,115 @@ describe("UnavailableScoreProvider: 疑似乱数を使わないこと", () => {
       for (const c of result) {
         expect(["estimated", "unavailable"]).toContain(c.status);
       }
+    }
+  });
+});
+
+function buildCanonicalObservation(
+  overrides: Partial<AiMeasurementObservation> & { question: string }
+): AiMeasurementObservation {
+  return {
+    providerId: "openai",
+    model: "test-model",
+    sourceType: "ai_provider",
+    measurementStatus: "measured",
+    mentioned: true,
+    recommendationRank: 1,
+    citations: [],
+    competitorMentions: [],
+    region: null,
+    evidence: "test evidence",
+    unavailableReason: null,
+    provisional: false,
+    measurementMeta: null,
+    capturedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("UnavailableScoreProvider: AIOのcanonical AI計測接続(2026-09-29修正)", () => {
+  it("aiMeasurementObservationsにmeasured観測が1件でもあれば、AIOはunavailableにならずstatus='measured'になる", async () => {
+    const provider = buildProvider();
+    const result = await provider.score(
+      "AIO",
+      buildInput({
+        aiMeasurementObservations: [
+          buildCanonicalObservation({ question: "駅から近いおすすめの歯医者は?", mentioned: true, recommendationRank: 1 }),
+          buildCanonicalObservation({ question: "土日も診療している歯科医院は?", mentioned: false, recommendationRank: null }),
+        ],
+      })
+    );
+
+    for (const key of ["ai_search_presence", "recommendation_rank", "question_domain_coverage"]) {
+      const c = result.find((c) => c.key === key)!;
+      expect(c.status).toBe("measured");
+      expect(c.score).not.toBeNull();
+      expect(c.dataSource).toBe("ai_provider");
+    }
+    // citation_acquisition/information_accuracyは実測手段が未実装のままなので、
+    // canonical接続後も測定済み扱いにしない
+    for (const key of ["citation_acquisition", "information_accuracy"]) {
+      const c = result.find((c) => c.key === key)!;
+      expect(c.status).toBe("unavailable");
+    }
+  });
+
+  it("aiMeasurementObservationsが全てmeasured以外(全質問取得不能)の場合、AIOはunavailableのまま", async () => {
+    const provider = buildProvider();
+    const result = await provider.score(
+      "AIO",
+      buildInput({
+        aiMeasurementObservations: [
+          buildCanonicalObservation({
+            question: "駅から近いおすすめの歯医者は?",
+            measurementStatus: "unavailable",
+            mentioned: null,
+            recommendationRank: null,
+            citations: null,
+            competitorMentions: null,
+            unavailableReason: "temporarily_unavailable",
+          }),
+        ],
+      })
+    );
+
+    for (const c of result) {
+      expect(c.status).toBe("unavailable");
+      expect(c.score).toBeNull();
+      expect(c.unavailableReason).not.toBeNull();
+    }
+  });
+
+  it("aiMeasurementObservationsが一部の質問だけmeasuredの場合、その分だけで算出しAIOはunavailableにならない(partial)", async () => {
+    const provider = buildProvider();
+    const criteria = await provider.score(
+      "AIO",
+      buildInput({
+        aiMeasurementObservations: [
+          buildCanonicalObservation({ question: "駅から近いおすすめの歯医者は?", mentioned: true, recommendationRank: 1 }),
+          buildCanonicalObservation({
+            question: "土日も診療している歯科医院は?",
+            measurementStatus: "unavailable",
+            mentioned: null,
+            recommendationRank: null,
+            citations: null,
+            competitorMentions: null,
+            unavailableReason: "temporarily_unavailable",
+          }),
+        ],
+      })
+    );
+    const domainScore = calculateDomainScore("AIO", criteria);
+    expect(domainScore.status).toBe("partial");
+    expect(domainScore.assessedMaxPoints).toBeGreaterThan(0);
+  });
+
+  it("aiMeasurementObservations未指定時は従来通りlegacyのaiObservationsでstatus='estimated'になる(既存挙動を維持)", async () => {
+    const provider = buildProvider();
+    const result = await provider.score("AIO", buildInput());
+    for (const key of ["ai_search_presence", "recommendation_rank", "question_domain_coverage"]) {
+      const c = result.find((c) => c.key === key)!;
+      expect(c.status).toBe("estimated");
     }
   });
 });

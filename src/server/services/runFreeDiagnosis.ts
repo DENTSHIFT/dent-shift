@@ -132,10 +132,12 @@ export interface RunFreeDiagnosisDeps {
   /**
    * canonical AI計測provider(任意、2026-09-07のユーザー指示: 「APIなしのcanonical
    * persistence bridge」、および同日のwin/close/lose本接続ラウンド)。未指定の場合、
-   * 既存mock診断の挙動(スコアリング・勝敗判定・root cause判定・保存件数を含む)は完全に
-   * 変わらない。指定された場合、aiMeasurementObservationsを追加で取得し、
-   * MEASUREMENT_PLAN上で計測対象の質問についてはそのwin/close/lose判定にも使う
-   * (scoreBreakdown/aioLossRootCausesには引き続き一切渡さない)。
+   * 既存mock診断の挙動(勝敗判定・root cause判定・保存件数を含む)は完全に変わらない。
+   * 指定された場合、aiMeasurementObservationsを追加で取得し、MEASUREMENT_PLAN上で
+   * 計測対象の質問についてはそのwin/close/lose判定にも使う。
+   * 2026-09-29修正(PO指示): AIOのscoreBreakdownにもaiMeasurementObservationsを渡すように
+   * なった(scoreAioGroundedOnlyがmeasurementStatus==="measured"の観測を優先して使う)。
+   * aioLossRootCauses(questionResultsからの都度集約)には引き続き渡さない(別経路のまま)。
    */
   aiMeasurementProvider?: AiMeasurementProvider;
 }
@@ -202,7 +204,12 @@ export async function runFreeDiagnosis(
       })
     : undefined;
 
-  const scoreBreakdown = await buildScoreBreakdown(input, aiObservations, deps.scoreProvider);
+  const scoreBreakdown = await buildScoreBreakdown(
+    input,
+    aiObservations,
+    deps.scoreProvider,
+    aiMeasurementObservations
+  );
   const questionResults = buildQuestionResults(
     PATIENT_QUESTIONS,
     aiObservations,
@@ -255,20 +262,24 @@ export async function runFreeDiagnosis(
  * domain層の集計関数(calculateDomainScore/calculateScoreBreakdown)で正本の配点ルールに沿って集計する。
  * このサービス層・domain層には乱数やmock固有の分岐を一切持ち込まない(provider実装のみの責務)。
  *
- * 【2026-09-08のユーザー指示: AIO scoring接続ラウンド(案B、measurement overlayのみ)】
- * この関数は意図的にaiMeasurementObservations(canonical)を一切受け取らない・渡さない
- * (引数はlegacyのaiObservationsのみ)。canonical measuredとlegacy referenceを1つのAIO30点
- * scoreへ混ぜないための確定方針であり、P0では既存AIO30点をreference/mockベースのまま維持する。
- * canonicalの実測価値はscoreBreakdownではなくquestionResults側(status/statusSource/
- * measurementCoverage/canonical root cause)でのみ提供する。この非接続はtests/unit/
- * runFreeDiagnosisCanonicalScoringIsolation.test.tsで回帰確認している。将来canonical measured
- * scoreを正式導入する場合(案A方向)も、この関数のシグネチャ・呼び出し元(buildScoreBreakdown
- * 呼び出し部)を安易に拡張せず、別途スコープされた設計変更として扱うこと。
+ * 【2026-09-29修正(PO指示、AIO/LLMO実測不整合の是正)】
+ * 2026-09-08時点では「canonical measuredとlegacy referenceを1つのAIOスコアへ混ぜない」
+ * 方針によりaiMeasurementObservations(canonical、実OpenAI観測)をscoreBreakdownへ一切
+ * 渡さない設計にしていたが、この結果、実際にOpenAI観測が成功していてもAIOが常に
+ * 「取得不能・準備中」表示になる不整合が生じた(scoreProviderへ渡るaiObservationsは
+ * legacyのUnavailableAiProvider経由で常に空配列のため)。
+ * 今回、aiMeasurementObservationsをscoreInputへ追加で渡すよう変更する。
+ * UnavailableScoreProvider側は、aiMeasurementObservationsが指定されている場合はそちらを
+ * 優先してAIOを算出し(measurementStatus==="measured"の観測が1件もない場合のみunavailable)、
+ * 未指定の場合は従来通りlegacyのaiObservationsで算出する(既存のmock diagnosis/テストの
+ * 挙動は変えない)。root cause集約(aggregateAioLossRootCauses)・questionResultsの
+ * win/close/lose判定は引き続き別経路のまま変更しない。
  */
 async function buildScoreBreakdown(
   input: RunFreeDiagnosisInput,
   aiObservations: AiObservationResult[],
-  scoreProvider: ScoreProvider
+  scoreProvider: ScoreProvider,
+  aiMeasurementObservations?: AiMeasurementObservation[]
 ): Promise<DiagnosisScoreBreakdown> {
   const scoreInput: ScoreCriterionInput = {
     clinicName: input.clinicName,
@@ -276,6 +287,7 @@ async function buildScoreBreakdown(
     gbpUrl: input.gbpUrl,
     bookingUrl: input.bookingUrl,
     aiObservations,
+    aiMeasurementObservations,
   };
 
   const domainScores: DomainScore[] = await Promise.all(

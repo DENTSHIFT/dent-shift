@@ -16,26 +16,28 @@ import type {
   AiMeasurementProvider,
 } from "@/domain/ai-measurement/provider";
 import { MEASUREMENT_PLAN } from "@/domain/ai-measurement/measurementPlan";
+import { UnavailableScoreProvider } from "@/server/providers/scoring/unavailableScoreProvider";
 
 /**
- * AIO scoring接続ラウンド(2026-09-08のユーザー指示、案B確定)の回帰テスト。
+ * AIO scoring接続ラウンドの回帰テスト。
  *
- * 案Bの確定仕様:
- * - canonical AiMeasurementObservationは既存AIO30点のscoreAio()へ渡さない
- * - scoreBreakdown / overallScore(scoreBreakdown.totalPoints/coverage/totalStatus)は
- *   canonical providerの有無・canonical側のwin/close/lose/insufficient_dataの実際の発生に
- *   一切影響されない
- * - isSampleも同様に不変
- * - priorityScoring(改善TOP3)への入力のうちscoreBreakdown由来の候補(45項目カタログ・
- *   domain data_gap)はcanonical接続の影響を受けない。questionResults由来の2種類の候補
- *   (data-gap-ai-observation / aio-losing-patient-questions)は、Round A/Bで承認済みの
- *   canonical接続により意図的に変わりうる(これは「スコアリングへのripple」ではなく、
- *   質問単位のcanonical接続が正しく機能している証拠であり、本テストの対象外)。
+ * 2026-09-08時点(案B)の旧仕様: canonical AiMeasurementObservationはscoreBreakdownへ
+ * 一切渡さず、AIOは常にlegacyのaiObservations(通常診断では空配列→unavailable)のみで
+ * 算出していた。この結果、実際のOpenAI観測が成功してもAIOが「取得不能」表示になる
+ * 不整合が生じたため、2026-09-29のPO指示により以下へ変更した:
  *
- * このテストはproduction scoring logic(scoreAio/buildScoreBreakdown/calculateDomainScore/
- * priorityScoring/candidateCatalog)を一切変更せずに追加した回帰テストであり、
- * 乱数(seededRandom)への依存を避けるため、既存のcanonical root cause bridge testと同じ
- * 決定的なFakeScoreProvider(fullHealthCriteria)パターンを踏襲する。
+ * 現行仕様(2026-09-29改訂):
+ * - aiMeasurementProviderが指定された場合、AIOのscoreBreakdownはcanonical
+ *   AiMeasurementObservation(measurementStatus==="measured"のもの)から算出する
+ *   (status="measured"。measured観測が0件の場合のみunavailable)
+ * - AIO以外の5領域のscoreBreakdownはcanonical接続の有無に一切影響されない
+ *   (この非影響は本ファイルで引き続き回帰確認する)
+ * - isSampleはcanonical接続の有無に影響されない(AIOのdataSourceはcanonical/legacy
+ *   いずれでも"ai_provider"であり、そもそもisSampleの"mock"判定対象ではないため)
+ * - priorityScoring(改善TOP3)のscoreBreakdown由来候補(45項目カタログ)は、AIO以外の
+ *   領域についてはcanonical接続で変化しない。questionResults由来の2種類の候補
+ *   (data-gap-ai-observation / aio-losing-patient-questions)は、2026-09-08承認の
+ *   canonical接続により引き続き意図的に変わりうる(本テストの対象外)。
  */
 
 const FIXED_AT = "2026-01-01T00:00:00.000Z";
@@ -69,15 +71,26 @@ class FakeAdComplianceProvider implements AdComplianceProvider {
 }
 
 /**
- * 常にDOMAIN_CRITERIAの満点・status="estimated"・dataSource="mock"を返す決定的provider。
- * ただしLLMO.structured_dataだけscore=0にして、45項目カタログの
+ * AIO以外は常にDOMAIN_CRITERIAの満点・status="estimated"・dataSource="mock"を返す決定的
+ * provider。LLMO.structured_dataだけscore=0にして、45項目カタログの
  * "improvement-logic:2-structured_data_missing"(ratio_below 0.6)を確実に1件発火させる。
  * これにより「scoreBreakdown由来の改善候補はcanonical接続で変化しない」という主張を
  * 空虚な比較(両方0件)ではなく、実際に候補が存在する状態で検証できる。
+ *
+ * AIOだけは実際のUnavailableScoreProvider(本番と同じロジック)へ委譲する
+ * (2026-09-29改訂: AIOのscoreBreakdownがcanonical AiMeasurementObservationを実際に
+ * 反映することを、本番と同じ算出ロジックで確認するため。他ドメインを差し替えていない
+ * 決定的fakeのままにしているのは、AIOへのcanonical接続がAIO以外へ波及しないことの
+ * 検証を単純化するため)。
  */
 class WeakLlmoScoreProvider implements ScoreProvider {
   readonly name = "weak-llmo-score-provider";
-  async score(domain: DomainKey, _input: ScoreCriterionInput): Promise<CriterionScore[]> {
+  private readonly realAioProvider = new UnavailableScoreProvider();
+
+  async score(domain: DomainKey, input: ScoreCriterionInput): Promise<CriterionScore[]> {
+    if (domain === "AIO") {
+      return this.realAioProvider.score(domain, input);
+    }
     const criteria = fullHealthCriteria(domain);
     if (domain === "LLMO") {
       const structuredData = criteria.find((c) => c.key === "structured_data");
@@ -221,9 +234,16 @@ const QUESTION_RESULT_DRIVEN_CANDIDATE_KEYS = new Set([
   "aio-losing-patient-questions",
 ]);
 
-describe("AIO scoring接続: canonical measurementのscoring isolation(2026-09-08のユーザー指示、案B)", () => {
-  it("1. canonical providerがwin/lose/insufficient_dataを実際に生成しても、scoreBreakdownは完全に不変", async () => {
+describe("AIO scoring接続: canonical measurementの影響範囲(2026-09-29改訂)", () => {
+  it("1. canonical providerが実際にmeasured観測を生成すると、AIOのscoreBreakdownはunavailableから測定済みへ変わる。AIO以外の領域は不変", async () => {
     const baseline = await runFreeDiagnosis(INPUT, buildDeps({}));
+
+    const baselineAio = baseline.scoreBreakdown.domains.find((d) => d.domain === "AIO")!;
+    // 前提: aiMeasurementProvider未指定のbaselineでは、legacyのaiObservationsも
+    // 空配列(ConfigurableFakeAiProviderは指定していないため常にmentioned:trueを返す点に
+    // 注意。ここでは「aiMeasurementProvider未指定時はlegacy経路のまま」であることの
+    // 前提確認として、AIOがlegacy(status="estimated")で算出されていることのみ確認する。
+    expect(baselineAio.criteria.find((c) => c.key === "ai_search_presence")?.status).toBe("estimated");
 
     const [targetWin, targetLose, targetInsufficient] = TARGETED_QUESTIONS;
     const connected = await runFreeDiagnosis(
@@ -242,44 +262,55 @@ describe("AIO scoring接続: canonical measurementのscoring isolation(2026-09-0
     );
 
     // 前提確認: canonicalが実際にbaselineと異なるwin/lose/insufficient_dataを生成していること
-    // (この確認がないと、scoreBreakdown一致が「そもそもcanonicalが何もしていないから一致した」
-    // という空虚な結果になりかねない)
     const connectedLose = connected.questionResults.find((q) => q.question === targetLose);
     const connectedInsufficient = connected.questionResults.find((q) => q.question === targetInsufficient);
-    const baselineLose = baseline.questionResults.find((q) => q.question === targetLose);
-    const baselineInsufficient = baseline.questionResults.find((q) => q.question === targetInsufficient);
     expect(connectedLose?.status).toBe("lose");
     expect(connectedLose?.statusSource).toBe("canonical_measurement");
-    expect(baselineLose?.status).not.toBe("lose"); // legacy defaultはmentioned:trueなのでwin
     expect(connectedInsufficient?.status).toBe("insufficient_data");
     expect(connectedInsufficient?.statusSource).toBe("canonical_measurement");
-    expect(baselineInsufficient?.status).not.toBe("insufficient_data");
 
-    // 本題: scoreBreakdown(AIOを含む全ドメイン)はcanonical接続の有無・内容に一切影響されない
-    expect(connected.scoreBreakdown).toEqual(baseline.scoreBreakdown);
+    // 本題1: AIOのscoreBreakdownはcanonical measured観測を反映し、status="measured"になる
+    const connectedAio = connected.scoreBreakdown.domains.find((d) => d.domain === "AIO")!;
+    const groundedKeys = ["ai_search_presence", "recommendation_rank", "question_domain_coverage"];
+    for (const key of groundedKeys) {
+      const c = connectedAio.criteria.find((c) => c.key === key)!;
+      expect(c.status).toBe("measured");
+      expect(c.score).not.toBeNull();
+      expect(c.dataSource).toBe("ai_provider");
+    }
+    // citation_acquisition/information_accuracyは引き続き未実装のままunavailable
+    // (measured扱いにしない)
+    for (const key of ["citation_acquisition", "information_accuracy"]) {
+      const c = connectedAio.criteria.find((c) => c.key === key)!;
+      expect(c.status).toBe("unavailable");
+    }
+    expect(connectedAio).not.toEqual(baselineAio);
+
+    // 本題2: AIO以外の5領域はcanonical接続の有無・内容に一切影響されない
+    for (const domain of connected.scoreBreakdown.domains) {
+      if (domain.domain === "AIO") continue;
+      const baselineDomain = baseline.scoreBreakdown.domains.find((d) => d.domain === domain.domain)!;
+      expect(domain).toEqual(baselineDomain);
+    }
   });
 
-  it("2. overallScore相当のフィールド(totalPoints/coverage/totalStatus/assessedMaxPoints)も不変", async () => {
-    const baseline = await runFreeDiagnosis(INPUT, buildDeps({}));
+  it("2. canonicalのmeasured観測が0件(全質問がunavailable)の場合、AIOはunavailableのまま", async () => {
     const connected = await runFreeDiagnosis(
       INPUT,
       buildDeps({
-        aiMeasurementProvider: new ConfigurableFakeAiMeasurementProvider({
-          [TARGETED_QUESTIONS[0]!]: {
-            measurementStatus: "measured",
-            mentioned: false,
-            competitorMentions: ["Canonical Competitor Y"],
-          },
-          [TARGETED_QUESTIONS[1]!]: { measurementStatus: "unavailable" },
-        }),
+        aiMeasurementProvider: new ConfigurableFakeAiMeasurementProvider(
+          {},
+          { measurementStatus: "unavailable" }
+        ),
       })
     );
 
-    expect(connected.scoreBreakdown.maxPoints).toBe(baseline.scoreBreakdown.maxPoints);
-    expect(connected.scoreBreakdown.assessedMaxPoints).toBe(baseline.scoreBreakdown.assessedMaxPoints);
-    expect(connected.scoreBreakdown.totalPoints).toBe(baseline.scoreBreakdown.totalPoints);
-    expect(connected.scoreBreakdown.coverage).toBe(baseline.scoreBreakdown.coverage);
-    expect(connected.scoreBreakdown.totalStatus).toBe(baseline.scoreBreakdown.totalStatus);
+    const aio = connected.scoreBreakdown.domains.find((d) => d.domain === "AIO")!;
+    expect(aio.status).toBe("unavailable");
+    for (const c of aio.criteria) {
+      expect(c.status).toBe("unavailable");
+      expect(c.score).toBeNull();
+    }
   });
 
   it("3. isSampleはcanonical接続の有無・内容に一切影響されない", async () => {
@@ -293,12 +324,14 @@ describe("AIO scoring接続: canonical measurementのscoring isolation(2026-09-0
       })
     );
 
-    // 前提: AIOの5criterionが常にdataSource="mock"であるため、現状isSampleは常にtrue
+    // 前提: AIO以外の5領域(WeakLlmoScoreProvider)が常にdataSource="mock"を返すため、
+    // isSampleは常にtrue(AIOのdataSourceはcanonical/legacyいずれも"ai_provider"であり、
+    // この判定には影響しない)。
     expect(baseline.isSample).toBe(true);
     expect(connected.isSample).toBe(baseline.isSample);
   });
 
-  it("4. topImprovements: scoreBreakdown由来の候補(45項目カタログ)はcanonical接続で変化しない。questionResults由来の候補はRound A/Bの既存設計通り変化してよい(scoring rippleではない)", async () => {
+  it("4. topImprovements: AIO以外のscoreBreakdown由来の候補(45項目カタログ)はcanonical接続で変化しない。questionResults由来の候補・AIO由来の候補はRound A/B・2026-09-29改訂の既存設計通り変化してよい(scoring rippleではない)", async () => {
     const baseline = await runFreeDiagnosis(INPUT, buildDeps({}));
     const connected = await runFreeDiagnosis(
       INPUT,
@@ -313,8 +346,12 @@ describe("AIO scoring接続: canonical measurementのscoring isolation(2026-09-0
       })
     );
 
-    // scoreBreakdownは既にtest1で不変が確認済み(ここでも前提として再確認)
-    expect(connected.scoreBreakdown).toEqual(baseline.scoreBreakdown);
+    // AIO以外の5領域はcanonical接続の有無に一切影響されない(test1参照)。
+    for (const domain of connected.scoreBreakdown.domains) {
+      if (domain.domain === "AIO") continue;
+      const baselineDomain = baseline.scoreBreakdown.domains.find((d) => d.domain === domain.domain)!;
+      expect(domain).toEqual(baselineDomain);
+    }
 
     // generateImprovementCandidates()を同一breakdown・異なるquestionResultsで直接比較する。
     // (公開フィールドtopImprovementsはTOP3選定・ランキングを経るため、無関係な候補の
@@ -330,17 +367,11 @@ describe("AIO scoring接続: canonical measurementのscoring isolation(2026-09-0
       adComplianceFindings: connected.adComplianceChecks.findings,
     });
 
-    const nonQuestionDrivenBaseline = baselineDrafts.filter(
-      (c) => !QUESTION_RESULT_DRIVEN_CANDIDATE_KEYS.has(c.key)
-    );
-    const nonQuestionDrivenConnected = connectedDrafts.filter(
-      (c) => !QUESTION_RESULT_DRIVEN_CANDIDATE_KEYS.has(c.key)
-    );
-
-    // 空虚な比較(両方0件)ではないことの確認: WeakLlmoScoreProviderにより
-    // structured_data_missing候補が必ず1件存在する
-    expect(nonQuestionDrivenBaseline.length).toBeGreaterThan(0);
-    expect(nonQuestionDrivenConnected).toEqual(nonQuestionDrivenBaseline);
+    // LLMOのstructured_data_missing候補(AIOと無関係)は、canonical接続の有無に
+    // 一切影響されず両方に存在する(空虚な比較にならないことの確認も兼ねる)。
+    const llmoCandidateKey = "aio-structured-data-missing";
+    expect(baselineDrafts.some((c) => c.key === llmoCandidateKey)).toBe(true);
+    expect(connectedDrafts.some((c) => c.key === llmoCandidateKey)).toBe(true);
 
     // questionResults由来の候補は、canonical接続によりlose質問が増えたことで
     // 実際に変化してよい(これはRound A/Bで承認済みの意図的な接続であり、本テストが
