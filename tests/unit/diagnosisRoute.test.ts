@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => ({
   createProvider: vi.fn(),
   findDuplicate: vi.fn(),
   sendResultEmail: vi.fn(),
+  acquireIdempotencyLock: vi.fn(),
+  markIdempotencyCompleted: vi.fn(),
+  markIdempotencyFailed: vi.fn(),
+  reserveDiagnosisSlot: vi.fn(),
+  releaseDiagnosisSlot: vi.fn(),
 }));
 
 vi.mock("@/server/auth/session", () => ({
@@ -43,6 +48,17 @@ vi.mock("@/server/services/sendDiagnosisResultEmail", () => ({
   sendDiagnosisResultEmail: mocks.sendResultEmail,
 }));
 
+vi.mock("@/server/db/diagnosisIdempotencyRepository", () => ({
+  acquireDiagnosisIdempotencyLock: mocks.acquireIdempotencyLock,
+  markDiagnosisIdempotencyLockCompleted: mocks.markIdempotencyCompleted,
+  markDiagnosisIdempotencyLockFailed: mocks.markIdempotencyFailed,
+}));
+
+vi.mock("@/server/db/diagnosisRateLimitRepository", () => ({
+  reserveDiagnosisSlot: mocks.reserveDiagnosisSlot,
+  releaseDiagnosisSlot: mocks.releaseDiagnosisSlot,
+}));
+
 import { POST } from "@/app/api/diagnosis/route";
 
 const diagnosisResult = {
@@ -57,11 +73,14 @@ const diagnosisResult = {
   },
 };
 
+let requestSeq = 0;
+
 function request(body: Record<string, unknown>) {
+  requestSeq += 1;
   return new NextRequest("http://localhost/api/diagnosis", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ clientRequestId: `test-request-id-${requestSeq}`, ...body }),
   });
 }
 
@@ -80,6 +99,11 @@ beforeEach(() => {
   });
   mocks.findDuplicate.mockResolvedValue(null);
   mocks.sendResultEmail.mockResolvedValue("disabled");
+  mocks.acquireIdempotencyLock.mockResolvedValue({ kind: "new" });
+  mocks.markIdempotencyCompleted.mockResolvedValue(undefined);
+  mocks.markIdempotencyFailed.mockResolvedValue(undefined);
+  mocks.reserveDiagnosisSlot.mockResolvedValue({ allowed: true, executionId: "exec-1" });
+  mocks.releaseDiagnosisSlot.mockResolvedValue(undefined);
 });
 
 describe("POST /api/diagnosis: 再診断の医院スコープ", () => {

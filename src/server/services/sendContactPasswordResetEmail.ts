@@ -1,6 +1,9 @@
 import "server-only";
 import { prisma } from "@/server/db/prismaClient";
-import { resolveResultEmailConfigFromProcessEnv } from "@/server/config/resultEmailConfig";
+import {
+  resolveResultEmailConfigFromProcessEnv,
+  resolveEmailLinkBaseUrlFromProcessEnv,
+} from "@/server/config/resultEmailConfig";
 import { sendWithResend } from "@/server/providers/email/resendEmailProvider";
 import {
   generateContactPasswordResetToken,
@@ -18,7 +21,10 @@ export async function sendContactPasswordResetEmail(input: { contactId: string; 
     data: { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt },
   });
 
-  const resetUrl = new URL("/reset-password", config.appBaseUrl);
+  // 2026-09-29追加(PO承認、認証導線の環境またぎ対策P0): EMAIL_LINK_BASE_URLが
+  // 設定されている場合はそちらを使う(未設定時はAPP_BASE_URLのまま、本番は無変更)。
+  const linkBaseUrl = resolveEmailLinkBaseUrlFromProcessEnv(config.appBaseUrl);
+  const resetUrl = new URL("/reset-password", linkBaseUrl);
   resetUrl.searchParams.set("token", token);
   const ttlMinutes = Math.round(CONTACT_PASSWORD_RESET_TTL_MS / 60_000);
   const text = [

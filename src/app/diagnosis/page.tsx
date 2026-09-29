@@ -156,6 +156,13 @@ export default function DiagnosisPage() {
   // 直接は読めない。apiCompletedのstate更新と同時にこのrefも更新する。
   const apiCompletedRef = useRef(false);
   const allowDuplicateClinicRef = useRef(false);
+  // 2026-09-29追加(PO承認、再診断ループの連続実行対策P0): サーバー側の冪等性キー。
+  // 1回の「診断を開始する」操作(startAnalysis)ごとに新しいIDを発行し、タイムアウト
+  // 後の再送・ネットワーク層での自動リトライなど「同じ生成(generation)内での再送」は
+  // 同じIDのまま送ることで、サーバー側が外部AIを再実行せず先の結果をそのまま返せる
+  // ようにする。ユーザーが明示的に「もう一度診断する」を押した場合はstartAnalysis()が
+  // 新しいIDを発行するため、正しく新規リクエストとして扱われる。
+  const clientRequestIdRef = useRef("");
   // 2026-09-24: Instagram等の流入チャネル別に診断「開始」と「完了」を比較するためのUTM値
   // (5項目)。URLのクエリから読み取るだけで、フォームUI上には表示しない(値はrefで保持)。
   const utmRef = useRef<UtmAttribution>({
@@ -277,6 +284,7 @@ export default function DiagnosisPage() {
         body: JSON.stringify({
           ...values,
           allowDuplicateClinic: allowDuplicateClinicRef.current,
+          clientRequestId: clientRequestIdRef.current,
           ...utmRef.current,
         }),
       });
@@ -290,6 +298,21 @@ export default function DiagnosisPage() {
           setApiCompleted(false);
           setApiErrorMessage(null);
           setFlowState("form");
+          return;
+        }
+        // 2026-09-29追加(PO承認、再診断ループの連続実行対策P0): レート制限・
+        // 同時実行ロックによる拒否は、再開可能な時刻を画面に表示する。
+        if (res.status === 429 && typeof data.retryAt === "string") {
+          const retryAtDate = new Date(data.retryAt);
+          const retryAtLabel = Number.isNaN(retryAtDate.getTime())
+            ? null
+            : retryAtDate.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+          setApiErrorMessage(
+            retryAtLabel
+              ? `${data.error ?? "しばらくお待ちください"}(${retryAtLabel}以降に再度お試しください)`
+              : (data.error ?? "しばらくお待ちください")
+          );
+          setFlowState("error");
           return;
         }
         setApiErrorMessage(data.error ?? "診断に失敗しました");
@@ -396,6 +419,10 @@ export default function DiagnosisPage() {
   function startAnalysis(allowDuplicateClinic: boolean) {
     allowDuplicateClinicRef.current = allowDuplicateClinic;
     requestGenerationRef.current += 1;
+    clientRequestIdRef.current =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     apiCompletedRef.current = false;
     setPercent(0);
     setAnalysisCompleted(false);

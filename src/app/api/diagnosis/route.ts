@@ -20,6 +20,20 @@ import { sendDiagnosisResultEmail } from "@/server/services/sendDiagnosisResultE
 import type { ResultEmailDeliveryStatus } from "@/domain/email/resultEmailDeliveryStatus";
 import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
 import { sanitizeUtmAttribution } from "@/domain/marketing/utmAttribution";
+import { extractClientIp, hashClientIp } from "@/server/net/clientIp";
+import { resolveDiagnosisRateLimitConfigFromProcessEnv } from "@/server/config/diagnosisRateLimitConfig";
+import {
+  reserveDiagnosisSlot,
+  releaseDiagnosisSlot,
+  type ReserveScopeInput,
+} from "@/server/db/diagnosisRateLimitRepository";
+import {
+  acquireDiagnosisIdempotencyLock,
+  markDiagnosisIdempotencyLockCompleted,
+  markDiagnosisIdempotencyLockFailed,
+} from "@/server/db/diagnosisIdempotencyRepository";
+
+const CLIENT_REQUEST_ID_RE = /^[A-Za-z0-9_-]{8,100}$/;
 
 // 2026-09-27修正(PO承認): 通常診断からMockAiProviderを除外する。疑似乱数による
 // 言及・順位・競合言及の捏造を正式スコア・患者質問結果・根拠文言へ混入させない
@@ -53,8 +67,17 @@ export async function POST(request: NextRequest) {
     gbpUrl,
     bookingUrl,
     allowDuplicateClinic,
+    clientRequestId,
   } =
     (body ?? {}) as Record<string, unknown>;
+
+  // 2026-09-29追加(PO承認、再診断ループの連続実行対策P0): タイムアウト後の再送・
+  // 二重クリックによる同一論理リクエストの多重送信を検知するための、クライアント
+  // 発行の冪等性キー。診断フォーム(1回の送信操作)ごとに1つ発行される想定で、
+  // 外部AI呼び出しより前に判定する(このキーが無ければ409で拒否し、AIへ進まない)。
+  if (typeof clientRequestId !== "string" || !CLIENT_REQUEST_ID_RE.test(clientRequestId)) {
+    return NextResponse.json({ error: "リクエストの形式が正しくありません" }, { status: 400 });
+  }
 
   // 2026-09-24: Instagram等の流入チャネル別に診断「開始」と「完了」を比較するためのUTM値
   // (5項目)。diagnosis_started(開始)と同じsanitizeUtmAttribution()を使い、
@@ -63,6 +86,31 @@ export async function POST(request: NextRequest) {
 
   if (allowDuplicateClinic !== undefined && typeof allowDuplicateClinic !== "boolean") {
     return NextResponse.json({ error: "重複確認の値が不正です" }, { status: 400 });
+  }
+
+  let idempotency;
+  try {
+    idempotency = await acquireDiagnosisIdempotencyLock(clientRequestId);
+  } catch (err) {
+    console.error("[POST /api/diagnosis] idempotency check error", err);
+    return NextResponse.json(
+      { error: "診断処理中にエラーが発生しました。時間をおいて再度お試しください。" },
+      { status: 503 }
+    );
+  }
+  if (idempotency.kind === "completed") {
+    // 同じclientRequestIdでの再送(タイムアウト後の再送等)。既に完了済みのため、
+    // 外部AIを再実行せず同じ結果をそのまま返す。
+    return NextResponse.json(
+      { diagnosisId: idempotency.diagnosisId, status: "completed" },
+      { status: 201 }
+    );
+  }
+  if (idempotency.kind === "in_progress") {
+    return NextResponse.json(
+      { error: "同じ診断を処理中です。しばらくお待ちください。", code: "duplicate_request_in_progress" },
+      { status: 409 }
+    );
   }
 
   // 先にセッションと重複候補を確認し、重複時は外部AI計測を開始しない。
@@ -76,6 +124,7 @@ export async function POST(request: NextRequest) {
         clinicUrl: String(clinicUrl ?? "").trim(),
       });
       if (candidate) {
+        await markDiagnosisIdempotencyLockFailed(clientRequestId);
         return NextResponse.json(
           {
             error: duplicateCandidateMessage(candidate.matchType),
@@ -88,9 +137,64 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     console.error("[POST /api/diagnosis] clinic duplicate check error", err);
+    await markDiagnosisIdempotencyLockFailed(clientRequestId);
     return NextResponse.json(
       { error: "医院情報の確認中にエラーが発生しました。時間をおいて再度お試しください。" },
       { status: 500 }
+    );
+  }
+
+  // 2026-09-29追加(PO承認、再診断ループの連続実行対策P0): 外部AI呼び出しの直前に
+  // IP/Clinic/Contactの3スコープでレート制限を判定する。DBによる判定自体が失敗した
+  // 場合(check_failed)もAI呼び出しへは一切進まない(fail-closed)。
+  const rateLimitConfig = resolveDiagnosisRateLimitConfigFromProcessEnv();
+  const clientIp = hashClientIp(extractClientIp(request.headers));
+  const scopes: ReserveScopeInput[] = [
+    // 2026-09-29修正: IPスコープは同時実行ロック(enforceInFlightLock)の対象にしない。
+    // 院内共有回線等、同じIPから複数の正当な同時アクセスが起こりうるため、回数制限
+    // (windowMs/maxRequests)だけで抑制し、単一実行ロックはClinic/Contactスコープ
+    // (同一アカウントの二重クリック・多重タブ対策)にのみ適用する。
+    { scopeType: "ip", scopeKey: clientIp, ...rateLimitConfig.ip, enforceInFlightLock: false },
+  ];
+  if (currentContact) {
+    // Clinic IDはクライアント入力ではなく、認証済みセッションから解決した
+    // currentContact.clinicIdのみを使う(他院への影響を防ぐ、既存のsaveDiagnosisResult
+    // 呼び出しと同じ原則)。
+    scopes.push({
+      scopeType: "clinic",
+      scopeKey: currentContact.clinicId,
+      ...rateLimitConfig.clinic,
+      enforceInFlightLock: true,
+    });
+    scopes.push({
+      scopeType: "contact",
+      scopeKey: currentContact.id,
+      ...rateLimitConfig.contact,
+      enforceInFlightLock: true,
+    });
+  }
+
+  const reservation = await reserveDiagnosisSlot(scopes);
+  if (!reservation.allowed) {
+    await markDiagnosisIdempotencyLockFailed(clientRequestId);
+    if (reservation.reason === "check_failed") {
+      return NextResponse.json(
+        { error: "診断処理中にエラーが発生しました。時間をおいて再度お試しください。" },
+        { status: 503 }
+      );
+    }
+    const retryAt = reservation.retryAt.toISOString();
+    return NextResponse.json(
+      {
+        error:
+          reservation.reason === "in_flight"
+            ? "この医院の診断を処理中です。完了後に再度お試しください。"
+            : "短時間に多くの診断リクエストがありました。時間をおいて再度お試しください。",
+        code: reservation.reason,
+        retryAt,
+        retryAfterSeconds: Math.max(0, Math.ceil((reservation.retryAt.getTime() - Date.now()) / 1000)),
+      },
+      { status: 429, headers: { "Retry-After": retryAt } }
     );
   }
 
@@ -240,6 +344,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 2026-09-29追加(PO承認、再診断ループの連続実行対策P0): 同じclientRequestIdの
+    // 再送が外部AIを再実行せずこの結果を返せるよう、完了状態を記録する。
+    await markDiagnosisIdempotencyLockCompleted(clientRequestId, saved.diagnosisId);
+
     // 2026-09-05のユーザー指示②: 公開JSON APIは新設せず、レスポンスはdiagnosisIdと
     // 処理状態のみに留める(診断結果本体はServer ComponentがgetDiagnosisById経由で
     // 直接DBから取得する。診断は同期的に完了しているためstatusは常に"completed")。
@@ -252,6 +360,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (err) {
+    await markDiagnosisIdempotencyLockFailed(clientRequestId);
     if (err instanceof InvalidDiagnosisInputError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
@@ -260,5 +369,9 @@ export async function POST(request: NextRequest) {
       { error: "診断処理中にエラーが発生しました。時間をおいて再度お試しください。" },
       { status: 500 }
     );
+  } finally {
+    // 2026-09-29追加(PO承認、再診断ループの連続実行対策P0): 成功・失敗いずれでも、
+    // 予約したスコープの実行中ロックを必ず解放する(このexecutionId発行分のみ解放)。
+    await releaseDiagnosisSlot(scopes, reservation.executionId);
   }
 }

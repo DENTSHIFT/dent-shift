@@ -105,11 +105,14 @@ beforeEach(async () => {
   mocks.sendResultEmail.mockResolvedValue("disabled");
 });
 
+let requestSeq = 0;
+
 function request(body: Record<string, unknown>) {
+  requestSeq += 1;
   return new NextRequest("http://localhost/api/diagnosis", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ clientRequestId: `utm-test-request-${requestSeq}`, ...body }),
   });
 }
 

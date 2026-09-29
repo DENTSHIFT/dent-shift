@@ -516,3 +516,40 @@ model Invite {
   @@index([status])
   @@index([email])
 }
+
+// 2026-09-29追加(PO承認、再診断ループの連続実行対策P0): 診断API(/api/diagnosis)を
+// 外部AI呼び出し前にスコープ単位(IP/Clinic/Contact)で短時間窓レート制限するための状態。
+// プラン別の無料/有料利用回数制限(PlanEntitlementUsage相当)とは別物で、こちらは
+// 「連続実行・二重送信・同時実行の技術的な抑制」のみを目的とする。
+// scopeType+scopeKeyの一意制約により、複数サーバーインスタンスからの同時アクセスでも
+// 行ロック(SELECT ... FOR UPDATE、diagnosisRateLimitRepository.ts参照)で
+// 排他制御できる。
+model DiagnosisRateLimitState {
+  id              String    @id @default(cuid())
+  scopeType       String
+  scopeKey        String
+  windowStartedAt DateTime
+  countInWindow   Int       @default(0)
+  // 実行中のリクエストが1件でもあればnon-null。同一スコープの新規実行を一時的に防ぐ
+  // (同時実行・二重クリック対策)。値はexecutionIdを発行した実行だけが解放できる
+  // (誤って他の実行のロックを解除しないため)。
+  inFlightSince   DateTime?
+  executionId     String?
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([scopeType, scopeKey])
+}
+
+// 2026-09-29追加(PO承認、再診断ループの連続実行対策P0): クライアントが発行した
+// リクエスト単位の冪等性キー。タイムアウト後の再送・多重クリックで同じ
+// clientRequestIdが再送された場合、外部AI呼び出しを再実行せず、進行中なら
+// 待機案内、完了済みなら同じdiagnosisIdをそのまま返す。
+model DiagnosisIdempotencyLock {
+  clientRequestId String    @id
+  status          String
+  diagnosisId     String?
+  createdAt       DateTime  @default(now())
+  completedAt     DateTime?
+
+  @@index([createdAt])
+}

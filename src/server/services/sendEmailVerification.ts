@@ -1,7 +1,10 @@
 import "server-only";
 import { prisma } from "@/server/db/prismaClient";
 import { buildEmailVerificationMessage } from "@/domain/email/emailVerification";
-import { resolveResultEmailConfigFromProcessEnv } from "@/server/config/resultEmailConfig";
+import {
+  resolveResultEmailConfigFromProcessEnv,
+  resolveEmailLinkBaseUrlFromProcessEnv,
+} from "@/server/config/resultEmailConfig";
 import { sendWithResend } from "@/server/providers/email/resendEmailProvider";
 import { generateEmailVerificationToken } from "@/server/auth/emailVerificationToken";
 
@@ -32,7 +35,10 @@ export async function sendEmailVerification(input: {
 
   // UI画面(/verify-email)へ遷移させる。2026-09-24以前は/api/auth/verify-emailの
   // 生JSONへ直接リンクしていたが、一般ユーザー向けの完了画面を表示するため変更した。
-  const verifyUrl = new URL("/verify-email", config.appBaseUrl);
+  // 2026-09-29追加(PO承認、認証導線の環境またぎ対策P0): EMAIL_LINK_BASE_URLが
+  // 設定されている場合はそちらを使う(未設定時はAPP_BASE_URLのまま、本番は無変更)。
+  const linkBaseUrl = resolveEmailLinkBaseUrlFromProcessEnv(config.appBaseUrl);
+  const verifyUrl = new URL("/verify-email", linkBaseUrl);
   verifyUrl.searchParams.set("token", token);
 
   const message = buildEmailVerificationMessage({
