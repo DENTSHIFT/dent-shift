@@ -406,7 +406,7 @@ function SpecialistTeamSection() {
       <div className={styles.goldCard}>
         <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: GOLD_TEXT }}>DENT SHIFT スペシャリストサポート</p>
         <h2 style={{ margin: "8px 0 0", fontSize: 19, color: NAVY, overflowWrap: "anywhere" }}>
-          AIだけで完結させず、歯科集患を理解した専門チームが伴走します。
+          AIだけで完結させず、歯科集患に詳しい担当者が伴走します。
         </h2>
         <p style={{ margin: "10px 0 0", fontSize: 13, color: "#6B7280", lineHeight: 1.8 }}>
           診断結果の読み解きから、診療メニュー別の改善優先順位、医院サイト・口コミ・予約導線の改善まで支援します。
@@ -560,7 +560,12 @@ function FaqSection() {
     },
     {
       label: "サポートについて",
-      items: [{ q: "スペシャリストに相談できますか？", a: "診断結果の読み解きや改善優先順位について、オンラインで相談いただけます。" }],
+      items: [
+        {
+          q: "スペシャリストに相談できますか？",
+          a: "全プラン共通で、木村による45分の個別相談を事前予約制でご利用いただけます。診断結果の読み解きや改善優先順位について、オンラインでご相談いただけます。",
+        },
+      ],
     },
   ];
 

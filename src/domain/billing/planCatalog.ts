@@ -76,7 +76,7 @@ export const PLAN_FEATURE_ROWS: readonly PlanFeatureRow[] = [
     premium: AVAILABLE,
   },
   {
-    feature: "専門家への相談予約",
+    feature: "個別相談予約(45分・事前予約制)",
     category: "common",
     light: AVAILABLE,
     standard: AVAILABLE,
