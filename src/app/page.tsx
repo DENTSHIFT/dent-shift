@@ -278,7 +278,7 @@ function FreeDiagnosisCta() {
           無料AI集患診断
         </h2>
         <p className={styles.sub} style={{ margin: "10px auto 0" }}>
-          医院名・院長名・医院URL・メールアドレスをご入力ください(電話番号は任意)。約60秒で結果が表示されます。
+          医院名・院長名・医院URL・メールアドレス・電話番号(SMS認証用)をご入力ください。約60秒で結果が表示されます。
         </p>
         <div style={{ marginTop: 20 }}>
           <Link href="/diagnosis" className={styles.ctaButton}>
