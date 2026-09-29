@@ -191,6 +191,38 @@ describe("buildDashboardViewModel", () => {
     expect(aioTrend?.previousMeasuredAt).toBe("2026-09-20T09:00:00.000Z");
   });
 
+  it("2026-09-30追加: AIO/LLMOが両方measuredでスコアが下がった場合、負の前回比(negative)を返す", () => {
+    const overrideDomains = (points: number) => ({
+      domains: ["AIO", "MEO", "SEO", "LLMO", "WEB_BOOKING", "REVIEWS"].map((key) => ({
+        ...domain(key as DomainScore["domain"]),
+        status: "measured" as const,
+        points: key === "AIO" ? points : 5,
+      })),
+      maxPoints: 100,
+      assessedMaxPoints: 100,
+      coverage: 1,
+    });
+    const latestDiag = diagnosis({
+      isSample: false,
+      measuredAt: "2026-09-29T09:00:00.000Z",
+      scoreBreakdown: overrideDomains(4),
+    });
+    const previousDiag = diagnosis({
+      isSample: false,
+      measuredAt: "2026-09-20T09:00:00.000Z",
+      scoreBreakdown: overrideDomains(10),
+    });
+    const vm = buildDashboardViewModel(
+      { id: "latest", diagnosis: latestDiag },
+      [summary({ isSample: false }), summary({ id: "previous", isSample: false, totalPoints: 20 })],
+      { id: "previous", diagnosis: previousDiag }
+    );
+    expect(vm.hasDiagnosis).toBe(true);
+    if (!vm.hasDiagnosis) throw new Error("expected diagnosis");
+    const aioTrend = vm.domainTrends.find((t) => t.domain === "AIO");
+    expect(aioTrend?.trend).toEqual({ label: "前回比 -6", tone: "negative" });
+  });
+
   it("2026-09-29追加: 片方の領域がunavailableなら、その領域は0点扱いで差分計算せずdomainTrendsから除外する", () => {
     const latestDiag = diagnosis({
       isSample: false,
