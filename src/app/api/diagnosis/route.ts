@@ -201,7 +201,11 @@ export async function POST(request: NextRequest) {
         total_score: result.scoreBreakdown.totalPoints,
         aio_status: result.scoreBreakdown.domains.find((d) => d.domain === "AIO")?.status ?? null,
         llmo_status: result.scoreBreakdown.domains.find((d) => d.domain === "LLMO")?.status ?? null,
-        ...utmFields,
+        // 2026-09-29修正(PO指摘、再診断ループP0): 今回のリクエストで送られてきた生の
+        // utmFieldsではなく、saveDiagnosisResult()が実際にDBへ確定させたUTM
+        // (saved.persistedUtm)を使う。再診断で既に初回UTMが設定済みの医院に別のUTMを
+        // 付けて送っても、確定していない値をSalesforceへ報告しないようにする。
+        ...saved.persistedUtm,
       },
     }).catch((error) => {
       console.error("[POST /api/diagnosis] Salesforce sync enqueue failed:", error);

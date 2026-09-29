@@ -89,6 +89,22 @@ export function utmAttributionToClinicColumns(utm: UtmAttribution): FirstTouchUt
 }
 
 /**
+ * 2026-09-29追加(PO指摘、再診断ループP0): utmAttributionToClinicColumns()の逆変換。
+ * Clinicへ実際に確定した(camelCase)UTM列を、IntegrationEvent payload等の
+ * snake_case形(UtmAttribution)へ戻す。saveDiagnosisResult()が返すpersistedUtmを、
+ * 今回のリクエストの生値ではなくDB確定値としてpayloadへ渡すために使う。
+ */
+export function clinicColumnsToUtmAttribution(columns: FirstTouchUtmColumns): UtmAttribution {
+  return {
+    utm_source: columns.utmSource,
+    utm_medium: columns.utmMedium,
+    utm_campaign: columns.utmCampaign,
+    utm_content: columns.utmContent,
+    utm_term: columns.utmTerm,
+  };
+}
+
+/**
  * URLSearchParams(ブラウザ側でのクエリ読み取り)からUTM5項目を検証済みの形で取り出す。
  */
 export function sanitizeUtmAttributionFromSearchParams(params: URLSearchParams): UtmAttribution {

@@ -8,8 +8,10 @@ import {
   type ResultEmailDeliveryStatus,
 } from "@/domain/email/resultEmailDeliveryStatus";
 import {
+  clinicColumnsToUtmAttribution,
   firstTouchUtmUpdateData,
   utmAttributionToClinicColumns,
+  type FirstTouchUtmColumns,
   type UtmAttribution,
 } from "@/domain/marketing/utmAttribution";
 
@@ -181,21 +183,28 @@ export async function saveDiagnosisResult(
   // 2026-09-29追加(PO承認、Salesforce連携P0): 既存Clinic(再診断)の場合、まだ
   // 初回流入UTMが記録されていない列だけを今回の値で埋める(既に値がある列は
   // 「初回値を保持し、後続アクセスで上書きしない」の指示どおり変更しない)。
+  // 2026-09-29追加(PO指摘、再診断ループP0): 上のfirstTouchUtmUpdateData()適用後の
+  // 「実際にDBへ確定した」UTM値を、呼び出し元(diagnosis API route)がIntegrationEvent
+  // payloadへそのまま使えるよう保持する。既存Clinic(再診断)で初回UTMが既に設定済みの
+  // 場合、今回のリクエストのUTM(input.utm)は無視され列は変更されないため、
+  // persistedUtmは常にclinic変数(更新前の読み取り時点)の値を正としてよい
+  // (このブロックで新規に書き込まれる列は「元々nullだった列」のみ=input.utmと同値)。
+  let persistedUtmColumns: FirstTouchUtmColumns = {
+    utmSource: clinic.utmSource,
+    utmMedium: clinic.utmMedium,
+    utmCampaign: clinic.utmCampaign,
+    utmContent: clinic.utmContent,
+    utmTerm: clinic.utmTerm,
+  };
   if (input.existingClinicId && input.utm) {
-    const utmUpdate = firstTouchUtmUpdateData(
-      {
-        utmSource: clinic.utmSource,
-        utmMedium: clinic.utmMedium,
-        utmCampaign: clinic.utmCampaign,
-        utmContent: clinic.utmContent,
-        utmTerm: clinic.utmTerm,
-      },
-      input.utm
-    );
+    const utmUpdate = firstTouchUtmUpdateData(persistedUtmColumns, input.utm);
     if (Object.keys(utmUpdate).length > 0) {
       await prisma.clinic.update({ where: { id: clinic.id }, data: utmUpdate });
+      persistedUtmColumns = { ...persistedUtmColumns, ...utmUpdate };
     }
   }
+  // 新規Clinicの場合、persistedUtmの初期値(clinic.utmSource等)は作成時にinput.utmから
+  // そのまま書き込まれた値のため、追加の反映は不要。
 
   const measuredAt = new Date(result.measuredAt);
 
@@ -234,7 +243,11 @@ export async function saveDiagnosisResult(
     },
   });
 
-  return { clinicId: clinic.id, diagnosisId: diagnosis.id };
+  return {
+    clinicId: clinic.id,
+    diagnosisId: diagnosis.id,
+    persistedUtm: clinicColumnsToUtmAttribution(persistedUtmColumns),
+  };
 }
 
 /**

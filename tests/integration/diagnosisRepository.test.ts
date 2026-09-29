@@ -538,6 +538,69 @@ describe("DiagnosisRepository: clinic_id テナント分離(SECURITY.md「テナ
     expect(observations.every((observation) => observation.clinicId === clinic.id)).toBe(true);
   });
 
+  it("2026-09-29追加(再診断ループP0): 再診断で異なるUTMを渡しても初回UTMは上書きされず、persistedUtmが実際にDBへ確定した値を返す", async () => {
+    const clinic = await prisma.clinic.create({
+      data: { name: "UTM再診断対象歯科医院", url: "https://repeat-utm.example.com" },
+    });
+
+    const firstResult = await runFreeDiagnosis(buildInput("UTM再診断1回目歯科医院"), deps);
+    const first = await repo.saveDiagnosisResult(
+      {
+        clinicUrl: "https://repeat-utm.example.com",
+        directorName: "テスト院長",
+        contactEmail: "repeat-utm@example.com",
+        existingClinicId: clinic.id,
+        utm: {
+          utm_source: "instagram",
+          utm_medium: "profile",
+          utm_campaign: "first-touch",
+          utm_content: "bio-link",
+          utm_term: "ai-diagnosis",
+        },
+      },
+      firstResult
+    );
+    expect(first.persistedUtm).toEqual({
+      utm_source: "instagram",
+      utm_medium: "profile",
+      utm_campaign: "first-touch",
+      utm_content: "bio-link",
+      utm_term: "ai-diagnosis",
+    });
+
+    const secondResult = await runFreeDiagnosis(buildInput("UTM再診断2回目歯科医院"), deps);
+    const second = await repo.saveDiagnosisResult(
+      {
+        clinicUrl: "https://repeat-utm.example.com",
+        directorName: "テスト院長",
+        contactEmail: "repeat-utm@example.com",
+        existingClinicId: clinic.id,
+        utm: {
+          utm_source: "google",
+          utm_medium: "cpc",
+          utm_campaign: "second-touch",
+          utm_content: "should-not-overwrite",
+          utm_term: null,
+        },
+      },
+      secondResult
+    );
+    // 初回UTM(instagram/profile/first-touch/bio-link/ai-diagnosis)は上書きされず、
+    // persistedUtmもそれを返す(2回目リクエストで送られたgoogle/cpc/second-touch/
+    // should-not-overwriteはDBへ反映されない。全5列が既に初回値で埋まっているため)。
+    expect(second.persistedUtm).toEqual({
+      utm_source: "instagram",
+      utm_medium: "profile",
+      utm_campaign: "first-touch",
+      utm_content: "bio-link",
+      utm_term: "ai-diagnosis",
+    });
+
+    const clinicAfter = await prisma.clinic.findUniqueOrThrow({ where: { id: clinic.id } });
+    expect(clinicAfter.utmSource).toBe("instagram");
+    expect(clinicAfter.utmCampaign).toBe("first-touch");
+  });
+
   it("getDiagnosisByIdはContact登録済みの医院でclinicHasAccount=trueを返す(2026-09-21のユーザー指示)", async () => {
     const clinic = await prisma.clinic.create({
       data: { name: "会員登録済み歯科医院", url: "https://has-account.example.com" },

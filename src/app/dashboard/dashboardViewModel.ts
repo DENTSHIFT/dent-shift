@@ -1,4 +1,4 @@
-import type { OverallScoreStatus } from "@/domain/diagnosis/types";
+import type { DomainKey, DomainScore, OverallScoreStatus } from "@/domain/diagnosis/types";
 import {
   buildFreeDiagnosisResultViewModel,
   type DiagnosisResultData,
@@ -25,6 +25,17 @@ export interface DashboardTrendViewModel {
   tone: "positive" | "negative" | "neutral";
 }
 
+// 2026-09-29追加(PO指示、再診断ループP0): AIO/LLMOなど領域単位で「前回比」を出すための
+// 最小view-model。高度な推移グラフは作らず、「前回比 +N/-N/±0」のラベル1つと、
+// 比較不能な理由(未測定・サンプル混在等)の中立ラベルだけを持つ。測定日時は
+// latestMeasuredAt/previousMeasuredAtとしてそのまま保持し、表示側で整形する。
+export interface DashboardDomainTrendViewModel {
+  domain: DomainKey;
+  trend: DashboardTrendViewModel;
+  latestMeasuredAt: Date | string | null;
+  previousMeasuredAt: Date | string | null;
+}
+
 export type DashboardViewModel =
   | {
       hasDiagnosis: false;
@@ -35,6 +46,8 @@ export type DashboardViewModel =
       latestId: string;
       result: FreeDiagnosisResultViewModel;
       trend: DashboardTrendViewModel;
+      // 2026-09-29追加: AIO/LLMOの領域単位の前回比(比較不能な領域は含まれない)。
+      domainTrends: DashboardDomainTrendViewModel[];
       questionSummary: DashboardQuestionSummary;
       history: DashboardDiagnosisSummary[];
     };
@@ -80,9 +93,71 @@ function buildQuestionSummary(result: FreeDiagnosisResultViewModel): DashboardQu
   );
 }
 
+// 2026-09-29追加(PO指示、再診断ループP0): AIO/LLMOだけ、領域単位の「前回比」を出す
+// (他4領域は現時点で実測連携が無く比較の意味が薄いため対象外。将来実測が増えたら
+// このリストを拡張するだけでよい設計にする)。
+const DOMAIN_TREND_TARGETS: DomainKey[] = ["AIO", "LLMO"];
+
+/**
+ * 領域単位の前回比を算出する。全体のbuildTrend()と同じ判断基準を領域単位に適用する:
+ * - 前回診断が無い/取得不能(assessedMaxPoints=0、status="unavailable")な領域は比較しない
+ *   (未測定項目同士を0点として差分計算しない、というPO指示をここで機械的に保証する)
+ * - サンプル/実測の混在は比較しない(全体trendと同じ理由)
+ */
+function buildDomainTrend(
+  domain: DomainKey,
+  latestDomain: DomainScore | undefined,
+  previousDomain: DomainScore | undefined,
+  latestIsSample: boolean,
+  previousIsSample: boolean
+): DashboardTrendViewModel | null {
+  if (!latestDomain || !previousDomain) return null;
+  if (latestDomain.status === "unavailable" || previousDomain.status === "unavailable") return null;
+  if (latestIsSample !== previousIsSample) return null;
+
+  const difference = latestDomain.points - previousDomain.points;
+  const prefix = latestIsSample ? "参考値の前回比" : "前回比";
+  if (difference === 0) {
+    return { label: `${prefix} ±0`, tone: "neutral" };
+  }
+  return {
+    label: `${prefix} ${difference > 0 ? "+" : ""}${difference}`,
+    tone: difference > 0 ? "positive" : "negative",
+  };
+}
+
+function buildDomainTrends(
+  latest: DiagnosisResultData,
+  previous: { diagnosis: DiagnosisResultData } | undefined
+): DashboardDomainTrendViewModel[] {
+  if (!previous) return [];
+  const trends: DashboardDomainTrendViewModel[] = [];
+  for (const domain of DOMAIN_TREND_TARGETS) {
+    const latestDomain = latest.scoreBreakdown.domains.find((d) => d.domain === domain);
+    const previousDomain = previous.diagnosis.scoreBreakdown.domains.find((d) => d.domain === domain);
+    const trend = buildDomainTrend(
+      domain,
+      latestDomain,
+      previousDomain,
+      latest.isSample,
+      previous.diagnosis.isSample
+    );
+    if (trend) {
+      trends.push({
+        domain,
+        trend,
+        latestMeasuredAt: latest.measuredAt,
+        previousMeasuredAt: previous.diagnosis.measuredAt,
+      });
+    }
+  }
+  return trends;
+}
+
 export function buildDashboardViewModel(
   latest: { id: string; diagnosis: DiagnosisResultData } | null,
-  history: DashboardDiagnosisSummary[]
+  history: DashboardDiagnosisSummary[],
+  previous?: { id: string; diagnosis: DiagnosisResultData }
 ): DashboardViewModel {
   if (!latest) {
     return { hasDiagnosis: false, history };
@@ -96,13 +171,14 @@ export function buildDashboardViewModel(
     measuredAt: latest.diagnosis.measuredAt,
     isSample: latest.diagnosis.isSample,
   };
-  const previous = history.find((diagnosis) => diagnosis.id !== latest.id);
+  const previousSummary = history.find((diagnosis) => diagnosis.id !== latest.id);
 
   return {
     hasDiagnosis: true,
     latestId: latest.id,
     result,
-    trend: buildTrend(latestSummary, previous),
+    trend: buildTrend(latestSummary, previousSummary),
+    domainTrends: buildDomainTrends(latest.diagnosis, previous),
     questionSummary: buildQuestionSummary(result),
     history,
   };

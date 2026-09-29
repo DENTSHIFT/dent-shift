@@ -84,7 +84,23 @@ beforeEach(async () => {
       ],
     },
   });
-  mocks.saveDiagnosisResult.mockResolvedValue({ clinicId: "clinic-utm-test", diagnosisId: "diagnosis-utm-test" });
+  // 2026-09-29修正: diagnosis_completedイベントのpayloadはsaveDiagnosisResult()が返す
+  // persistedUtm(実際にDBへ確定したUTM)を使うようになった。このテストは常に匿名の
+  // 新規Clinic作成経路(currentContact=null)のみを扱うため、persistedUtm=input.utmで
+  // 実際のrepositoryの新規Clinic時の挙動(今回の入力がそのままfirst-touchになる)を再現する。
+  mocks.saveDiagnosisResult.mockImplementation((input: { utm?: Record<string, string | null> }) =>
+    Promise.resolve({
+      clinicId: "clinic-utm-test",
+      diagnosisId: "diagnosis-utm-test",
+      persistedUtm: input.utm ?? {
+        utm_source: null,
+        utm_medium: null,
+        utm_campaign: null,
+        utm_content: null,
+        utm_term: null,
+      },
+    })
+  );
   mocks.updateEmailStatus.mockResolvedValue({ resultEmailStatus: "disabled", resultEmailSentAt: null });
   mocks.sendResultEmail.mockResolvedValue("disabled");
 });

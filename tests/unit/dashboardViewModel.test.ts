@@ -149,4 +149,71 @@ describe("buildDashboardViewModel", () => {
     if (!vm.hasDiagnosis) throw new Error("expected diagnosis");
     expect(vm.trend.label).toBe("取得状況により比較できません");
   });
+
+  it("previous未指定の場合、domainTrendsは空配列(再診断ループ実装前の呼び出し元と後方互換)", () => {
+    const vm = buildDashboardViewModel({ id: "latest", diagnosis: diagnosis() }, [summary()]);
+    expect(vm.hasDiagnosis).toBe(true);
+    if (!vm.hasDiagnosis) throw new Error("expected diagnosis");
+    expect(vm.domainTrends).toEqual([]);
+  });
+
+  it("2026-09-29追加: AIO/LLMOが両方measuredなら領域単位の前回比を返し、測定日時も保持する", () => {
+    const overrideDomains = (points: number) => ({
+      domains: ["AIO", "MEO", "SEO", "LLMO", "WEB_BOOKING", "REVIEWS"].map((key) => ({
+        ...domain(key as DomainScore["domain"]),
+        status: "measured" as const,
+        points: key === "AIO" ? points : 5,
+      })),
+      maxPoints: 100,
+      assessedMaxPoints: 100,
+      coverage: 1,
+    });
+    const latestDiag = diagnosis({
+      isSample: false,
+      measuredAt: "2026-09-29T09:00:00.000Z",
+      scoreBreakdown: overrideDomains(10),
+    });
+    const previousDiag = diagnosis({
+      isSample: false,
+      measuredAt: "2026-09-20T09:00:00.000Z",
+      scoreBreakdown: overrideDomains(4),
+    });
+    const vm = buildDashboardViewModel(
+      { id: "latest", diagnosis: latestDiag },
+      [summary({ isSample: false }), summary({ id: "previous", isSample: false, totalPoints: 20 })],
+      { id: "previous", diagnosis: previousDiag }
+    );
+    expect(vm.hasDiagnosis).toBe(true);
+    if (!vm.hasDiagnosis) throw new Error("expected diagnosis");
+    const aioTrend = vm.domainTrends.find((t) => t.domain === "AIO");
+    expect(aioTrend?.trend).toEqual({ label: "前回比 +6", tone: "positive" });
+    expect(aioTrend?.latestMeasuredAt).toBe("2026-09-29T09:00:00.000Z");
+    expect(aioTrend?.previousMeasuredAt).toBe("2026-09-20T09:00:00.000Z");
+  });
+
+  it("2026-09-29追加: 片方の領域がunavailableなら、その領域は0点扱いで差分計算せずdomainTrendsから除外する", () => {
+    const latestDiag = diagnosis({
+      isSample: false,
+      scoreBreakdown: {
+        domains: ["AIO", "MEO", "SEO", "LLMO", "WEB_BOOKING", "REVIEWS"].map((key) => ({
+          ...domain(key as DomainScore["domain"]),
+          status: key === "AIO" ? ("unavailable" as const) : ("measured" as const),
+          score: key === "AIO" ? null : undefined,
+          points: key === "AIO" ? 0 : 5,
+        })),
+        maxPoints: 100,
+        assessedMaxPoints: 100,
+        coverage: 1,
+      },
+    });
+    const previousDiag = diagnosis({ isSample: false });
+    const vm = buildDashboardViewModel(
+      { id: "latest", diagnosis: latestDiag },
+      [summary({ isSample: false }), summary({ id: "previous", isSample: false })],
+      { id: "previous", diagnosis: previousDiag }
+    );
+    expect(vm.hasDiagnosis).toBe(true);
+    if (!vm.hasDiagnosis) throw new Error("expected diagnosis");
+    expect(vm.domainTrends.find((t) => t.domain === "AIO")).toBeUndefined();
+  });
 });

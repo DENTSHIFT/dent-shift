@@ -242,32 +242,40 @@ export default async function DashboardPage() {
 
   const diagnoses = await getDiagnosesByClinicId(contact.clinicId);
   const latest = diagnoses[0] ? await getDiagnosisById(diagnoses[0].id) : null;
+  // 2026-09-29追加(PO指示、再診断ループP0): 領域単位(AIO/LLMO)の前回比を出すには
+  // 前回診断のscoreBreakdownも必要なため、historyの2件目(直前に完了した診断)も取得する。
+  const previousRaw = diagnoses[1] ? await getDiagnosisById(diagnoses[1].id) : null;
   const history = diagnoses.map((diagnosis) => ({
     ...diagnosis,
     totalStatus: diagnosis.totalStatus as OverallScoreStatus,
   }));
+  function toDisplayDiagnosis(raw: NonNullable<typeof latest>) {
+    return {
+      ...raw,
+      totalStatus: raw.totalStatus as OverallScoreStatus,
+      scoreBreakdown: raw.scoreBreakdown as {
+        domains: DomainScore[];
+        maxPoints: number;
+        assessedMaxPoints: number;
+        coverage: number;
+      },
+      competitors: raw.competitors as CompetitorClinic[],
+      questionResults: raw.questionResults as PatientQuestionResult[],
+      topImprovements: raw.topImprovements as ImprovementCandidate[],
+    };
+  }
   const latestForDisplay =
     latest && diagnoses[0]
-      ? {
-          id: diagnoses[0].id,
-          diagnosis: {
-            ...latest,
-            totalStatus: latest.totalStatus as OverallScoreStatus,
-            scoreBreakdown: latest.scoreBreakdown as {
-              domains: DomainScore[];
-              maxPoints: number;
-              assessedMaxPoints: number;
-              coverage: number;
-            },
-            competitors: latest.competitors as CompetitorClinic[],
-            questionResults: latest.questionResults as PatientQuestionResult[],
-            topImprovements: latest.topImprovements as ImprovementCandidate[],
-          },
-        }
+      ? { id: diagnoses[0].id, diagnosis: toDisplayDiagnosis(latest) }
       : null;
+  const previousForDisplay =
+    previousRaw && diagnoses[1]
+      ? { id: diagnoses[1].id, diagnosis: toDisplayDiagnosis(previousRaw) }
+      : undefined;
   const vm = buildDashboardViewModel(
     latestForDisplay,
-    history
+    history,
+    previousForDisplay
   );
   const bookingUrl = process.env.NEXT_PUBLIC_SPECIALIST_BOOKING_URL;
   let checkoutReady = false;
@@ -521,6 +529,20 @@ export default async function DashboardPage() {
                           {domain.showEstimatedBadge && <span className={styles.badge}>推定</span>}
                         </div>
                         <p className={styles.domainPoints}>{domain.pointsLabel}</p>
+                        {(() => {
+                          const domainTrend = vm.domainTrends.find((t) => t.domain === domain.domain);
+                          if (!domainTrend) return null;
+                          return (
+                            <p className={trendClass(domainTrend.trend.tone)} style={{ fontSize: 12 }}>
+                              {domainTrend.trend.label}
+                              {domainTrend.latestMeasuredAt && domainTrend.previousMeasuredAt && (
+                                <span style={{ color: "#9CA3AF", fontWeight: 400, marginLeft: 6 }}>
+                                  ({formatDate(domainTrend.previousMeasuredAt)}→{formatDate(domainTrend.latestMeasuredAt)})
+                                </span>
+                              )}
+                            </p>
+                          );
+                        })()}
                         {domain.percent !== null && (
                           <div className={styles.bar} aria-hidden="true">
                             <div className={styles.barFill} style={{ width: `${domain.percent}%` }} />
