@@ -538,9 +538,12 @@
   text-align: center;
 }
 
-/* 料金カード: ライト=淡いグレー/ブルー、スタンダード=ネイビー、プレミアム=ゴールド */
+/* 2026-09-30修正(PO依頼): ライトプランを白背景に変更し、旧ライトの淡いグレー/
+   ブルーの配色はスタンダードプランへ移した(新規に色を作らず、既存のライト配色を
+   再利用する)。スタンダードの「おすすめ」強調は、境界線の色・scale・box-shadowを
+   そのまま維持することで残す(バッジ自体は既存のpopularBadgeをそのまま使用)。 */
 .priceCardLight {
-  background: linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
+  background: #fff;
   border: 1px solid #dce4ee;
   color: #0f1b2d;
 }
@@ -550,12 +553,8 @@
   color: #6b7280;
 }
 
-/* 2026-09-30修正(PO依頼): スタンダードプランの背景を濃紺から淡い水色系に変更し、
-   文字・価格・ボタンの読みやすさを優先する。「おすすめ」の強調は、境界線の色・
-   scale・box-shadowをそのまま維持することで残す(バッジ自体は既存のpopularBadge
-   をそのまま使用)。 */
 .priceCardStandard {
-  background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+  background: linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
   border: 1.5px solid #2563eb;
   color: #0f1b2d;
   transform: scale(1.02);

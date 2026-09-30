@@ -352,6 +352,12 @@ function PricingSection() {
     <section id="pricing" className={styles.section}>
       <p className={styles.eyebrow}>料金は、この3つだけ。</p>
       <h2 className={styles.heading}>シンプルな月額サブスクリプション</h2>
+      <p style={{ margin: "10px 0 0", fontSize: 16, fontWeight: 800, color: NAVY, textAlign: "center" }}>
+        初期費用0円 ｜ 月契約・いつでも解約可能
+      </p>
+      <p style={{ margin: "4px 0 0", fontSize: 11, color: "#6B7280", textAlign: "center" }}>
+        ※解約後の日割り返金はなく、契約期間末日までご利用いただけます（無料トライアル中の解約は料金不要です）
+      </p>
       <div className={styles.priceGrid}>
         {PLAN_SUMMARIES.map((plan) => (
           <div key={plan.id} className={`${styles.priceCard} ${tone[plan.id]}`}>
@@ -385,11 +391,14 @@ function PricingSection() {
             >
               {ctaCopy[plan.id]}
             </Link>
+            <p className={styles.priceSubLabel} style={{ marginTop: 6, textAlign: "center" }}>
+              初期費用0円・いつでも解約可
+            </p>
           </div>
         ))}
       </div>
       <p style={{ marginTop: 20, fontSize: 12, color: "#6B7280", textAlign: "center" }}>
-        月額サブスクリプション・契約期間の縛りなし・いつでも解約可能
+        月額サブスクリプション・契約期間の縛りなし・いつでも解約可能（解約後の日割り返金はなく、契約期間末日までご利用いただけます。無料トライアル中の解約は料金不要です）
       </p>
       <div style={{ textAlign: "center", marginTop: 14 }}>
         <Link href="/plans" style={{ color: BLUE, fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
