@@ -209,16 +209,23 @@ function RealDashboardSection() {
       <p className={styles.eyebrow}>実際の画面で見る</p>
       <h2 className={styles.heading}>契約後は、このダッシュボードで毎月の改善が分かります。</h2>
       <p className={styles.sub}>AI集患総合スコア・スコア推移・エリア内競合比較・改善アクションを1画面で確認できます。</p>
+      {/* 2026-09-30修正(PO依頼): 最適化API(/_next/image)に依存せず配信するため、
+          事前生成した静的WebP(PC用61.8KB・スマホ用27.5KB、元PNG 1.45MBから
+          軽量化。文字が読めることを目視確認済み)を<picture>で出し分ける。
+          WebP非対応ブラウザ向けに元PNGをフォールバックとして残す。 */}
       <div className={styles.mockFrame} style={{ padding: 12 }}>
-        <Image
-          src="/marketing/dashboard-onboarding.png"
-          alt="DENT SHIFTダッシュボードの実際の画面"
-          width={1536}
-          height={1024}
-          sizes="(max-width: 900px) 100vw, 1032px"
-          className={styles.imgResponsive}
-          unoptimized
-        />
+        <picture>
+          <source media="(max-width: 900px)" srcSet="/marketing/dashboard-onboarding-mobile.webp" type="image/webp" />
+          <source srcSet="/marketing/dashboard-onboarding.webp" type="image/webp" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/marketing/dashboard-onboarding.png"
+            alt="DENT SHIFTダッシュボードの実際の画面"
+            width={1536}
+            height={1024}
+            className={styles.imgResponsive}
+          />
+        </picture>
       </div>
     </section>
   );
@@ -429,23 +436,30 @@ function SpecialistTeamSection() {
             (診断ページのSpecialistCardと同様)に合わせて近接に「AI生成モデル」の
             注記を残す。 */}
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/brand/ai-specialists/specialist-01.png"
-            alt="DENT SHIFTスペシャリストサポートのイメージ(AI生成モデル)"
-            style={{
-              width: 64,
-              height: 64,
-              minWidth: 64,
-              maxWidth: 64,
-              flex: "0 0 64px",
-              objectFit: "cover",
-              borderRadius: "50%",
-              display: "block",
-              border: "1.5px solid #e4d6a7",
-              background: "#fff",
-            }}
-          />
+          {/* 2026-09-30修正(PO依頼): 表示サイズ(64px、Retina考慮でも128pxで十分)に
+              対して元画像(512x512・258KB)が過大なため、128px角に縮小したWebP
+              (2.6KB)を用意し、最適化APIを介さず<picture>で直接配信する。
+              WebP非対応ブラウザ向けに元PNGをフォールバックとして残す。 */}
+          <picture>
+            <source srcSet="/brand/ai-specialists/specialist-01.webp" type="image/webp" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/brand/ai-specialists/specialist-01.png"
+              alt="DENT SHIFTスペシャリストサポートのイメージ(AI生成モデル)"
+              style={{
+                width: 64,
+                height: 64,
+                minWidth: 64,
+                maxWidth: 64,
+                flex: "0 0 64px",
+                objectFit: "cover",
+                borderRadius: "50%",
+                display: "block",
+                border: "1.5px solid #e4d6a7",
+                background: "#fff",
+              }}
+            />
+          </picture>
           <div style={{ minWidth: 0 }}>
             <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: NAVY, overflowWrap: "anywhere" }}>
               スペシャリストによる個別サポート
