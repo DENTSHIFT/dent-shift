@@ -627,6 +627,33 @@
   text-align: center;
 }
 
+/* 2026-09-30修正(PO依頼): プレミアムプランの相談ボタンを白背景から、カードの
+   ゴールド系配色と調和する濃いブラウンゴールド(既存の.priceCardPremium
+   .priceTargetCopyやGOLD_TEXTと同じ#7a5f1f)の塗りつぶし+白文字に変更する。
+   黄色すぎる金色を避けるため、彩度を抑えた濃い色を使用する。 */
+.ctaButtonPremium {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  box-sizing: border-box;
+  background: #7a5f1f;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  text-align: center;
+  transition: background-color 0.15s ease;
+}
+
+.ctaButtonPremium:hover {
+  background: #5f4813;
+}
+
 /* スペシャリストサポート内カード */
 .specialistCard {
   background: #fff;
@@ -652,6 +679,8 @@
    明確に見えるようにする。既存のブラウザ既定アウトラインを消していないため追加のみ。 */
 .ctaButton:focus-visible,
 .ctaButtonOutline:focus-visible,
+.ctaButtonStandard:focus-visible,
+.ctaButtonPremium:focus-visible,
 .tabButton:focus-visible {
   outline: 2px solid #2563eb;
   outline-offset: 2px;

@@ -217,6 +217,7 @@ function RealDashboardSection() {
           height={1024}
           sizes="(max-width: 900px) 100vw, 1032px"
           className={styles.imgResponsive}
+          unoptimized
         />
       </div>
     </section>
@@ -385,7 +386,7 @@ function PricingSection() {
                   ? `${styles.ctaButtonOutline} ${styles.ctaButtonFull}`
                   : plan.id === "standard"
                     ? `${styles.ctaButtonStandard} ${styles.ctaButtonFull}`
-                    : `${styles.ctaButtonLight} ${styles.ctaButtonFull}`
+                    : `${styles.ctaButtonPremium} ${styles.ctaButtonFull}`
               }
               style={{ marginTop: "auto" }}
             >
