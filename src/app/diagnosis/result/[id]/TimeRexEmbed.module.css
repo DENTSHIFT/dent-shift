@@ -1,0 +1,23 @@
+/* 2026-09-30修正(PO承認): TimeRex公式ヘルプでは埋め込みウィジェットは
+   「100%幅で表示され、コンテナ幅で制御する」とされているが、実機確認の結果
+   TimeRex側スクリプトが埋め込み先divへ`min-width:550px`をインラインで
+   強制することを確認した(公式ドキュメントに明記のない実装上の制約)。
+   コンテナ幅で制御できないため、狭い画面では埋め込み自体を非表示にし、
+   代わりに既存の予約ページを新規タブで開くボタンに切り替える(PC側の
+   埋め込みは維持)。表示切り替えは端末幅ではなくコンテナが必要とする
+   最小幅(550px)を基準にする。 */
+.desktopCalendar {
+  display: block;
+}
+.mobileButton {
+  display: none;
+}
+
+@media (max-width: 599px) {
+  .desktopCalendar {
+    display: none;
+  }
+  .mobileButton {
+    display: inline-flex;
+  }
+}
