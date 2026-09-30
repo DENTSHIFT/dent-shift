@@ -420,6 +420,42 @@ function SpecialistTeamSection() {
   return (
     <section className={styles.sectionTight}>
       <div className={styles.goldCard}>
+        {/* 2026-09-30修正(PO依頼): 既存のAI生成素材(brand/ai-specialists/、
+            public/brand/ai-specialists/specialist-01.pngとして複製配置済み。
+            新規画像は作成していない)を流用し、「スペシャリストによる個別サポート」を
+            人が対応するサポートとして冒頭に示す。実際の担当は1名のため、氏名や
+            複数名を想起させる並べ方は避け、顔アイコンは1つだけ配置する。
+            この画像は実写ではなくAI生成のイメージ素材のため、既存の運用ルール
+            (診断ページのSpecialistCardと同様)に合わせて近接に「AI生成モデル」の
+            注記を残す。 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/ai-specialists/specialist-01.png"
+            alt="DENT SHIFTスペシャリストサポートのイメージ(AI生成モデル)"
+            style={{
+              width: 64,
+              height: 64,
+              minWidth: 64,
+              maxWidth: 64,
+              flex: "0 0 64px",
+              objectFit: "cover",
+              borderRadius: "50%",
+              display: "block",
+              border: "1.5px solid #e4d6a7",
+              background: "#fff",
+            }}
+          />
+          <div style={{ minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: NAVY, overflowWrap: "anywhere" }}>
+              スペシャリストによる個別サポート
+            </p>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6B7280", overflowWrap: "anywhere" }}>
+              全プラン対象・45分の個別相談（事前予約制）
+            </p>
+            <p style={{ margin: "4px 0 0", fontSize: 10, color: "#9CA3AF" }}>※イメージ画像（AI生成モデル）</p>
+          </div>
+        </div>
         <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: GOLD_TEXT }}>DENT SHIFT スペシャリストサポート</p>
         <h2 style={{ margin: "8px 0 0", fontSize: 19, color: NAVY, overflowWrap: "anywhere" }}>
           AIだけで完結させず、歯科集患に詳しい担当者が伴走します。
@@ -643,8 +679,12 @@ function FinalCtaSection() {
   return (
     <section className={styles.sectionTight}>
       <div className={styles.finalCtaPanel}>
-        <h2 style={{ margin: 0, fontSize: 21, color: "#fff", lineHeight: 1.6, overflowWrap: "anywhere" }}>
-          まずは無料で、AI検索での現在地を確認。
+        <h2 style={{ margin: 0, fontSize: 21, color: "#fff", lineHeight: 1.6 }}>
+          <span style={{ display: "inline" }}>まずは無料で、</span>
+          <br className={styles.finalCtaMobileBreak} />
+          <span style={{ display: "inline-block", wordBreak: "keep-all", overflowWrap: "normal" }}>
+            AI検索での現在地を確認。
+          </span>
         </h2>
         <p style={{ margin: "12px auto 0", fontSize: 13, color: "#CBD5E1", maxWidth: 480, lineHeight: 1.85 }}>
           AIに選ばれている患者ニーズ、競合との差、優先して直すべきポイントを約60秒で確認できます。

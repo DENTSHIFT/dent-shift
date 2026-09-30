@@ -675,6 +675,20 @@
   text-align: center;
 }
 
+/* 2026-09-30修正(PO依頼): 最終CTA見出しをスマホでは「まずは無料で、」
+   「AI検索での現在地を確認。」の2行に固定し、「確認」が途中で改行されないよう
+   後半をkeep-allでまとめる。PC(768px以上)は幅に余裕があれば1行のままにするため、
+   強制改行はスマホ相当の幅のみに限定する。 */
+.finalCtaMobileBreak {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .finalCtaMobileBreak {
+    display: block;
+  }
+}
+
 /* アクセシビリティ監査(2026-09-22): フォーカスリングを削除せず、キーボード操作時に
    明確に見えるようにする。既存のブラウザ既定アウトラインを消していないため追加のみ。 */
 .ctaButton:focus-visible,
