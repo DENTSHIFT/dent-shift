@@ -73,7 +73,11 @@
 .trendNegative { color: #b91c1c; background: #fef2f2; }
 .trendNeutral { color: #64748b; background: #f1f5f9; }
 .scoreCaveat { margin: 12px 0 0; color: #6b7280; font-size: 11px; line-height: 1.55; }
-.domainsGrid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 9px; margin-top: 13px; }
+/* 2026-09-30修正(PO指示): 固定のカラム数/端末幅ではなく、カードが必要とする最小幅
+   (150px、参考値の前回比バッジ+期間注記が1〜2行で収まる幅)を基準に自動でカラム数を
+   決める。周囲の2カラムレイアウト(overviewGrid)との併存で利用可能幅が変動しても、
+   個別の端末幅ブレークポイントに依存せず圧縮を防ぐ。 */
+.domainsGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 9px; margin-top: 13px; }
 .domainCard { min-width: 0; padding: 12px; border: 1px solid #e5e9f0; border-radius: 12px; background: #fff; }
 .domainHeader { min-height: 34px; display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; color: #40506a; font-size: 12px; font-weight: 700; }
 .domainIdentity { min-width: 0; display: flex; align-items: center; gap: 8px; }
@@ -152,7 +156,8 @@
   .pageTitle { font-size: 21px; }
   .newDiagnosisLink { min-height: 36px; padding: 8px 12px; font-size: 11px; }
   .overviewGrid, .twoColumn { grid-template-columns: 1fr; }
-  .domainsGrid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  /* domainsGridのカラム数はauto-fit(150px基準)側で自動調整されるため、ここでの
+     固定カラム数指定は削除した(2026-09-30修正、PO指示: 端末幅ではなくカード必要幅基準)。 */
   /* 2026-09-29修正(PO指示): モバイルは総合スコア→6領域→3指標の順で縦表示するため、
      3指標も1カラムで積み上げる(2カラム+はみ出し1枚という不均衡なレイアウトを避ける)。 */
   .metricsGrid { grid-template-columns: 1fr; gap: 9px; }
