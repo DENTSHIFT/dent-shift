@@ -550,12 +550,16 @@
   color: #6b7280;
 }
 
+/* 2026-09-30修正(PO依頼): スタンダードプランの背景を濃紺から淡い水色系に変更し、
+   文字・価格・ボタンの読みやすさを優先する。「おすすめ」の強調は、境界線の色・
+   scale・box-shadowをそのまま維持することで残す(バッジ自体は既存のpopularBadge
+   をそのまま使用)。 */
 .priceCardStandard {
-  background: #0f1b2d;
-  border: 1.5px solid #0f1b2d;
-  color: #fff;
+  background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+  border: 1.5px solid #2563eb;
+  color: #0f1b2d;
   transform: scale(1.02);
-  box-shadow: 0 20px 40px rgba(15, 27, 45, 0.22);
+  box-shadow: 0 20px 40px rgba(37, 99, 235, 0.16);
 }
 
 .priceCardPremium {
@@ -578,7 +582,7 @@
 }
 
 .priceCardStandard .priceTargetCopy {
-  color: #9fd3ff;
+  color: #1e3a8a;
 }
 
 .priceCardPremium .priceTargetCopy {
@@ -593,6 +597,27 @@
   box-sizing: border-box;
   background: #fff;
   color: #0f1b2d;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+/* 2026-09-30修正(PO依頼): スタンダードプランの背景を淡くしたため、従来の白背景
+   ボタン(ctaButtonLight)では背景とほぼ同化し視認性が落ちる。ブランドの青を
+   塗りつぶした専用ボタンにして、価格・ボタンの読みやすさを優先する。 */
+.ctaButtonStandard {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  box-sizing: border-box;
+  background: #2563eb;
+  color: #fff;
   border: none;
   padding: 10px 20px;
   border-radius: 10px;

@@ -374,7 +374,13 @@ function PricingSection() {
             </div>
             <Link
               href="/diagnosis"
-              className={plan.id === "light" ? `${styles.ctaButtonOutline} ${styles.ctaButtonFull}` : `${styles.ctaButtonLight} ${styles.ctaButtonFull}`}
+              className={
+                plan.id === "light"
+                  ? `${styles.ctaButtonOutline} ${styles.ctaButtonFull}`
+                  : plan.id === "standard"
+                    ? `${styles.ctaButtonStandard} ${styles.ctaButtonFull}`
+                    : `${styles.ctaButtonLight} ${styles.ctaButtonFull}`
+              }
               style={{ marginTop: "auto" }}
             >
               {ctaCopy[plan.id]}
