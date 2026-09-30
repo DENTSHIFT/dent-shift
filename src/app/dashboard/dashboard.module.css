@@ -142,7 +142,7 @@
   .twoColumn { grid-template-columns: 1fr; }
 }
 
-@media (max-width:760px) {
+@media (max-width:768px) {
   .sidebar { display: none; }
   .main { margin-left: 0; }
   .topbar { min-height: 64px; padding: 11px 16px; }
