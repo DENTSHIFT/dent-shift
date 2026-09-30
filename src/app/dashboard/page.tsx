@@ -533,14 +533,16 @@ export default async function DashboardPage() {
                           const domainTrend = vm.domainTrends.find((t) => t.domain === domain.domain);
                           if (!domainTrend) return null;
                           return (
-                            <p className={trendClass(domainTrend.trend.tone)} style={{ fontSize: 12 }}>
-                              {domainTrend.trend.label}
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                              <p className={trendClass(domainTrend.trend.tone)} style={{ fontSize: 12 }}>
+                                {domainTrend.trend.label}
+                              </p>
                               {domainTrend.latestMeasuredAt && domainTrend.previousMeasuredAt && (
-                                <span style={{ color: "#9CA3AF", fontWeight: 400, marginLeft: 6 }}>
+                                <p style={{ color: "#9CA3AF", fontWeight: 400, fontSize: 11, margin: 0 }}>
                                   ({formatDate(domainTrend.previousMeasuredAt)}→{formatDate(domainTrend.latestMeasuredAt)})
-                                </span>
+                                </p>
                               )}
-                            </p>
+                            </div>
                           );
                         })()}
                         {domain.percent !== null && (
