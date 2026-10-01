@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Consultation_Status__c</fullName>
+    <label>直近の相談予約の状態</label>
+    <description>直近の相談予約の状態(予約成立/キャンセル)</description>
+    <inlineHelpText>直近の相談予約の状態(予約成立/キャンセル)</inlineHelpText>
+    <type>Text</type>
+    <length>40</length>
+    <required>false</required>
+    <externalId>false</externalId>
+    <unique>false</unique>
+</CustomField>

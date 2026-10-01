@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Cancel_Requested_At__c</fullName>
+    <label>解約申請日時</label>
+    <description>解約申請日時</description>
+    <inlineHelpText>解約申請日時</inlineHelpText>
+    <type>DateTime</type>
+    <required>false</required>
+</CustomField>

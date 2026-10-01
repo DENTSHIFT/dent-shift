@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Provisional__c</fullName>
+    <label>暫定値</label>
+    <description>暫定値(サンプル/計測不能を含む)</description>
+    <inlineHelpText>暫定値(サンプル/計測不能を含む)</inlineHelpText>
+    <type>Checkbox</type>
+    <defaultValue>false</defaultValue>
+</CustomField>

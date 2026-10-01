@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_End_At__c</fullName>
+    <label>相談終了日時</label>
+    <description>相談終了日時</description>
+    <inlineHelpText>相談終了日時</inlineHelpText>
+    <type>DateTime</type>
+    <required>false</required>
+</CustomField>

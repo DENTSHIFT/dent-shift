@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Diagnosis_Id__c</fullName>
+    <label>DENT SHIFTの診断ID</label>
+    <description>DENT SHIFTの診断ID(外部ID・一意)</description>
+    <inlineHelpText>DENT SHIFTの診断ID(外部ID・一意)</inlineHelpText>
+    <type>Text</type>
+    <length>64</length>
+    <required>false</required>
+    <externalId>true</externalId>
+    <unique>true</unique>
+    <caseSensitive>true</caseSensitive>
+</CustomField>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Account__c</fullName>
+    <label>取引先</label>
+    <description>取引先(会員登録済みの医院のみ)</description>
+    <inlineHelpText>取引先(会員登録済みの医院のみ)</inlineHelpText>
+    <type>Lookup</type>
+    <referenceTo>Account</referenceTo>
+    <relationshipName>DentShift_Consultations</relationshipName>
+    <relationshipLabel>DENT SHIFT相談予約</relationshipLabel>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <required>false</required>
+</CustomField>

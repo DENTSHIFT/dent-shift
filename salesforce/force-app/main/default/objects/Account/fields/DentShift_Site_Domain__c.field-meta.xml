@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Site_Domain__c</fullName>
+    <label>医院サイトのドメイン</label>
+    <description>医院サイトのドメイン</description>
+    <inlineHelpText>医院サイトのドメイン</inlineHelpText>
+    <type>Text</type>
+    <length>255</length>
+    <required>false</required>
+    <externalId>false</externalId>
+    <unique>false</unique>
+</CustomField>

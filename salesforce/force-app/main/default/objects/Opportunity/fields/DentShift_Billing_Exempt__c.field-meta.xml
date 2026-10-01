@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Billing_Exempt__c</fullName>
+    <label>課金免除</label>
+    <description>課金免除(永久無料)</description>
+    <inlineHelpText>課金免除(永久無料)</inlineHelpText>
+    <type>Checkbox</type>
+    <defaultValue>false</defaultValue>
+</CustomField>

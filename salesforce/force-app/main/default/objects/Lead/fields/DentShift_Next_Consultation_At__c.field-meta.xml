@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Next_Consultation_At__c</fullName>
+    <label>次回の相談予約日時</label>
+    <description>次回の相談予約日時(予約成立のもの)</description>
+    <inlineHelpText>次回の相談予約日時(予約成立のもの)</inlineHelpText>
+    <type>DateTime</type>
+    <required>false</required>
+</CustomField>

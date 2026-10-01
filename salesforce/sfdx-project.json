@@ -1,0 +1,6 @@
+{
+  "packageDirectories": [{ "path": "force-app", "default": true }],
+  "name": "dent-shift-salesforce",
+  "namespace": "",
+  "sourceApiVersion": "60.0"
+}

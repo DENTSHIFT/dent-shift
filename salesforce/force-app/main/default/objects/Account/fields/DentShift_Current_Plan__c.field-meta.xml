@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Current_Plan__c</fullName>
+    <label>契約プラン</label>
+    <description>契約プラン(最新の契約)</description>
+    <inlineHelpText>契約プラン(最新の契約)</inlineHelpText>
+    <type>Text</type>
+    <length>40</length>
+    <required>false</required>
+    <externalId>false</externalId>
+    <unique>false</unique>
+</CustomField>

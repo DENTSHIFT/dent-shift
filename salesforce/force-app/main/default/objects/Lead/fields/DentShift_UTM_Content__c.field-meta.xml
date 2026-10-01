@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_UTM_Content__c</fullName>
+    <label>初回流入 utm_content</label>
+    <description>初回流入 utm_content</description>
+    <inlineHelpText>初回流入 utm_content</inlineHelpText>
+    <type>Text</type>
+    <length>255</length>
+    <required>false</required>
+    <externalId>false</externalId>
+    <unique>false</unique>
+</CustomField>

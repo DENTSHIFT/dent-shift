@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Trial_Ends_At__c</fullName>
+    <label>トライアル終了予定</label>
+    <description>トライアル終了予定</description>
+    <inlineHelpText>トライアル終了予定</inlineHelpText>
+    <type>DateTime</type>
+    <required>false</required>
+</CustomField>

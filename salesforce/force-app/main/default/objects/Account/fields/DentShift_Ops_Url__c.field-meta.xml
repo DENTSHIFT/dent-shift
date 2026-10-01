@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Ops_Url__c</fullName>
+    <label>DENT SHIFT管理画面</label>
+    <description>DENT SHIFT管理画面(連携イベント)への参照</description>
+    <inlineHelpText>DENT SHIFT管理画面(連携イベント)への参照</inlineHelpText>
+    <type>Url</type>
+    <required>false</required>
+</CustomField>

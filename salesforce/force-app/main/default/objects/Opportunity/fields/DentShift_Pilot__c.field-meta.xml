@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Pilot__c</fullName>
+    <label>Pilot</label>
+    <description>Pilot(先行利用)契約</description>
+    <inlineHelpText>Pilot(先行利用)契約</inlineHelpText>
+    <type>Checkbox</type>
+    <defaultValue>false</defaultValue>
+</CustomField>

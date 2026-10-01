@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Total_Status__c</fullName>
+    <label>総合判定</label>
+    <description>総合判定</description>
+    <inlineHelpText>総合判定</inlineHelpText>
+    <type>Text</type>
+    <length>40</length>
+    <required>false</required>
+    <externalId>false</externalId>
+    <unique>false</unique>
+</CustomField>

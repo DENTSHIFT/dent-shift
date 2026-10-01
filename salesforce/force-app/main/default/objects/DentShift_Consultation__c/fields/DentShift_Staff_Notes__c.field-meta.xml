@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Staff_Notes__c</fullName>
+    <label>担当者メモ</label>
+    <description>担当者メモ(同期では書き込まない)</description>
+    <inlineHelpText>担当者メモ(同期では書き込まない)</inlineHelpText>
+    <type>LongTextArea</type>
+    <length>5000</length>
+    <visibleLines>4</visibleLines>
+</CustomField>

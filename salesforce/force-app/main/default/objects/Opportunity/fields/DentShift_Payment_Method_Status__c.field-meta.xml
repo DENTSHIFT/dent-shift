@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Payment_Method_Status__c</fullName>
+    <label>支払方法の登録状態</label>
+    <description>支払方法の登録状態(カード情報は含まない)</description>
+    <inlineHelpText>支払方法の登録状態(カード情報は含まない)</inlineHelpText>
+    <type>Text</type>
+    <length>30</length>
+    <required>false</required>
+    <externalId>false</externalId>
+    <unique>false</unique>
+</CustomField>

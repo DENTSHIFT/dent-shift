@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Signed_Up_At__c</fullName>
+    <label>会員登録日時</label>
+    <description>会員登録日時</description>
+    <inlineHelpText>会員登録日時</inlineHelpText>
+    <type>DateTime</type>
+    <required>false</required>
+</CustomField>

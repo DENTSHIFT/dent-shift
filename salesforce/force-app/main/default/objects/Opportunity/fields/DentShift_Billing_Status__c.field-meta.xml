@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Billing_Status__c</fullName>
+    <label>契約状態</label>
+    <description>契約状態(trial/active/past_due/cancelled等)</description>
+    <inlineHelpText>契約状態(trial/active/past_due/cancelled等)</inlineHelpText>
+    <type>Text</type>
+    <length>30</length>
+    <required>false</required>
+    <externalId>false</externalId>
+    <unique>false</unique>
+</CustomField>

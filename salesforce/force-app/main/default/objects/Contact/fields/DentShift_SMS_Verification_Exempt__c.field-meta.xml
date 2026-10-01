@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_SMS_Verification_Exempt__c</fullName>
+    <label>SMS確認の例外対象</label>
+    <description>SMS確認の例外対象</description>
+    <inlineHelpText>SMS確認の例外対象</inlineHelpText>
+    <type>Checkbox</type>
+    <defaultValue>false</defaultValue>
+</CustomField>

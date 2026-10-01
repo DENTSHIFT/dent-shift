@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Paid_Started_At__c</fullName>
+    <label>有料契約の開始日時</label>
+    <description>有料契約の開始日時(初回)</description>
+    <inlineHelpText>有料契約の開始日時(初回)</inlineHelpText>
+    <type>DateTime</type>
+    <required>false</required>
+</CustomField>

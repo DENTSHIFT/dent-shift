@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Improvement_Summary__c</fullName>
+    <label>改善提案の概要</label>
+    <description>改善提案の概要(上位3件)</description>
+    <inlineHelpText>改善提案の概要(上位3件)</inlineHelpText>
+    <type>LongTextArea</type>
+    <length>2000</length>
+    <visibleLines>4</visibleLines>
+</CustomField>
