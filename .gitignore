@@ -11,4 +11,5 @@ tsconfig.tsbuildinfo
 
 # Salesforce Sandbox検証用の接続情報と検証レポート(リポジトリに含めない)
 salesforce/.env.*
+!salesforce/.env.sandbox.example
 salesforce/e2e-reports/

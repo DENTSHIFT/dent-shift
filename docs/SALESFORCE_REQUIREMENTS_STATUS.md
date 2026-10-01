@@ -7,7 +7,9 @@
 - **実環境検証済み**: Salesforce組織(Sandbox)で実際に動かし、記録と画面で確認済み。
 - **未対応**: 実装していない、または取得手段がない。
 
-> 現時点で、新しい連携処理を**実際のSalesforce組織で検証したものはまだない**(Sandbox未作成のため)。「実環境検証済み」の列は、Sandbox検証(`scripts/salesforce-sandbox-e2e.ts`)の結果で更新する。
+> 現時点で、新しい連携処理を**実際のSalesforce組織で検証したものはまだない**(Sandbox未作成のため)。
+> 検証は2段階: **Stage 1**(ローカルDB+Salesforce Sandbox、Stripe・TimeRexはシミュレーション。手順は `SALESFORCE_STAGE1_RUNBOOK.md`)と、**Stage 2**(実際のTimeRex予約・医院紐付け・日程変更、Stripeからの実イベント受信を、本番から分離された環境で確認)。
+> Stage 1 で確認できた項目は「実環境検証済み(Stage 1)」と記載し、Stage 2 が必要な項目はその旨を残す。Stage 1 の成功を連携全体の検証完了とはしない。
 
 | 頁 | 要件 | 状態 | 実装箇所 | テスト / 検証手段 | 備考 |
 |---|---|---|---|---|---|

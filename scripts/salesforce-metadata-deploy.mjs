@@ -8,7 +8,7 @@
  * SALESFORCE_LOGIN_URL / SALESFORCE_EXPECTED_ORG_ID)で指定し、組織IDが一致しない場合は中断する。
  *
  *   node scripts/salesforce-metadata-deploy.mjs              # 検証のみ(推奨: 最初に実行)
- *   node scripts/salesforce-metadata-deploy.mjs --deploy     # 反映(承認後)
+ *   node scripts/salesforce-metadata-deploy.mjs --deploy     # Sandboxへ反映(本番は --allow-production が必要)
  *   node scripts/salesforce-metadata-deploy.mjs --rollback   # 追加した項目・オブジェクト・権限セットを削除(承認後。項目のデータも消える)
  *   node scripts/salesforce-metadata-deploy.mjs --deploy --assign-permission-set   # 反映後、連携ユーザーへ権限セットを割り当て
  *
@@ -24,6 +24,8 @@ const SRC = path.join(ROOT, "salesforce", "force-app", "main", "default");
 const API = "v60.0";
 const mode = process.argv.includes("--rollback") ? "rollback" : process.argv.includes("--deploy") ? "deploy" : "check";
 const assignPermissionSet = process.argv.includes("--assign-permission-set");
+// 本番組織への反映・取り消しは、承認後に --allow-production を明示した場合だけ行う(検証のみは可)。
+const allowProduction = process.argv.includes("--allow-production");
 
 function requireEnv(name) {
   const value = process.env[name]?.trim();
@@ -149,6 +151,15 @@ async function main() {
   console.log(`mode=${mode} fields=${members.CustomField.length} objects=${members.CustomObject.length} permissionSets=${members.PermissionSet.length}`);
 
   const auth = await token();
+  const org = await fetch(
+    `${auth.instanceUrl}/services/data/${API}/query?q=${encodeURIComponent("SELECT IsSandbox FROM Organization")}`,
+    { headers: { Authorization: `Bearer ${auth.accessToken}` } }
+  ).then((r) => r.json());
+  const isSandbox = org.records?.[0]?.IsSandbox === true;
+  console.log(`target: ${isSandbox ? "Sandbox" : "本番組織"}`);
+  if (!isSandbox && mode !== "check" && !allowProduction) {
+    throw new Error("本番組織への反映・取り消しは承認後に --allow-production を付けて実行してください。");
+  }
   const ok = await deployZip(auth, path.join(zipDir, "deploy.zip"), mode === "check");
   if (!ok) process.exit(1);
 
