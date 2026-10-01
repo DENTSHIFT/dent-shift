@@ -23,8 +23,11 @@ vi.mock("@/server/config/salesforceConfig", () => ({
 
 import { POST } from "@/app/api/ops/integration-events/[id]/retry/route";
 
-function makeRequest() {
-  return new NextRequest("https://ops.example.com/api/ops/integration-events/evt-1/retry", { method: "POST" });
+function makeRequest(body: Record<string, unknown> | null = { reason: "Salesforce項目追加後の再送" }) {
+  return new NextRequest("https://ops.example.com/api/ops/integration-events/evt-1/retry", {
+    method: "POST",
+    ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+  });
 }
 
 beforeEach(() => {
@@ -73,7 +76,11 @@ describe("POST /api/ops/integration-events/[id]/retry", () => {
     expect(res.status).toBe(200);
     expect(body.salesforceDisabled).toBe(false);
     expect(mocks.recordAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "ops_reenqueue_integration_event", targetId: "evt-1" })
+      expect.objectContaining({
+        action: "ops_reenqueue_integration_event",
+        targetId: "evt-1",
+        metadata: expect.objectContaining({ reason: "Salesforce項目追加後の再送" }),
+      })
     );
     expect(mocks.syncIntegrationEvent).toHaveBeenCalledWith("evt-1");
   });
@@ -98,5 +105,12 @@ describe("POST /api/ops/integration-events/[id]/retry", () => {
     const res = await POST(makeRequest(), { params: Promise.resolve({ id: "evt-1" }) });
     expect(res.status).toBe(409);
     expect(mocks.syncIntegrationEvent).not.toHaveBeenCalled();
+  });
+
+  it("再送理由がない場合は400で拒否し、再送しない(監査記録に理由を必須とする)", async () => {
+    mocks.getIntegrationEventByIdForOps.mockResolvedValue({ id: "evt-1", status: "failed", eventType: "x", retryCount: 8 });
+    const res = await POST(makeRequest(null), { params: Promise.resolve({ id: "evt-1" }) });
+    expect(res.status).toBe(400);
+    expect(mocks.reenqueueFailedIntegrationEvent).not.toHaveBeenCalled();
   });
 });

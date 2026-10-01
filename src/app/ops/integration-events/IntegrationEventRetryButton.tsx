@@ -15,11 +15,17 @@ export function IntegrationEventRetryButton({ eventId }: { eventId: string }) {
   async function handleRetry() {
     if (pending) return;
     if (!window.confirm("このイベントを再送しますか？(retryCountは0にリセットされます)")) return;
+    const reason = window.prompt("再送の理由を入力してください(監査記録に残ります)")?.trim();
+    if (!reason) return;
 
     setPending(true);
     setError(null);
     try {
-      const res = await fetch(`/api/ops/integration-events/${eventId}/retry`, { method: "POST" });
+      const res = await fetch(`/api/ops/integration-events/${eventId}/retry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "再送に失敗しました");

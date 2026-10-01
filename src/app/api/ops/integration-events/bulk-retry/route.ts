@@ -54,6 +54,12 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // 実行時は監査記録用に理由を必須にする(要件確認書10章: 対象・実行者・日時・理由)。
+  const reason = typeof record.reason === "string" ? record.reason.trim() : "";
+  if (!reason || reason.length > 500) {
+    return NextResponse.json({ error: "再送の理由を入力してください(500文字以内)" }, { status: 400 });
+  }
+
   if (matchedCount === 0) {
     return NextResponse.json({ mode: "executed", reenqueuedCount: 0 });
   }
@@ -64,7 +70,7 @@ export async function POST(request: NextRequest) {
     operatorId: operator.id,
     action: "ops_bulk_reenqueue_integration_events",
     targetType: "IntegrationEvent",
-    metadata: { filter: record, matchedCount, reenqueuedCount, targetIds: matchedIds },
+    metadata: { filter: { ...record, reason: undefined }, reason, matchedCount, reenqueuedCount, targetIds: matchedIds },
   }).catch((error) => {
     console.error("[POST /api/ops/integration-events/bulk-retry] audit log recording failed:", error);
   });

@@ -4,6 +4,7 @@ import { isPlanId, type PlanId } from "@/domain/billing/planCatalog";
 import type {
   BillingWebhookCommand,
   BillingWebhookIdentity,
+  SubscriptionBillingPeriod,
 } from "@/domain/billing/billingWebhook";
 import type { SubscriptionStatus } from "@/domain/billing/subscriptionStatus";
 import type {
@@ -103,6 +104,20 @@ function epochSecondsToDate(value: unknown): Date | null {
   return new Date(value * 1000);
 }
 
+// Stripe API 2025-03-31以降、current_period_endはSubscription直下からitems側へ移動した。
+function readBillingPeriod(object: UnknownRecord): SubscriptionBillingPeriod {
+  const items = asRecord(object.items);
+  const firstItem = Array.isArray(items?.data) ? asRecord(items.data[0]) : null;
+  return {
+    currentPeriodEnd:
+      epochSecondsToDate(object.current_period_end) ?? epochSecondsToDate(firstItem?.current_period_end),
+    cancelAtPeriodEnd: object.cancel_at_period_end === true,
+    cancelAt: epochSecondsToDate(object.cancel_at),
+    canceledAt: epochSecondsToDate(object.canceled_at),
+    endedAt: epochSecondsToDate(object.ended_at),
+  };
+}
+
 function ignored(event: Stripe.Event): BillingWebhookCommand {
   return {
     providerEventId: event.id,
@@ -172,6 +187,7 @@ export function normalizeStripeBillingEvent(event: Stripe.Event): BillingWebhook
         status,
         trialStartedAt: epochSecondsToDate(object.trial_start),
         trialEndsAt: epochSecondsToDate(object.trial_end),
+        billingPeriod: readBillingPeriod(object),
       },
     };
   }

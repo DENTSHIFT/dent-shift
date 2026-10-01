@@ -15,6 +15,12 @@ export default defineConfig({
     // 結合テストはファイルごとにDATABASE_URLを一時DBへ差し替える。
     // worker thread間の環境変数共有に依存せず、OSプロセス単位で明示的に分離する。
     pool: "forks",
+    // ローカルの.envは実在のSalesforce組織を指しうる(Prisma clientが実行時に.envを読み込む)。
+    // テストからSalesforceへ実際に書き込まないよう、全テストで明示的に無効化する
+    // (dotenvは既存の環境変数を上書きしないため、ここでの値が優先される)。
+    env: {
+      SALESFORCE_PROVIDER: "disabled",
+    },
   },
   resolve: {
     alias: {

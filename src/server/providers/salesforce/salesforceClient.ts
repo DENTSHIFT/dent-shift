@@ -1,19 +1,45 @@
 import "server-only";
 import type { SalesforceOAuthConfig } from "@/server/config/salesforceConfig";
 
-export class SalesforceDeliveryError extends Error {}
+const API_VERSION = "v60.0";
+const REQUEST_TIMEOUT_MS = 10_000;
+// Salesforceのセッション既定有効期限(2時間)より十分短く保持し、401時は即時再取得する。
+const TOKEN_TTL_MS = 20 * 60 * 1000;
+
+export class SalesforceDeliveryError extends Error {
+  constructor(
+    message: string,
+    readonly errorCode: string | null = null
+  ) {
+    super(message);
+  }
+}
 
 interface SalesforceAccessToken {
   accessToken: string;
   instanceUrl: string;
+  expiresAt: number;
+}
+
+export const ORG_MISMATCH_ERROR_CODE = "DENT_SHIFT_ORG_MISMATCH";
+export const OAUTH_ERROR_CODE = "DENT_SHIFT_OAUTH_FAILED";
+
+let cachedToken: (SalesforceAccessToken & { cacheKey: string }) | null = null;
+
+export function clearSalesforceTokenCacheForTests(): void {
+  cachedToken = null;
 }
 
 /**
  * OAuth 2.0 Client Credentials Flowでアクセストークンを取得する。
- * 実際に採用するConnected App方式(JWT Bearer等)は契約確定後に差し替える前提
- * (指示書17章・23章、STEP6で人間側確認事項として報告する)。
+ * 同一インスタンス内ではTTLの間キャッシュし、イベントごとのトークン再発行を避ける。
  */
-async function fetchAccessToken(config: SalesforceOAuthConfig): Promise<SalesforceAccessToken> {
+async function getAccessToken(config: SalesforceOAuthConfig, forceRefresh = false): Promise<SalesforceAccessToken> {
+  const cacheKey = `${config.loginUrl}|${config.clientId}`;
+  if (!forceRefresh && cachedToken && cachedToken.cacheKey === cacheKey && cachedToken.expiresAt > Date.now()) {
+    return cachedToken;
+  }
+
   const params = new URLSearchParams({
     grant_type: "client_credentials",
     client_id: config.clientId,
@@ -26,131 +52,184 @@ async function fetchAccessToken(config: SalesforceOAuthConfig): Promise<Salesfor
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params.toString(),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch {
-    throw new SalesforceDeliveryError("Salesforce OAuth token request failed.");
+    throw new SalesforceDeliveryError("Salesforce OAuth token request failed.", OAUTH_ERROR_CODE);
   }
 
   if (!response.ok) {
-    throw new SalesforceDeliveryError(`Salesforce OAuth token request returned HTTP ${response.status}.`);
+    throw new SalesforceDeliveryError(`Salesforce OAuth token request returned HTTP ${response.status}.`, OAUTH_ERROR_CODE);
   }
 
-  const body = (await response.json()) as { access_token?: string; instance_url?: string };
+  const body = (await response.json()) as { access_token?: string; instance_url?: string; id?: string };
   if (!body.access_token || !body.instance_url) {
-    throw new SalesforceDeliveryError("Salesforce OAuth token response was malformed.");
+    throw new SalesforceDeliveryError("Salesforce OAuth token response was malformed.", OAUTH_ERROR_CODE);
   }
-  return { accessToken: body.access_token, instanceUrl: body.instance_url };
-}
-
-export interface SalesforceLeadFields {
-  email: string;
-  clinic_name: string | null;
-  website_url: string | null;
-  phone: string | null;
-  lead_source: string;
-  event_type: string | null;
-  registration_step: string | null;
-  trial_ends_at: string | null;
-  [key: string]: string | number | boolean | null;
-}
-
-/**
- * SOQL文字列リテラルへ値を埋め込む前に安全化する。バックスラッシュを先にエスケープ
- * してからシングルクォートをエスケープしないと、値の末尾がバックスラッシュの場合に
- * (例: メールアドレスのローカル部に`\`と`'`を含む文字列)エスケープ処理をすり抜けて
- * 文字列リテラルを閉じられ、SOQLインジェクションが成立してしまう
- * (このプロジェクトのメール形式チェックはローカル部に`\`や`'`を禁止していない)。
- */
-function escapeSoqlStringLiteral(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-/**
- * メールアドレスをキーにLeadを検索し、あれば更新・なければ新規作成する(指示書8章・9章)。
- * カスタム項目API名は推測せず、呼び出し側がfieldsとして渡した値のみを送信する。
- */
-export async function upsertSalesforceLeadByEmail(input: {
-  config: SalesforceOAuthConfig;
-  fields: SalesforceLeadFields;
-}): Promise<{ salesforceId: string }> {
-  const token = await fetchAccessToken(input.config);
-
-  const query = `SELECT Id FROM Lead WHERE Email = '${escapeSoqlStringLiteral(input.fields.email)}' LIMIT 1`;
-  let searchResponse: Response;
-  try {
-    searchResponse = await fetch(
-      `${token.instanceUrl}/services/data/v60.0/query?q=${encodeURIComponent(query)}`,
-      {
-        headers: { Authorization: `Bearer ${token.accessToken}` },
-        signal: AbortSignal.timeout(10_000),
-      }
+  // トークン応答のid(https://<login>/id/<組織ID>/<ユーザーID>)から実際の接続先組織を確認する。
+  const orgId = typeof body.id === "string" ? body.id.split("/id/")[1]?.split("/")[0] ?? "" : "";
+  if (orgId.slice(0, 15) !== config.expectedOrgId.slice(0, 15)) {
+    throw new SalesforceDeliveryError(
+      "Salesforce org does not match SALESFORCE_EXPECTED_ORG_ID; refusing to sync.",
+      ORG_MISMATCH_ERROR_CODE
     );
-  } catch {
-    throw new SalesforceDeliveryError("Salesforce Lead lookup request failed.");
   }
-  if (!searchResponse.ok) {
-    throw new SalesforceDeliveryError(`Salesforce Lead lookup returned HTTP ${searchResponse.status}.`);
-  }
-  const searchBody = (await searchResponse.json()) as { records?: Array<{ Id: string }> };
-  const existingId = searchBody.records?.[0]?.Id;
-
-  const leadPayload = {
-    Email: input.fields.email,
-    Company: input.fields.clinic_name ?? input.fields.email,
-    LastName: input.fields.clinic_name ?? input.fields.email,
-    Website: input.fields.website_url ?? undefined,
-    Phone: input.fields.phone ?? undefined,
-    LeadSource: input.fields.lead_source,
-    Event_Type__c: input.fields.event_type ?? undefined,
-    Registration_Step__c: input.fields.registration_step ?? undefined,
-    Trial_Ends_At__c: input.fields.trial_ends_at ?? undefined,
+  cachedToken = {
+    cacheKey,
+    accessToken: body.access_token,
+    instanceUrl: body.instance_url,
+    expiresAt: Date.now() + TOKEN_TTL_MS,
   };
+  return cachedToken;
+}
 
-  if (existingId) {
-    let updateResponse: Response;
-    try {
-      updateResponse = await fetch(
-        `${token.instanceUrl}/services/data/v60.0/sobjects/Lead/${existingId}`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${token.accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(leadPayload),
-          signal: AbortSignal.timeout(10_000),
-        }
-      );
-    } catch {
-      throw new SalesforceDeliveryError("Salesforce Lead update request failed.");
-    }
-    if (!updateResponse.ok && updateResponse.status !== 204) {
-      throw new SalesforceDeliveryError(`Salesforce Lead update returned HTTP ${updateResponse.status}.`);
-    }
-    return { salesforceId: existingId };
-  }
-
-  let createResponse: Response;
+// Salesforceのエラー応答([{ errorCode, message, fields }])からerrorCodeと項目名だけを取り出す。
+// messageには送信値が含まれ得るため、例外・ログへは含めない。
+async function readErrorSummary(response: Response): Promise<{ errorCode: string | null; fields: string[] }> {
   try {
-    createResponse = await fetch(`${token.instanceUrl}/services/data/v60.0/sobjects/Lead`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(leadPayload),
-      signal: AbortSignal.timeout(10_000),
-    });
+    const body = (await response.json()) as unknown;
+    const first = Array.isArray(body) ? (body[0] as { errorCode?: unknown; fields?: unknown }) : null;
+    return {
+      errorCode: typeof first?.errorCode === "string" ? first.errorCode : null,
+      fields: Array.isArray(first?.fields) ? first.fields.filter((f): f is string => typeof f === "string") : [],
+    };
   } catch {
-    throw new SalesforceDeliveryError("Salesforce Lead create request failed.");
+    return { errorCode: null, fields: [] };
   }
-  if (!createResponse.ok) {
-    throw new SalesforceDeliveryError(`Salesforce Lead create returned HTTP ${createResponse.status}.`);
+}
+
+// 認証付きでREST APIを呼ぶ。401(トークン失効)なら1回だけトークンを再取得して再送する。
+async function requestSalesforce(
+  config: SalesforceOAuthConfig,
+  method: "GET" | "PATCH",
+  path: string,
+  label: string,
+  body?: Record<string, unknown>
+): Promise<Response> {
+  const send = async (token: SalesforceAccessToken) => {
+    try {
+      return await fetch(`${token.instanceUrl}/services/data/${API_VERSION}${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token.accessToken}`,
+          ...(body ? { "Content-Type": "application/json" } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch {
+      throw new SalesforceDeliveryError(`Salesforce ${label} request failed.`);
+    }
+  };
+  let response = await send(await getAccessToken(config));
+  if (response.status === 401) {
+    response = await send(await getAccessToken(config, true));
   }
-  const createBody = (await createResponse.json()) as { id?: string };
-  if (!createBody.id) {
-    throw new SalesforceDeliveryError("Salesforce Lead create response was malformed.");
+  return response;
+}
+
+async function throwForResponse(response: Response, label: string): Promise<never> {
+  const summary = await readErrorSummary(response);
+  const fieldsNote = summary.fields.length ? ` fields=${summary.fields.join(",")}` : "";
+  throw new SalesforceDeliveryError(
+    `Salesforce ${label} returned HTTP ${response.status}${summary.errorCode ? ` ${summary.errorCode}` : ""}${fieldsNote}.`,
+    summary.errorCode
+  );
+}
+
+function sobjectPath(sobject: string, ...segments: string[]): string {
+  return `/sobjects/${sobject}/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
+}
+
+export interface SalesforceUpsertResult {
+  id: string;
+  created: boolean;
+}
+
+/**
+ * 外部ID項目をキーにレコードを作成または更新する(Salesforce REST upsert)。
+ * 同じ外部IDでの再送(再診断・Webhook再送・再試行)は常に同じ1件の更新になり、重複作成しない。
+ */
+export async function upsertSalesforceRecordByExternalId(input: {
+  config: SalesforceOAuthConfig;
+  sobject: string;
+  externalIdField: string;
+  externalId: string;
+  fields: Record<string, unknown>;
+}): Promise<SalesforceUpsertResult> {
+  const label = `${input.sobject} upsert`;
+  const response = await requestSalesforce(
+    input.config,
+    "PATCH",
+    sobjectPath(input.sobject, input.externalIdField, input.externalId),
+    label,
+    input.fields
+  );
+  if (!response.ok) await throwForResponse(response, label);
+
+  if (response.status === 204) {
+    // 古いAPIバージョンの更新応答(本文なし)。IDは返らないが更新は成功している。
+    return { id: "", created: false };
   }
-  return { salesforceId: createBody.id };
+  const body = (await response.json().catch(() => ({}))) as { id?: unknown; created?: unknown };
+  if (typeof body.id !== "string") {
+    throw new SalesforceDeliveryError(`Salesforce ${input.sobject} upsert response was malformed.`);
+  }
+  return { id: body.id, created: response.status === 201 || body.created === true };
+}
+
+export type SalesforceRecord = Record<string, unknown> & { Id: string };
+
+async function readRecord(response: Response, label: string): Promise<SalesforceRecord | null> {
+  if (response.status === 404) return null;
+  if (!response.ok) await throwForResponse(response, label);
+  const body = (await response.json().catch(() => null)) as { Id?: unknown } | null;
+  if (!body || typeof body.Id !== "string") {
+    throw new SalesforceDeliveryError(`Salesforce ${label} response was malformed.`);
+  }
+  return body as SalesforceRecord;
+}
+
+/** 外部IDでレコードを1件読む(存在しなければnull)。読む項目は呼び出し側で限定する。 */
+export async function getSalesforceRecordByExternalId(input: {
+  config: SalesforceOAuthConfig;
+  sobject: string;
+  externalIdField: string;
+  externalId: string;
+  fields: string[];
+}): Promise<SalesforceRecord | null> {
+  const label = `${input.sobject} read`;
+  const query = `?fields=${encodeURIComponent(["Id", ...input.fields].join(","))}`;
+  const response = await requestSalesforce(
+    input.config,
+    "GET",
+    `${sobjectPath(input.sobject, input.externalIdField, input.externalId)}${query}`,
+    label
+  );
+  return readRecord(response, label);
+}
+
+/** Salesforce IDでレコードを1件読む(存在しなければnull)。 */
+export async function getSalesforceRecordById(input: {
+  config: SalesforceOAuthConfig;
+  sobject: string;
+  id: string;
+  fields: string[];
+}): Promise<SalesforceRecord | null> {
+  const label = `${input.sobject} read`;
+  const query = `?fields=${encodeURIComponent(["Id", ...input.fields].join(","))}`;
+  const response = await requestSalesforce(input.config, "GET", `${sobjectPath(input.sobject, input.id)}${query}`, label);
+  return readRecord(response, label);
+}
+
+/** Salesforce IDを指定して既存レコードの項目を更新する(作成はしない)。 */
+export async function updateSalesforceRecordById(input: {
+  config: SalesforceOAuthConfig;
+  sobject: string;
+  id: string;
+  fields: Record<string, unknown>;
+}): Promise<void> {
+  const label = `${input.sobject} update`;
+  const response = await requestSalesforce(input.config, "PATCH", sobjectPath(input.sobject, input.id), label, input.fields);
+  if (!response.ok) await throwForResponse(response, label);
 }

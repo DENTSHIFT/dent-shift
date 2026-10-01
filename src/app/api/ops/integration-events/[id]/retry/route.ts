@@ -13,10 +13,22 @@ import { resolveSalesforceConfigFromProcessEnv } from "@/server/config/salesforc
  * 即時に同期を1回試行する。既存の/api/ops配下と同じOperatorセッション認証のみを使う
  * (2026-09-24、独自の認証・CSRF方式は追加しない)。
  */
+async function readRetryReason(request: NextRequest): Promise<string | null> {
+  const body = (await request.json().catch(() => null)) as { reason?: unknown } | null;
+  const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+  return reason && reason.length <= 500 ? reason : null;
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const operator = await getCurrentOperator();
   if (!operator) {
     return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
+  }
+
+  // 再送操作の監査記録として理由を必須にする(要件確認書10章: 対象・実行者・日時・理由)。
+  const reason = await readRetryReason(request);
+  if (!reason) {
+    return NextResponse.json({ error: "再送の理由を入力してください(500文字以内)" }, { status: 400 });
   }
 
   const { id } = await params;
@@ -48,7 +60,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     action: "ops_reenqueue_integration_event",
     targetType: "IntegrationEvent",
     targetId: id,
-    metadata: { eventType: event.eventType, previousRetryCount: event.retryCount },
+    metadata: { eventType: event.eventType, previousRetryCount: event.retryCount, reason },
   }).catch((error) => {
     console.error("[POST /api/ops/integration-events/[id]/retry] audit log recording failed:", error);
   });

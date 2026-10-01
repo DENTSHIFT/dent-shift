@@ -1,97 +1,568 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/server/db/prismaClient";
-import { resolveSalesforceConfigFromProcessEnv } from "@/server/config/salesforceConfig";
-import { upsertSalesforceLeadByEmail, type SalesforceLeadFields } from "@/server/providers/salesforce/salesforceClient";
+import {
+  resolveSalesforceConfigFromProcessEnv,
+  type SalesforceOAuthConfig,
+} from "@/server/config/salesforceConfig";
+import {
+  OAUTH_ERROR_CODE,
+  ORG_MISMATCH_ERROR_CODE,
+  SalesforceDeliveryError,
+  getSalesforceRecordByExternalId,
+  getSalesforceRecordById,
+  updateSalesforceRecordById,
+  upsertSalesforceRecordByExternalId,
+} from "@/server/providers/salesforce/salesforceClient";
+import {
+  SF_FIELDS,
+  buildAccountFields,
+  buildClinicSummaryFields,
+  buildConsultationFields,
+  buildContactFields,
+  buildDiagnosisFields,
+  buildLeadFields,
+  buildOpportunityFields,
+  resolveOpportunityStageMap,
+  type ClinicActivitySnapshot,
+  type ClinicSnapshot,
+  type ConsultationSnapshot,
+  type ContactSnapshot,
+  type DiagnosisSnapshot,
+  type SubscriptionSnapshot,
+} from "@/domain/integration/salesforceCrmMapping";
+import { acquireCrmSyncLock, releaseCrmSyncLock, renewCrmSyncLock } from "@/server/db/crmSyncLockRepository";
+import { notifySalesforceSyncFailure } from "@/server/services/notifySalesforceSyncFailure";
 
 export const MAX_RETRY_COUNT = 8;
+// 同じ医院の別の同期が実行中だった場合に、試行回数を消費せず再試行するまでの待ち時間。
+export const LOCK_BUSY_RETRY_DELAY_MS = 30 * 1000;
+// 診断履歴は同期のたびに直近の数件だけを送る(過去分は各診断の発生時の同期で作成済み)。
+const DIAGNOSES_PER_SYNC = 3;
 
-function toLeadFields(eventType: string, payload: Record<string, unknown>): SalesforceLeadFields | null {
-  const email = payload.email;
-  if (typeof email !== "string" || !email) return null;
+// 接続先組織の不一致・認証失敗時に、次に試すまでの待ち時間(定期実行の間隔と同じ)。
+const CONNECTION_ERROR_RETRY_DELAY_MS = 15 * 60 * 1000;
+
+class PermanentSyncError extends Error {}
+
+export function isConnectionLevelError(error: unknown): boolean {
+  return (
+    error instanceof SalesforceDeliveryError &&
+    (error.errorCode === ORG_MISMATCH_ERROR_CODE || error.errorCode === OAUTH_ERROR_CODE)
+  );
+}
+class LockLostError extends Error {}
+
+interface CrmSnapshot {
+  clinic: ClinicSnapshot;
+  contacts: ContactSnapshot[];
+  subscriptions: SubscriptionSnapshot[];
+  diagnoses: DiagnosisSnapshot[];
+  consultations: ConsultationSnapshot[];
+  activity: ClinicActivitySnapshot;
+}
+
+async function resolveClinicId(event: { clinicId: string | null; contactId: string | null }): Promise<string | null> {
+  if (event.clinicId) return event.clinicId;
+  if (!event.contactId) return null;
+  const contact = await prisma.contact.findUnique({ where: { id: event.contactId }, select: { clinicId: true } });
+  return contact?.clinicId ?? null;
+}
+
+function improvementTitles(json: string): string[] {
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((task) => (task && typeof task === "object" ? (task as { title?: unknown }).title : null))
+      .filter((title): title is string => typeof title === "string" && title.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+// Salesforceへ送るのは「イベント発生時の値」ではなく「同期時点のDBの確定状態」。
+// 再送・順序の入れ替わり・Webhook再送があっても最終的に同じ内容へ収束する(冪等)。
+async function loadCrmSnapshot(clinicId: string): Promise<CrmSnapshot | null> {
+  const clinic = await prisma.clinic.findUnique({
+    where: { id: clinicId },
+    select: {
+      id: true,
+      name: true,
+      directorName: true,
+      url: true,
+      contactEmail: true,
+      contactPhone: true,
+      utmSource: true,
+      utmMedium: true,
+      utmCampaign: true,
+      utmContent: true,
+      utmTerm: true,
+      _count: { select: { diagnoses: true } },
+      diagnoses: {
+        orderBy: { measuredAt: "desc" },
+        take: DIAGNOSES_PER_SYNC,
+        select: {
+          id: true,
+          measuredAt: true,
+          totalPoints: true,
+          totalStatus: true,
+          isSample: true,
+          improvementTasksJson: true,
+          aiObservations: { select: { provider: true, mention: true, measurementStatus: true } },
+        },
+      },
+      contacts: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          email: true,
+          phoneNumber: true,
+          role: true,
+          registrationStep: true,
+          emailVerifiedAt: true,
+          phoneVerifiedAt: true,
+          consentAcceptedAt: true,
+          smsVerificationExempt: true,
+          createdAt: true,
+        },
+      },
+      subscriptions: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          plan: true,
+          status: true,
+          createdAt: true,
+          trialStartedAt: true,
+          trialEndsAt: true,
+          currentPeriodEnd: true,
+          cancelAtPeriodEnd: true,
+          cancelAt: true,
+          canceledAt: true,
+          endedAt: true,
+          billingExempt: true,
+          firstActivatedAt: true,
+          paymentMethodStatus: true,
+          externalSubscriptionId: true,
+        },
+      },
+    },
+  });
+  if (!clinic) return null;
+
+  const [ctaClicks, lastCtaClick, firstTrialSignup, consultations] = await Promise.all([
+    prisma.integrationEvent.count({ where: { clinicId, eventType: "online_consultation_clicked" } }),
+    prisma.integrationEvent.findFirst({
+      where: { clinicId, eventType: "online_consultation_clicked" },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    }),
+    prisma.integrationEvent.findFirst({
+      where: { clinicId, eventType: "trial_signup_started" },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    }),
+    prisma.consultationBooking.findMany({
+      where: { clinicId },
+      orderBy: { startAt: "asc" },
+      select: {
+        timerexEventId: true,
+        status: true,
+        contactId: true,
+        matchMethod: true,
+        startAt: true,
+        endAt: true,
+        bookedAt: true,
+        canceledAt: true,
+        calendarName: true,
+        hostName: true,
+      },
+    }),
+  ]);
+
   return {
-    email,
-    clinic_name: typeof payload.clinic_name === "string" ? payload.clinic_name : null,
-    website_url: typeof payload.website_url === "string" ? payload.website_url : null,
-    phone: typeof payload.phone === "string" ? payload.phone : null,
-    lead_source: "DENT SHIFT 無料AI診断",
-    event_type: eventType,
-    registration_step: typeof payload.registration_step === "string" ? payload.registration_step : null,
-    trial_ends_at: typeof payload.trial_ends_at === "string" ? payload.trial_ends_at : null,
+    clinic: {
+      id: clinic.id,
+      name: clinic.name,
+      directorName: clinic.directorName,
+      url: clinic.url,
+      contactEmail: clinic.contactEmail,
+      contactPhone: clinic.contactPhone,
+      utmSource: clinic.utmSource,
+      utmMedium: clinic.utmMedium,
+      utmCampaign: clinic.utmCampaign,
+      utmContent: clinic.utmContent,
+      utmTerm: clinic.utmTerm,
+      diagnosisCount: clinic._count.diagnoses,
+      latestDiagnosis: clinic.diagnoses[0] ? { id: clinic.diagnoses[0].id, measuredAt: clinic.diagnoses[0].measuredAt } : null,
+      firstContactCreatedAt: clinic.contacts[0]?.createdAt ?? null,
+    },
+    contacts: clinic.contacts,
+    subscriptions: clinic.subscriptions,
+    diagnoses: clinic.diagnoses.map((d) => ({
+      id: d.id,
+      measuredAt: d.measuredAt,
+      targetUrl: clinic.url,
+      totalPoints: d.totalPoints,
+      totalStatus: d.totalStatus,
+      isSample: d.isSample,
+      improvementTitles: improvementTitles(d.improvementTasksJson),
+      aiObservations: d.aiObservations,
+    })),
+    consultations,
+    activity: {
+      consultationCtaLastClickedAt: lastCtaClick?.createdAt ?? null,
+      consultationCtaClickCount: ctaClicks,
+      trialSignupStartedAt: firstTrialSignup?.createdAt ?? null,
+    },
   };
 }
 
+function primaryContactOf(contacts: ContactSnapshot[]): ContactSnapshot | null {
+  return contacts.find((c) => c.role === "owner") ?? contacts[0] ?? null;
+}
+
+function latestSubscriptionOf(subscriptions: SubscriptionSnapshot[]): SubscriptionSnapshot | null {
+  return subscriptions[subscriptions.length - 1] ?? null;
+}
+
+function appBaseUrlFromEnv(): string | null {
+  const raw = process.env.APP_BASE_URL?.trim();
+  if (!raw) return null;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return null;
+  }
+}
+
+interface ConvertedLead {
+  accountId: string | null;
+  contactId: string | null;
+  opportunityId: string | null;
+}
+
+async function readConvertedLead(config: SalesforceOAuthConfig, clinicId: string): Promise<ConvertedLead | null> {
+  const lead = await getSalesforceRecordByExternalId({
+    config,
+    sobject: "Lead",
+    externalIdField: SF_FIELDS.lead.externalId,
+    externalId: clinicId,
+    fields: ["IsConverted", "ConvertedAccountId", "ConvertedContactId", "ConvertedOpportunityId"],
+  });
+  if (!lead || lead.IsConverted !== true) return null;
+  const str = (value: unknown) => (typeof value === "string" && value ? value : null);
+  return {
+    accountId: str(lead.ConvertedAccountId),
+    contactId: str(lead.ConvertedContactId),
+    opportunityId: str(lead.ConvertedOpportunityId),
+  };
+}
+
+// SalesforceのIDは15桁/18桁の2表記があるため、先頭15桁で比較する。
+function sameSalesforceId(a: string, b: string): boolean {
+  return a.slice(0, 15) === b.slice(0, 15);
+}
+
 /**
- * pending/failed状態の1件を同期する。Salesforce未接続(disabled)時は何もせず終了する
- * (診断・登録処理自体を止めない、指示書18章)。
+ * 営業担当がLeadを取引開始(コンバート)した後も、同じ医院の更新を「コンバート先」の
+ * Account/Contact/Opportunityへ続けて反映するため、コンバート先レコードへアプリの外部IDを設定する。
+ * 同じ外部IDを持つ別レコードが既にある、またはコンバート先に別の外部IDが入っている場合は、
+ * どちらかを自動で選んだり統合したりせず、要確認として同期を止める(重複の自動解消はしない)。
  */
-export async function syncIntegrationEvent(eventId: string): Promise<void> {
-  const config = resolveSalesforceConfigFromProcessEnv();
-  if (config.provider === "disabled") return;
+async function adoptConvertedRecord(input: {
+  config: SalesforceOAuthConfig;
+  sobject: string;
+  externalIdField: string;
+  externalId: string;
+  convertedId: string;
+  beforeWrite: () => Promise<void>;
+}): Promise<void> {
+  const existing = await getSalesforceRecordByExternalId({
+    config: input.config,
+    sobject: input.sobject,
+    externalIdField: input.externalIdField,
+    externalId: input.externalId,
+    fields: [],
+  });
+  if (existing) {
+    if (sameSalesforceId(existing.Id, input.convertedId)) return;
+    throw new PermanentSyncError(
+      `converted_lead_conflict: コンバート先とは別の${input.sobject}が同じ外部IDを持っています(要確認・自動統合しません)`
+    );
+  }
+  const converted = await getSalesforceRecordById({
+    config: input.config,
+    sobject: input.sobject,
+    id: input.convertedId,
+    fields: [input.externalIdField],
+  });
+  if (!converted) {
+    throw new PermanentSyncError(`converted_lead_conflict: コンバート先の${input.sobject}が見つかりません(要確認)`);
+  }
+  const current = converted[input.externalIdField];
+  if (typeof current === "string" && current && current !== input.externalId) {
+    throw new PermanentSyncError(
+      `converted_lead_conflict: コンバート先の${input.sobject}に別の外部IDが設定済みです(要確認・自動統合しません)`
+    );
+  }
+  await input.beforeWrite();
+  await updateSalesforceRecordById({
+    config: input.config,
+    sobject: input.sobject,
+    id: input.convertedId,
+    fields: { [input.externalIdField]: input.externalId },
+  });
+}
 
-  const event = await prisma.integrationEvent.findUnique({ where: { id: eventId } });
-  if (!event || event.status === "synced") return;
+async function pushSnapshotToSalesforce(input: {
+  config: SalesforceOAuthConfig;
+  event: { id: string; eventType: string; contactId: string | null };
+  snapshot: CrmSnapshot;
+  beforeWrite: () => Promise<void>;
+}): Promise<{ leadId: string | null }> {
+  const { config, event, snapshot, beforeWrite } = input;
+  const { clinic, contacts, subscriptions, diagnoses, consultations, activity } = snapshot;
+  const primaryContact = primaryContactOf(contacts);
+  const latestSubscription = latestSubscriptionOf(subscriptions);
+  const appBaseUrl = appBaseUrlFromEnv();
+  const summary = buildClinicSummaryFields({
+    latestDiagnosis: diagnoses[0] ?? null,
+    activity,
+    consultations,
+    now: new Date(),
+  });
+  const upsert = async (sobject: string, externalIdField: string, externalId: string, fields: Record<string, unknown>) => {
+    await beforeWrite();
+    return upsertSalesforceRecordByExternalId({ config, sobject, externalIdField, externalId, fields });
+  };
 
-  const payload = JSON.parse(event.payloadJson) as Record<string, unknown>;
-  const leadFields = toLeadFields(event.eventType, payload);
-  if (!leadFields) {
-    // 2026-09-29修正(PO指示、Salesforce連携P0): メールアドレス等からLeadを特定できない
-    // イベント(例: online_consultation_booked)を、無同期のまま"synced"(処理済み)として
-    // 隠さない。「オンライン相談希望を送信し忘れる」事故を防ぐため、理由付きの"failed"に
-    // し、運用画面(/ops/integration-events)で必ず目に見える・手動対応できる状態にする。
-    // MAX_RETRY_COUNTに達していなくても自動再送では解決しない類のエラー(恒久的に
-    // メールアドレスが無い)だが、運用側が手動でpayloadを補完して再送できるよう
-    // 通常のfailedと同じ扱いにする(別ステータスは追加せず、lastErrorで区別する)。
-    await prisma.integrationEvent.update({
-      where: { id: event.id },
-      data: {
-        status: "failed",
-        lastError: "no_matchable_lead_identifier: メールアドレス等からLeadを特定できませんでした(要確認)",
-        lastAttemptedAt: new Date(),
-        nextRetryAt: null,
-        // 自動リトライで解決しない種類の失敗(恒久的にメールアドレスが無い)のため、
-        // 自動再送ループの対象からは外す(retryCount上限扱いにする)。運用者による
-        // 手動再送(reenqueueFailedIntegrationEvent、上限到達分も対象)は引き続き可能。
-        retryCount: MAX_RETRY_COUNT,
-      },
-    });
-    return;
+  // 1. Lead(無料診断の医院)。外部ID=医院ID。コンバート済みならLeadは更新せず、コンバート先へ引き継ぐ。
+  let leadId: string | null = null;
+  const converted = await readConvertedLead(config, clinic.id);
+  if (!converted) {
+    const lead = await upsert(
+      "Lead",
+      SF_FIELDS.lead.externalId,
+      clinic.id,
+      buildLeadFields({
+        clinic,
+        eventType: event.eventType,
+        primaryContact,
+        primarySubscription: latestSubscription,
+        appBaseUrl,
+        summary,
+      })
+    );
+    leadId = lead.id || null;
+    if (lead.created) {
+      // 「無料診断を理由とした営業電話はしない」公開方針をCRM上でも明示する。
+      // 作成時にだけ設定し、その後に医院の同意を得て担当者が外した値は上書きしない。
+      await upsert("Lead", SF_FIELDS.lead.externalId, clinic.id, { DoNotCall: true });
+    }
+  } else {
+    if (converted.accountId) {
+      await adoptConvertedRecord({
+        config,
+        sobject: "Account",
+        externalIdField: SF_FIELDS.account.externalId,
+        externalId: clinic.id,
+        convertedId: converted.accountId,
+        beforeWrite,
+      });
+    }
+    if (converted.contactId && primaryContact) {
+      await adoptConvertedRecord({
+        config,
+        sobject: "Contact",
+        externalIdField: SF_FIELDS.contact.externalId,
+        externalId: primaryContact.id,
+        convertedId: converted.contactId,
+        beforeWrite,
+      });
+    }
+    // コンバート時に作られた商談は、契約が1件だけの場合に限りその契約の商談として引き継ぐ
+    // (複数契約のどれに当たるかは推測しない)。
+    if (converted.opportunityId && subscriptions.length === 1) {
+      await adoptConvertedRecord({
+        config,
+        sobject: "Opportunity",
+        externalIdField: SF_FIELDS.opportunity.externalId,
+        externalId: subscriptions[0]!.id,
+        convertedId: converted.opportunityId,
+        beforeWrite,
+      });
+    }
   }
 
+  // 2. Account / Contact(会員登録済み、またはコンバート済みの医院)。外部ID=医院ID / ユーザーID。
+  const hasAccount = contacts.length > 0 || subscriptions.length > 0 || Boolean(converted?.accountId);
+  if (hasAccount) {
+    await upsert(
+      "Account",
+      SF_FIELDS.account.externalId,
+      clinic.id,
+      buildAccountFields(clinic, { summary, latestSubscription, appBaseUrl })
+    );
+  }
+  for (const contact of contacts) {
+    await upsert("Contact", SF_FIELDS.contact.externalId, contact.id, buildContactFields({ clinic, contact }));
+  }
+
+  // 3. Opportunity(契約1件=商談1件)。外部ID=契約ID。Stripeの確定Webhookで更新されたDB値のみを使う。
+  if (subscriptions.length > 0) {
+    const stages = resolveOpportunityStageMap(process.env);
+    for (const subscription of subscriptions) {
+      await upsert(
+        "Opportunity",
+        SF_FIELDS.opportunity.externalId,
+        subscription.id,
+        buildOpportunityFields({ clinic, subscription, stages })
+      );
+    }
+  }
+
+  // 4. 診断履歴(外部ID=診断ID)と相談予約(外部ID=TimeRexの予約ID)。
+  for (const diagnosis of diagnoses) {
+    await upsert(
+      SF_FIELDS.diagnosis.sobject,
+      SF_FIELDS.diagnosis.externalId,
+      diagnosis.id,
+      buildDiagnosisFields({ clinicId: clinic.id, diagnosis, linkAccount: hasAccount, appBaseUrl })
+    );
+  }
+  for (const consultation of consultations) {
+    await upsert(
+      SF_FIELDS.consultation.sobject,
+      SF_FIELDS.consultation.externalId,
+      consultation.timerexEventId,
+      buildConsultationFields({
+        clinicId: clinic.id,
+        // 担当者(Contact)へは、そのContactがこの医院の会員として同期される場合だけ紐づける。
+        consultation: contacts.some((c) => c.id === consultation.contactId)
+          ? consultation
+          : { ...consultation, contactId: null },
+        linkAccount: hasAccount,
+      })
+    );
+  }
+
+  return { leadId };
+}
+
+async function recordFailure(
+  event: { id: string; eventType: string; retryCount: number; alertedAt: Date | null },
+  message: string,
+  permanent: boolean
+): Promise<void> {
+  const nextRetryCount = permanent ? MAX_RETRY_COUNT : event.retryCount + 1;
+  const exhausted = nextRetryCount >= MAX_RETRY_COUNT;
+  await prisma.integrationEvent.update({
+    where: { id: event.id },
+    data: {
+      status: "failed",
+      lastError: message.slice(0, 500),
+      retryCount: nextRetryCount,
+      lastAttemptedAt: new Date(),
+      nextRetryAt: exhausted ? null : computeNextRetryAt(nextRetryCount),
+    },
+  });
+  if (exhausted && !event.alertedAt) {
+    await notifySalesforceSyncFailure({ eventId: event.id, eventType: event.eventType, lastError: message.slice(0, 300) });
+    await prisma.integrationEvent.update({ where: { id: event.id }, data: { alertedAt: new Date() } });
+  }
+}
+
+export type SyncOutcome = "disabled" | "skipped" | "synced" | "failed" | "busy";
+
+/**
+ * pending/failed状態の1件を同期する。Salesforce未接続(disabled)時は何もせず終了する
+ * (診断・登録処理自体を止めない)。メールアドレスではなく、イベントに紐づく医院ID・
+ * ユーザーID・契約IDを外部IDとしてSalesforceへupsertする。
+ * 同じ医院の同期は医院単位のロックで直列化し、ロック取得後に読んだ最新のDB状態を送る。
+ */
+export async function syncIntegrationEvent(eventId: string): Promise<SyncOutcome> {
+  const config = resolveSalesforceConfigFromProcessEnv();
+  if (config.provider === "disabled") return "disabled";
+
+  const event = await prisma.integrationEvent.findUnique({ where: { id: eventId } });
+  if (!event || event.status === "synced") return "skipped";
+
+  let clinicId: string | null = null;
+  const ownerId = randomUUID();
+  let locked = false;
   try {
-    const { salesforceId } = await upsertSalesforceLeadByEmail({ config, fields: leadFields });
+    clinicId = await resolveClinicId(event);
+    if (!clinicId) {
+      throw new PermanentSyncError("no_clinic_id: 医院を特定できないイベントです(要確認)");
+    }
+    locked = await acquireCrmSyncLock(clinicId, ownerId);
+    if (!locked) {
+      // 同じ医院の同期が実行中。試行回数は消費せず、少し後に再試行する(実行中の同期の後に最新状態を送る)。
+      await prisma.integrationEvent.update({
+        where: { id: event.id },
+        data: { nextRetryAt: new Date(Date.now() + LOCK_BUSY_RETRY_DELAY_MS) },
+      });
+      return "busy";
+    }
+    const snapshot = await loadCrmSnapshot(clinicId);
+    if (!snapshot) {
+      throw new PermanentSyncError("clinic_not_found: 医院レコードが見つかりません(要確認)");
+    }
+    const lockedClinicId = clinicId;
+    const { leadId } = await pushSnapshotToSalesforce({
+      config,
+      event,
+      snapshot,
+      beforeWrite: async () => {
+        // リース切れで他の同期に引き継がれていたら、古いスナップショットで上書きしないよう中断する。
+        if (!(await renewCrmSyncLock(lockedClinicId, ownerId))) {
+          throw new LockLostError("crm_sync_lock_lost: 同期ロックの有効期限が切れたため中断しました(自動再試行)");
+        }
+      },
+    });
     await prisma.integrationEvent.update({
       where: { id: event.id },
       data: {
         status: "synced",
-        externalId: salesforceId,
+        externalId: leadId,
         processedAt: new Date(),
         lastAttemptedAt: new Date(),
-        // 2026-09-29追加(PO承認): 同期成功時は次回再送予定を消す。
         nextRetryAt: null,
       },
     });
+    return "synced";
   } catch (error) {
-    const nextRetryCount = event.retryCount + 1;
-    await prisma.integrationEvent.update({
-      where: { id: event.id },
-      data: {
-        status: "failed",
-        lastError: error instanceof Error ? error.message.slice(0, 500) : "unknown error",
-        retryCount: { increment: 1 },
-        lastAttemptedAt: new Date(),
-        // 2026-09-29追加(PO承認、Salesforce連携P0): 指数バックオフの次回実行予定時刻を
-        // 永続化する(従来はその都度計算するだけで保存していなかった)。
-        nextRetryAt: computeNextRetryAt(nextRetryCount),
-      },
-    });
-    throw error;
+    if (isConnectionLevelError(error)) {
+      // 接続先組織の不一致・認証失敗はイベント個別の問題ではないため、試行回数を消費しない
+      // (設定を直せば保留中のイベントがそのまま再送される)。
+      await prisma.integrationEvent.update({
+        where: { id: event.id },
+        data: {
+          lastError: error instanceof Error ? error.message.slice(0, 500) : "connection error",
+          lastAttemptedAt: new Date(),
+          nextRetryAt: new Date(Date.now() + CONNECTION_ERROR_RETRY_DELAY_MS),
+        },
+      });
+      throw error;
+    }
+    const permanent = error instanceof PermanentSyncError;
+    const message = error instanceof Error ? error.message : "unknown error";
+    await recordFailure(event, message, permanent);
+    if (!permanent) throw error;
+    return "failed";
+  } finally {
+    if (locked && clinicId) {
+      await releaseCrmSyncLock(clinicId, ownerId).catch((error) => {
+        console.error("[salesforceSync] failed to release lock:", error instanceof Error ? error.message : error);
+      });
+    }
   }
 }
 
 /**
  * 指数バックオフの次回実行予定時刻を計算する(2^retryCount秒、上限30分)。
- * 「現在時刻」からの相対値とする(従来のcreatedAt起点の計算から変更。何度も再送に
- * 失敗しているイベントほど、直近の失敗からの間隔で正しく間隔が空くようにするため)。
  */
 export function computeNextRetryAt(retryCountAfterThisFailure: number, now: Date = new Date()): Date {
   const backoffMs = Math.min(2 ** retryCountAfterThisFailure * 1000, 1000 * 60 * 30);
@@ -100,15 +571,14 @@ export function computeNextRetryAt(retryCountAfterThisFailure: number, now: Date
 
 /**
  * pending/failedイベントを一括で再試行する(Vercel Cronからの定期起動用、指数バックオフ)。
- * retryCountが上限を超えたイベントはスキップし、手動対応が必要な状態として残す。
+ * retryCountが上限に達したイベントはスキップし、手動対応が必要な状態として残す。
  */
-export async function retryPendingIntegrationEvents(limit = 50): Promise<{ attempted: number }> {
+export async function retryPendingIntegrationEvents(
+  limit = 50
+): Promise<{ attempted: number; stoppedReason?: "connection_error" }> {
   const config = resolveSalesforceConfigFromProcessEnv();
   if (config.provider === "disabled") return { attempted: 0 };
 
-  // 2026-09-29修正(PO承認、Salesforce連携P0): 永続化したnextRetryAtで判定する
-  // (従来はcreatedAt起点でその都度計算していた)。nextRetryAtがnull(初回試行分)は
-  // 即座に対象にする。
   const now = new Date();
   const events = await prisma.integrationEvent.findMany({
     where: {
@@ -123,9 +593,13 @@ export async function retryPendingIntegrationEvents(limit = 50): Promise<{ attem
   let attempted = 0;
   for (const event of events) {
     attempted += 1;
+    let stop = false;
     await syncIntegrationEvent(event.id).catch((error) => {
-      console.error(`[salesforceSync] retry failed for ${event.id}:`, error);
+      console.error(`[salesforceSync] retry failed for ${event.id}:`, error instanceof Error ? error.message : error);
+      // 接続先不一致・認証失敗では残りも同じ理由で失敗するため、この回の処理を打ち切る。
+      stop = isConnectionLevelError(error);
     });
+    if (stop) return { attempted, stoppedReason: "connection_error" };
   }
   return { attempted };
 }

@@ -11,6 +11,9 @@ export interface SalesforceOAuthConfig {
   // OAuth 2.0 username-password / client-credentials flowのトークンエンドポイント
   // (例: https://login.salesforce.com または https://test.salesforce.com のSandbox版)。
   loginUrl: string;
+  // 接続先組織ID(15桁の比較)。トークン取得時に実際の組織と照合し、不一致なら一切書き込まない
+  // (本番と開発・Sandboxの取り違え防止)。
+  expectedOrgId: string;
 }
 
 export type SalesforceConfig = DisabledSalesforceConfig | SalesforceOAuthConfig;
@@ -52,6 +55,12 @@ export function resolveSalesforceConfig(options: {
       "SALESFORCE_PROVIDER='salesforce' requires SALESFORCE_LOGIN_URL."
     );
   }
+  const expectedOrgId = options.env.SALESFORCE_EXPECTED_ORG_ID?.trim();
+  if (!expectedOrgId || !/^00D[0-9A-Za-z]{12}([0-9A-Za-z]{3})?$/.test(expectedOrgId)) {
+    throw new SalesforceConfigError(
+      "SALESFORCE_PROVIDER='salesforce' requires SALESFORCE_EXPECTED_ORG_ID (15 or 18 character org ID starting with 00D)."
+    );
+  }
 
   let parsedLoginUrl: URL;
   try {
@@ -68,6 +77,7 @@ export function resolveSalesforceConfig(options: {
     clientId,
     clientSecret,
     loginUrl: parsedLoginUrl.origin,
+    expectedOrgId: expectedOrgId.slice(0, 15),
   };
 }
 

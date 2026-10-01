@@ -203,6 +203,18 @@ model Subscription {
   // 将来の自動停止対象から除外する。通常のPilot・通常課金には影響しない(既定false)。
   billingExempt          Boolean   @default(false)
 
+  // Stripe customer.subscription.*の確定値(Salesforce契約情報の同期元)。料金・契約設定は持たない。
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean   @default(false)
+  cancelAt               DateTime?
+  canceledAt             DateTime?
+  endedAt                DateTime?
+  // 上記(と試用期間・プラン)を最後に適用したStripeイベントの発生時刻。これより古いイベントでは
+  // 上書きしない(Webhookの順序逆転によるDBの巻き戻りを防ぐ)。
+  detailsEventAt         DateTime?
+  // 初めて有料(active)になった日時。解約後も保持し、Salesforce商談の受注実績の根拠にする。
+  firstActivatedAt       DateTime?
+
   @@index([clinicId])
 }
 
@@ -247,6 +259,8 @@ model IntegrationEvent {
   lastAttemptedAt DateTime?
   // 2026-09-29追加(PO承認、Salesforce連携P0): 指数バックオフの次回実行予定時刻。
   nextRetryAt DateTime?
+  // 再試行上限到達を運用者へ通知した日時(同じ失敗を重複通知しないため)。
+  alertedAt DateTime?
 
   // 2026-09-28追加(PO再指摘、P0-Checkout接続): 「同じ実世界の出来事」を表すイベントの
   // 重複記録を防ぐための冪等キー。例: "trial_activated:<externalSubscriptionId>"。
@@ -564,4 +578,42 @@ model DiagnosisIdempotencyLock {
   executionId     String?
 
   @@index([createdAt])
+}
+
+// Salesforce同期の医院単位の排他ロック(リース方式)。同じ医院の同期を同時に1つだけ実行し、
+// 古い内容の同期が後から完了して新しい内容を上書きする競合を防ぐ。
+model CrmSyncLock {
+  clinicId    String   @id
+  ownerId     String
+  lockedUntil DateTime
+}
+
+// TimeRexの相談予約(Webhook event_confirmed / event_cancelled)。予約の正本はTimeRexで、
+// ここではTimeRexの予約ID(event.id)単位に最新状態だけを保持する(同じ予約の再通知は同じ1行)。
+// TimeRexは「相談実施」を通知しないため、実施有無はここでは持たない(Salesforce側で担当者が記録する)。
+// 医院との対応付けは、予約URLへ付与した署名付き医院参照(url_params)を優先し、無ければ
+// 会員(Contact)のメールアドレスとの完全一致1件のみ。特定できない予約はclinicId=nullで残し、推測で紐づけない。
+model ConsultationBooking {
+  id               String    @id @default(cuid())
+  timerexEventId   String    @unique
+  // "confirmed" | "cancelled"
+  status           String
+  clinicId         String?
+  contactId        String?
+  // "signed_ref" | "contact_email" | "unmatched"
+  matchMethod      String
+  startAt          DateTime
+  endAt            DateTime
+  bookedAt         DateTime?
+  canceledAt       DateTime?
+  calendarName     String?
+  // TimeRex側の担当(ホスト)名。メールアドレスは保持しない。
+  hostName         String?
+  // 最後に適用したWebhookの種類と受信時刻(古い通知で状態を巻き戻さないため)。
+  lastWebhookType  String
+  lastWebhookAt    DateTime
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([clinicId])
 }

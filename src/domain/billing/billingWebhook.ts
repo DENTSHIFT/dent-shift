@@ -17,6 +17,14 @@ export interface BillingWebhookIdentity {
   trialEntitlementId?: string | null;
 }
 
+export interface SubscriptionBillingPeriod {
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
+  cancelAt: Date | null;
+  canceledAt: Date | null;
+  endedAt: Date | null;
+}
+
 export type BillingWebhookAction =
   | {
       kind: "checkout_completed";
@@ -35,6 +43,8 @@ export type BillingWebhookAction =
       // トライアルが無い契約(プレミアム等)ではnull。
       trialStartedAt?: Date | null;
       trialEndsAt?: Date | null;
+      // 次回更新日・解約予定・終了日(Stripeの確定値。Salesforce契約情報の同期元)。
+      billingPeriod?: SubscriptionBillingPeriod;
     }
   // 2026-09-25: invoiceイベントはPayment履歴の記録専用。契約状態(status)の正本には使わない
   // (¥0のトライアル開始invoiceでもinvoice.paidが発火し、trialing→activeへ誤上書きされていた)。

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { withBookingRef } from "@/server/integration/bookingRef";
 import { requireContact } from "@/server/auth/requireContact";
 import { getLatestSubscriptionByClinicId } from "@/server/db/billingRepository";
 import { getDiagnosesByClinicId } from "@/server/db/diagnosisRepository";
@@ -32,7 +33,9 @@ export default async function OnboardingPage({
     latestDiagnosisId: diagnoses[0]?.id,
     checkoutJustCompleted: checkout === "success",
   });
-  const bookingUrl = process.env.NEXT_PUBLIC_SPECIALIST_BOOKING_URL;
+  const rawBookingUrl = process.env.NEXT_PUBLIC_SPECIALIST_BOOKING_URL;
+  // 予約と医院の対応付け用に署名付き医院参照を付ける(TimeRexのurl_paramsで返る)。
+  const bookingUrl = rawBookingUrl ? withBookingRef(rawBookingUrl, contact.clinicId) : undefined;
 
   return (
     <main className={styles.page}>

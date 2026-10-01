@@ -235,6 +235,52 @@ describe("Stripe billing event normalization", () => {
     );
   });
 
+  it("次回更新日・解約予約・終了日をStripeの確定値から取り出す(current_period_endはitems側も読む)", () => {
+    const command = normalizeStripeBillingEvent(
+      event("customer.subscription.updated", {
+        id: "sub_cancel_scheduled",
+        status: "active",
+        cancel_at_period_end: true,
+        cancel_at: 1792000000,
+        canceled_at: 1791000000,
+        ended_at: null,
+        items: { data: [{ current_period_end: 1792000000 }] },
+        metadata: { clinic_id: "clinic-1", plan: "standard" },
+      })
+    );
+    expect(command.action).toEqual(
+      expect.objectContaining({
+        kind: "subscription_status",
+        billingPeriod: {
+          currentPeriodEnd: new Date(1792000000 * 1000),
+          cancelAtPeriodEnd: true,
+          cancelAt: new Date(1792000000 * 1000),
+          canceledAt: new Date(1791000000 * 1000),
+          endedAt: null,
+        },
+      })
+    );
+  });
+
+  it("旧APIバージョンのSubscription直下current_period_endも読み、解約予約が無ければfalseにする", () => {
+    const command = normalizeStripeBillingEvent(
+      event("customer.subscription.updated", {
+        id: "sub_legacy",
+        status: "active",
+        current_period_end: 1793000000,
+        metadata: { clinic_id: "clinic-1", plan: "light" },
+      })
+    );
+    expect(command.action).toEqual(
+      expect.objectContaining({
+        billingPeriod: expect.objectContaining({
+          currentPeriodEnd: new Date(1793000000 * 1000),
+          cancelAtPeriodEnd: false,
+        }),
+      })
+    );
+  });
+
   it("支払い失敗はPayment履歴のみ記録し、契約状態は変えない(状態はsubscription.updatedが正本)", () => {
     const command = normalizeStripeBillingEvent(
       event("invoice.payment_failed", {

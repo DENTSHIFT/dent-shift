@@ -112,6 +112,10 @@ export async function updateSubscriptionPaymentMethodStatus(input: {
  * 無ければ最も古いContactを使う(Salesforce側でLeadと紐付ける代表者を1名に絞るため)。
  * 外部通信は行わない(DB読み取りのみ)。tx・prismaのどちらからも呼べる。
  */
+export function subscriptionUpdatedDedupeKey(providerEventId: string): string {
+  return `subscription_updated:${providerEventId}`;
+}
+
 export async function findPrimaryContactPayloadFields(
   db: Prisma.TransactionClient,
   clinicId: string
@@ -180,6 +184,8 @@ async function findOrCreateWebhookSubscription(
     // アップグレードAPIがStripe側のmetadata.planを更新したときの署名検証済みsubscriptionイベントだけ、
     // DBのplanを追随させる(それ以外のイベントは従来どおり不一致をエラーにする)。
     if (planMismatch === "update") {
+      // 既に適用済みのイベントより古い通知(順序逆転)では、プランを古い値へ巻き戻さない。
+      if (subscription.detailsEventAt && eventAt < subscription.detailsEventAt) return subscription;
       return tx.subscription.update({ where: { id: subscription.id }, data: { plan: identity.plan } });
     }
     // 請求書はプラン変更の前後どちらのmetadataでも届き得るため、planの不一致では失敗させない。
@@ -199,10 +205,19 @@ async function updateWebhookSubscriptionStatus(
   if (!isSubscriptionStatus(subscription.status)) {
     throw new BillingRepositoryStateError("Stored subscription state is invalid.");
   }
+  // 「一度でも有料(active)になった」事実は、通知の到着順に関係なく記録する(Salesforce商談の受注根拠)。
+  // 解約通知が先に届いて後からactive通知が届いた場合も、状態は巻き戻さずに最初の有効化時刻だけ残す。
+  if (to === "active" && (!subscription.firstActivatedAt || eventAt < subscription.firstActivatedAt)) {
+    subscription = await tx.subscription.update({
+      where: { id: subscription.id },
+      data: { firstActivatedAt: eventAt },
+    });
+  }
   if (subscription.statusEventAt && eventAt < subscription.statusEventAt) {
     return subscription;
   }
-  if (!canTransitionSubscription(subscription.status, to)) {
+  const from = subscription.status;
+  if (!isSubscriptionStatus(from) || !canTransitionSubscription(from, to)) {
     return subscription;
   }
   return tx.subscription.update({
@@ -336,10 +351,16 @@ async function applyBillingWebhookEventOnce(
             input.occurredAt
           );
         }
+        // 期間・解約予定・トライアル日付は「適用済みの最新イベント時刻(detailsEventAt)」より古い通知では
+        // 上書きしない(Stripeは到着順を保証しないため、古い通知でDBが巻き戻るのを防ぐ)。
+        const detailsStale = Boolean(
+          subscription?.detailsEventAt && input.occurredAt < subscription.detailsEventAt
+        );
         // トライアル期間はStripe Subscriptionのtrial_start/trial_endを正本として同期する。
         if (
           input.action.kind === "subscription_status" &&
           subscription &&
+          !detailsStale &&
           input.action.trialStartedAt &&
           input.action.trialEndsAt
         ) {
@@ -350,6 +371,40 @@ async function applyBillingWebhookEventOnce(
               trialEndsAt: input.action.trialEndsAt,
             },
           });
+        }
+        // Salesforce契約情報の同期元として、次回更新日・解約予定・終了日をStripeの確定値で保存し、
+        // 同一トランザクション内でsubscription_updatedのoutbox行を記録する
+        // (プラン変更・解約予約など、状態遷移を伴わない変更もSalesforceへ届けるため)。
+        // 冪等キーはWebhookイベントID単位(同一イベントの再送はproviderEventIdで既に弾かれる)。
+        if (input.action.kind === "subscription_status" && subscription) {
+          const period = input.action.billingPeriod;
+          if (!detailsStale) {
+            subscription = await tx.subscription.update({
+              where: { id: subscription.id },
+              data: {
+                ...(period
+                  ? {
+                      currentPeriodEnd: period.currentPeriodEnd,
+                      cancelAtPeriodEnd: period.cancelAtPeriodEnd,
+                      cancelAt: period.cancelAt,
+                      canceledAt: period.canceledAt,
+                      endedAt: period.endedAt,
+                    }
+                  : {}),
+                detailsEventAt: input.occurredAt,
+              },
+            });
+          }
+          const updatedPayloadJson = JSON.stringify({
+            plan: subscription.plan,
+            status: subscription.status,
+            stripe_event_type: input.eventType,
+          });
+          await tx.$executeRaw`
+            INSERT INTO "IntegrationEvent" ("id", "eventType", "payloadJson", "status", "clinicId", "contactId", "dedupeKey")
+            VALUES (${crypto.randomUUID()}, ${"subscription_updated"}, ${updatedPayloadJson}, ${"pending"}, ${subscription.clinicId}, ${null}, ${subscriptionUpdatedDedupeKey(input.providerEventId)})
+            ON CONFLICT ("dedupeKey") DO NOTHING
+          `;
         }
         if (
           subscription &&

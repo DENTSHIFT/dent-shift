@@ -3,7 +3,11 @@ import {
   BillingConfigError,
   resolveBillingConfigFromProcessEnv,
 } from "@/server/config/billingConfig";
-import { applyBillingWebhookEvent, findPrimaryContactPayloadFields } from "@/server/db/billingRepository";
+import {
+  applyBillingWebhookEvent,
+  findPrimaryContactPayloadFields,
+  subscriptionUpdatedDedupeKey,
+} from "@/server/db/billingRepository";
 import {
   normalizeStripeBillingEvent,
   normalizeStripeOneTimePurchaseEvent,
@@ -182,6 +186,28 @@ export async function POST(request: Request) {
           syncError
         );
       });
+    }
+
+    // subscription_updatedのoutbox行は適用トランザクション内で記録済み。ここでは同期を1回だけ
+    // ベストエフォートで試行する(失敗時はpendingのまま再試行ジョブが処理する)。
+    if (result === "processed" && command.action.kind === "subscription_status") {
+      let updatedEvent: { id: string } | null = null;
+      try {
+        updatedEvent = await prisma.integrationEvent.findUnique({
+          where: { dedupeKey: subscriptionUpdatedDedupeKey(command.providerEventId) },
+          select: { id: true },
+        });
+      } catch {
+        updatedEvent = null;
+      }
+      if (updatedEvent) {
+        await syncIntegrationEvent(updatedEvent.id).catch((syncError) => {
+          console.error(
+            "[POST /api/billing/webhook] subscription_updated event sync failed (will retry via pending-event job):",
+            syncError
+          );
+        });
+      }
     }
 
     // 契約状態が悪化方向(past_due/restricted/suspended)または解約(cancelled)へ

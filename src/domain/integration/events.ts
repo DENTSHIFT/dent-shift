@@ -33,10 +33,15 @@ export const INTEGRATION_EVENT_TYPES = [
   "trial_activated",
   "online_consultation_clicked",
   "online_consultation_booked",
+  // TimeRexの予約キャンセル通知(event_cancelled)。予約成立(booked)とは別のイベントとして記録する。
+  "online_consultation_canceled",
   "online_consultation_completed",
   "phone_inquiry_clicked",
   "subscription_activated",
   "subscription_canceled",
+  // Stripe customer.subscription.*の確定イベントごとに記録する(プラン変更・解約予約・
+  // 次回更新日の変化など、状態遷移を伴わない変更もSalesforce契約情報へ反映するため)。
+  "subscription_updated",
   "trial_expired_without_conversion",
 ] as const;
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireOperator } from "@/server/auth/requireOperator";
 import { recordAuditLog } from "@/server/db/auditLogRepository";
 import {
+  getIntegrationSyncHealth,
   listIntegrationEventsForOps,
   OPS_BULK_REENQUEUE_LIMIT,
   type IntegrationEventOpsFilter,
@@ -74,7 +75,10 @@ export default async function OpsIntegrationEventsPage({
   const filter = buildFilterFromSearchParams(sp);
   const page = sp.page ? Math.max(1, parseInt(sp.page, 10) || 1) : 1;
 
-  const { items, total, pageSize } = await listIntegrationEventsForOps(filter, page);
+  const [{ items, total, pageSize }, health] = await Promise.all([
+    listIntegrationEventsForOps(filter, page),
+    getIntegrationSyncHealth(),
+  ]);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   await recordAuditLog({
@@ -125,6 +129,29 @@ export default async function OpsIntegrationEventsPage({
           </div>
           <span className={styles.countBadge}>{total}件</span>
         </div>
+
+        <section
+          aria-label="同期状況の概要"
+          style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 18, fontSize: 12 }}
+        >
+          {[
+            ["送信待ち(pending)", `${health.pending}件`],
+            ["自動再送中(failed)", `${health.failedRetrying}件`],
+            ["上限到達(要手動対応)", `${health.exhausted}件`],
+            ["最終同期成功", health.lastSyncedAt ? health.lastSyncedAt.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }) : "—"],
+            ["医院を特定できない相談予約", `${health.unmatchedBookings}件`],
+          ].map(([label, value]) => (
+            <div key={label} style={{ padding: "8px 12px", border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff" }}>
+              <div style={{ color: "#6b7280" }}>{label}</div>
+              <div style={{ fontWeight: 700, color: "#111827" }}>{value}</div>
+            </div>
+          ))}
+          {health.lastError && (
+            <p style={{ flexBasis: "100%", margin: 0, color: "#b91c1c", overflowWrap: "anywhere" }}>
+              直近の未解決エラー: {health.lastError}
+            </p>
+          )}
+        </section>
 
         {operator.role === "admin" && (
           <div style={{ marginBottom: 18 }}>

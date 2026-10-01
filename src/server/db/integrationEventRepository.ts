@@ -93,32 +93,6 @@ export async function attemptIntegrationEventSync(eventId: string): Promise<void
   });
 }
 
-export async function findPendingIntegrationEvents(limit: number) {
-  return prisma.integrationEvent.findMany({
-    where: { status: { in: ["pending", "failed"] } },
-    orderBy: { createdAt: "asc" },
-    take: limit,
-  });
-}
-
-export async function markIntegrationEventSynced(id: string, externalId: string): Promise<void> {
-  await prisma.integrationEvent.update({
-    where: { id },
-    data: { status: "synced", externalId, processedAt: new Date() },
-  });
-}
-
-export async function markIntegrationEventFailed(id: string, error: string): Promise<void> {
-  await prisma.integrationEvent.update({
-    where: { id },
-    data: {
-      status: "failed",
-      lastError: error.slice(0, 500),
-      retryCount: { increment: 1 },
-    },
-  });
-}
-
 // --- ops再送管理画面向け(2026-09-24) ---
 // Salesforceのオブジェクト構成・項目マッピング・immedio連携には一切踏み込まず、
 // 既存のIntegrationEventキュー自体の確認・安全な再送のみを対象とする。
@@ -192,7 +166,7 @@ export type IntegrationEventReenqueueResult = "reenqueued" | "not_failed_or_not_
 export async function reenqueueFailedIntegrationEvent(id: string): Promise<IntegrationEventReenqueueResult> {
   const result = await prisma.integrationEvent.updateMany({
     where: { id, status: "failed" },
-    data: { status: "pending", retryCount: 0 },
+    data: { status: "pending", retryCount: 0, nextRetryAt: null, alertedAt: null },
   });
   return result.count === 1 ? "reenqueued" : "not_failed_or_not_found";
 }
@@ -218,9 +192,49 @@ export async function reenqueueFailedIntegrationEventsBulk(
 
   const updated = await prisma.integrationEvent.updateMany({
     where: { id: { in: matchedIds }, status: "failed" },
-    data: { status: "pending", retryCount: 0 },
+    data: { status: "pending", retryCount: 0, nextRetryAt: null, alertedAt: null },
   });
   return { matchedIds, reenqueuedCount: updated.count };
 }
 
 export type { IntegrationEventType };
+
+export interface IntegrationSyncHealth {
+  pending: number;
+  failedRetrying: number;
+  exhausted: number;
+  lastSyncedAt: Date | null;
+  lastError: string | null;
+  unmatchedBookings: number;
+}
+
+/**
+ * 運用画面の監視サマリー(要件確認書10章の監視対象: pending件数・failed件数・上限到達件数・
+ * 最終同期成功日時・最終エラー)と、医院を特定できなかったTimeRex予約の件数。
+ */
+export async function getIntegrationSyncHealth(): Promise<IntegrationSyncHealth> {
+  const [pending, failedRetrying, exhausted, lastSynced, lastFailed, unmatchedBookings] = await Promise.all([
+    prisma.integrationEvent.count({ where: { status: "pending" } }),
+    prisma.integrationEvent.count({ where: { status: "failed", retryCount: { lt: MAX_RETRY_COUNT } } }),
+    prisma.integrationEvent.count({ where: { status: "failed", retryCount: { gte: MAX_RETRY_COUNT } } }),
+    prisma.integrationEvent.findFirst({
+      where: { status: "synced", processedAt: { not: null } },
+      orderBy: { processedAt: "desc" },
+      select: { processedAt: true },
+    }),
+    prisma.integrationEvent.findFirst({
+      where: { lastError: { not: null }, status: { not: "synced" } },
+      orderBy: { lastAttemptedAt: "desc" },
+      select: { lastError: true },
+    }),
+    prisma.consultationBooking.count({ where: { clinicId: null } }),
+  ]);
+  return {
+    pending,
+    failedRetrying,
+    exhausted,
+    lastSyncedAt: lastSynced?.processedAt ?? null,
+    lastError: lastFailed?.lastError ?? null,
+    unmatchedBookings,
+  };
+}

@@ -31,6 +31,8 @@ export function IntegrationEventBulkRetryPanel({ filter, matchedCount, limit }: 
         (matchedCount > limit ? `\n(上限は1回${limit}件のため、古い順に${limit}件のみ対象です)` : "")
     );
     if (!confirmed) return;
+    const reason = window.prompt("一括再送の理由を入力してください(監査記録に残ります)")?.trim();
+    if (!reason) return;
 
     setPending(true);
     setError(null);
@@ -46,6 +48,7 @@ export function IntegrationEventBulkRetryPanel({ filter, matchedCount, limit }: 
           createdFrom: filter.createdFrom?.toISOString(),
           createdTo: filter.createdTo?.toISOString(),
           confirm: true,
+          reason,
         }),
       });
       const data = await res.json();

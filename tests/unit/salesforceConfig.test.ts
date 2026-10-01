@@ -6,6 +6,7 @@ const COMPLETE_SALESFORCE_ENV = {
   SALESFORCE_CLIENT_ID: "client_id_test",
   SALESFORCE_CLIENT_SECRET: "client_secret_test",
   SALESFORCE_LOGIN_URL: "https://login.salesforce.com",
+  SALESFORCE_EXPECTED_ORG_ID: "00D000000000001AAA",
 };
 
 describe("salesforceConfig", () => {
@@ -19,6 +20,7 @@ describe("salesforceConfig", () => {
       clientId: "client_id_test",
       clientSecret: "client_secret_test",
       loginUrl: "https://login.salesforce.com",
+      expectedOrgId: "00D000000000001",
     });
   });
 
@@ -32,6 +34,7 @@ describe("salesforceConfig", () => {
     ["SALESFORCE_CLIENT_ID"],
     ["SALESFORCE_CLIENT_SECRET"],
     ["SALESFORCE_LOGIN_URL"],
+    ["SALESFORCE_EXPECTED_ORG_ID"],
   ])("%sなしではsalesforceを有効化しない", (missingKey) => {
     const env = { ...COMPLETE_SALESFORCE_ENV, [missingKey]: "" };
     expect(() => resolveSalesforceConfig({ env })).toThrow(SalesforceConfigError);

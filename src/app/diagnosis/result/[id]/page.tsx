@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { withBookingRef } from "@/server/integration/bookingRef";
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { getDiagnosisById } from "@/server/db/diagnosisRepository";
@@ -596,7 +597,7 @@ export default async function DiagnosisResultPage({
               </details>
             </Card>
 
-            <ConsultationCta diagnosisId={id} className="ds-order-consultation" compact />
+            <ConsultationCta diagnosisId={id} clinicId={diagnosis.clinicId} className="ds-order-consultation" compact />
           </div>
         </div>
 
@@ -1164,15 +1165,20 @@ function AdComplianceFindingCard({ f }: { f: AdComplianceFindingViewModel }) {
  */
 function ConsultationCta({
   diagnosisId,
+  clinicId,
   className,
   compact = false,
 }: {
   diagnosisId: string;
+  clinicId: string;
   className?: string;
   compact?: boolean;
 }) {
-  const bookingUrl = process.env.NEXT_PUBLIC_SPECIALIST_BOOKING_URL;
-  if (!bookingUrl) return null;
+  const baseBookingUrl = process.env.NEXT_PUBLIC_SPECIALIST_BOOKING_URL;
+  if (!baseBookingUrl) return null;
+  // 予約と医院をメールアドレスに頼らず対応付けるため、署名付きの医院参照をURLに付ける
+  // (TimeRexはWebhookのurl_paramsで返す)。医院名・メール等の個人情報はURLに含めない。
+  const bookingUrl = withBookingRef(baseBookingUrl, clinicId);
 
   return (
     <div

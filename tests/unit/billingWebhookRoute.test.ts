@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
     apply: vi.fn(),
     sendBillingStatusChangeEmail: vi.fn(),
     syncIntegrationEvent: vi.fn(),
+    integrationEventFindUnique: vi.fn(),
   };
 });
 
@@ -26,6 +27,11 @@ vi.mock("@/server/providers/billing/stripeWebhookProvider", () => ({
 }));
 vi.mock("@/server/db/billingRepository", () => ({
   applyBillingWebhookEvent: mocks.apply,
+  findPrimaryContactPayloadFields: vi.fn(),
+  subscriptionUpdatedDedupeKey: (providerEventId: string) => `subscription_updated:${providerEventId}`,
+}));
+vi.mock("@/server/db/prismaClient", () => ({
+  prisma: { integrationEvent: { findUnique: mocks.integrationEventFindUnique } },
 }));
 vi.mock("@/server/services/sendBillingStatusChangeEmail", () => ({
   sendBillingStatusChangeEmail: mocks.sendBillingStatusChangeEmail,
@@ -59,7 +65,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.resolveConfig.mockReturnValue(STRIPE_CONFIG);
   mocks.verify.mockReturnValue({ id: "evt_1" });
-  mocks.normalize.mockReturnValue({ providerEventId: "evt_1" });
+  mocks.normalize.mockReturnValue({ providerEventId: "evt_1", action: { kind: "ignored" } });
+  mocks.integrationEventFindUnique.mockResolvedValue(null);
   mocks.apply.mockResolvedValue({ result: "processed", notify: null });
   mocks.sendBillingStatusChangeEmail.mockResolvedValue("sent");
   mocks.syncIntegrationEvent.mockResolvedValue(undefined);
@@ -239,6 +246,45 @@ describe("POST /api/billing/webhook", () => {
       mocks.syncIntegrationEvent.mockRejectedValue(new Error("salesforce timeout"));
       const response = await POST(request());
       expect(response.status).toBe(200);
+    });
+  });
+
+  describe("subscription_updated(Stripe確定イベントごとの契約情報同期)", () => {
+    it("subscription_statusを適用した場合、同一トランザクションで記録済みのイベントを1回だけ同期する", async () => {
+      mocks.normalize.mockReturnValue({
+        providerEventId: "evt_sub_upd",
+        action: { kind: "subscription_status" },
+      });
+      mocks.apply.mockResolvedValue({ result: "processed", notify: null });
+      mocks.integrationEventFindUnique.mockResolvedValue({ id: "ie_upd_1" });
+
+      const response = await POST(request());
+
+      expect(response.status).toBe(200);
+      expect(mocks.integrationEventFindUnique).toHaveBeenCalledWith({
+        where: { dedupeKey: "subscription_updated:evt_sub_upd" },
+        select: { id: true },
+      });
+      expect(mocks.syncIntegrationEvent).toHaveBeenCalledWith("ie_upd_1");
+    });
+
+    it("同期失敗やDB参照失敗はWebhookの200応答をブロックしない", async () => {
+      mocks.normalize.mockReturnValue({ providerEventId: "evt_x", action: { kind: "subscription_status" } });
+      mocks.integrationEventFindUnique.mockRejectedValue(new Error("db down"));
+
+      const response = await POST(request());
+
+      expect(response.status).toBe(200);
+      expect(mocks.syncIntegrationEvent).not.toHaveBeenCalled();
+    });
+
+    it("重複(duplicate)イベントでは同期を試行しない", async () => {
+      mocks.normalize.mockReturnValue({ providerEventId: "evt_dup", action: { kind: "subscription_status" } });
+      mocks.apply.mockResolvedValue({ result: "duplicate", notify: null });
+
+      await POST(request());
+
+      expect(mocks.integrationEventFindUnique).not.toHaveBeenCalled();
     });
   });
 });

@@ -62,20 +62,23 @@ describe("POST /api/ops/integration-events/bulk-retry", () => {
     mocks.reenqueueFailedIntegrationEventsBulk.mockResolvedValue({ matchedIds: ["a", "b", "c"], reenqueuedCount: 3 });
     mocks.resolveSalesforceConfigFromProcessEnv.mockReturnValue({ provider: "salesforce" });
 
-    const res = await POST(request({ confirm: true }));
+    const res = await POST(request({ confirm: true, reason: "原因解消後の一括再送" }));
     const body = await res.json();
 
     expect(body.mode).toBe("executed");
     expect(body.reenqueuedCount).toBe(3);
     expect(mocks.recordAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "ops_bulk_reenqueue_integration_events" })
+      expect.objectContaining({
+        action: "ops_bulk_reenqueue_integration_events",
+        metadata: expect.objectContaining({ reason: "原因解消後の一括再送" }),
+      })
     );
     expect(mocks.syncIntegrationEvent).toHaveBeenCalledTimes(3);
   });
 
   it("対象0件でconfirm:trueの場合は何もせず0件で返す", async () => {
     mocks.countIntegrationEventsForOps.mockResolvedValue(0);
-    const res = await POST(request({ confirm: true }));
+    const res = await POST(request({ confirm: true, reason: "原因解消後の一括再送" }));
     const body = await res.json();
 
     expect(body.reenqueuedCount).toBe(0);
@@ -87,10 +90,17 @@ describe("POST /api/ops/integration-events/bulk-retry", () => {
     mocks.reenqueueFailedIntegrationEventsBulk.mockResolvedValue({ matchedIds: ["a", "b"], reenqueuedCount: 2 });
     mocks.resolveSalesforceConfigFromProcessEnv.mockReturnValue({ provider: "disabled" });
 
-    const res = await POST(request({ confirm: true }));
+    const res = await POST(request({ confirm: true, reason: "原因解消後の一括再送" }));
     const body = await res.json();
 
     expect(body.salesforceDisabled).toBe(true);
     expect(mocks.syncIntegrationEvent).not.toHaveBeenCalled();
+  });
+
+  it("実行時に理由がない場合は400で拒否し、更新しない", async () => {
+    mocks.countIntegrationEventsForOps.mockResolvedValue(2);
+    const res = await POST(request({ confirm: true }));
+    expect(res.status).toBe(400);
+    expect(mocks.reenqueueFailedIntegrationEventsBulk).not.toHaveBeenCalled();
   });
 });
