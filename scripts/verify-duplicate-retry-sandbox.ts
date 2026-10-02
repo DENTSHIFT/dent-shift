@@ -91,6 +91,13 @@ function contactSnapshot(id: string, email: string): ContactSnapshot {
 }
 
 async function ensureConnected(config: Awaited<ReturnType<typeof parseSalesforceCredentialsForDiagnosticsOnly>>) {
+  const loginUrlIsSandboxHost = /--[^.]+\.sandbox\./.test(new URL(config.loginUrl).host);
+  log("sandbox_host_check", { loginUrlIsSandboxHost });
+  if (!loginUrlIsSandboxHost) {
+    throw new Error(
+      "SALESFORCE_LOGIN_URLがSandboxホスト名の規則(--xxx.sandbox.)に一致しません。本番への誤接続を避けるため中断します。"
+    );
+  }
   clearSalesforceTokenCacheForTests();
   try {
     await getSalesforceRecordByExternalId({

@@ -14,3 +14,4 @@ tsconfig.scripts.tsbuildinfo
 salesforce/.env.*
 !salesforce/.env.sandbox.example
 salesforce/e2e-reports/
+scripts/output/
