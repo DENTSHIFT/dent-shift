@@ -122,13 +122,20 @@ async function ensureConnected(config: Awaited<ReturnType<typeof parseSalesforce
   }
 }
 
-async function createLead(config: Awaited<ReturnType<typeof parseSalesforceCredentialsForDiagnosticsOnly>>, clinicId: string, email: string, companyName: string) {
+async function createLead(
+  config: Awaited<ReturnType<typeof parseSalesforceCredentialsForDiagnosticsOnly>>,
+  clinicId: string,
+  email: string,
+  companyName: string,
+  allowDuplicateSave = false
+) {
   const result = await upsertSalesforceRecordByExternalId({
     config,
     sobject: "Lead",
     externalIdField: SF_FIELDS.lead.externalId,
     externalId: clinicId,
     fields: { Company: companyName, LastName: companyName, Email: email },
+    allowDuplicateSave,
   });
   return result;
 }
@@ -196,9 +203,16 @@ async function main() {
   createdRecords.push({ sobjectType: "Lead", externalId: clinicBId, email: emailB });
   await createAccount(config, clinicBId, `Repro Clinic B ${correlationId}`);
   createdRecords.push({ sobjectType: "Account", externalId: clinicBId });
-  // 無関係な医院の、同じメールアドレスを持つLead(標準重複ルールのEmail一致で
-  // シナリオBのContact作成時に「無関係な候補」として一緒に検出されることを狙う)。
-  await createLead(config, clinicUnrelatedId, emailB, `Repro Clinic Unrelated ${correlationId}`);
+  // 無関係な医院の、同じメールアドレス「かつ同じCompany名」を持つLead。
+  // (1回目の実行でCompany名を変えて作成したところ、標準重複ルールは
+  // Email一致だけでは候補として拾わず、Contactがそのまま作成されてしまった。
+  // 実際の標準重複ルールの一致条件にCompany/氏名も含まれる可能性が高いため、
+  // Company名も意図的に一致させて「無関係な候補」が確実に検出される状況を作る。)
+  // この2件目のLead作成自体が、1件目(clinicB自身のLead)に対するLead同士の
+  // 重複チェックに引っかかる(Email+Companyが一致するため)。これは意図したとおりで、
+  // 「無関係な医院が偶然ほぼ同じ内容でリードを作る」状況を強制的に再現するためだけに
+  // allowDuplicateSave:trueを使う(本番コードの通常経路では使われない、この再現専用の処理)。
+  await createLead(config, clinicUnrelatedId, emailB, `Repro Clinic B ${correlationId}`, true);
   createdRecords.push({ sobjectType: "Lead", externalId: clinicUnrelatedId, email: emailB });
 
   const clinicB = emptyClinicSnapshot(clinicBId, `Repro Clinic B ${correlationId}`);
@@ -230,7 +244,7 @@ async function main() {
     sobject: "Contact",
     externalIdField: SF_FIELDS.contact.externalId,
     externalId: contactB.id,
-    fields: ["Id"],
+    fields: [],
   });
   log("scenario_b_contact_not_created_check", { contactExists: contactBAfter !== null });
 
