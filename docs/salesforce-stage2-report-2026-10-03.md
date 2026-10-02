@@ -18,9 +18,19 @@
 - デプロイ`FAxLpG3TMM6iJjZNJF6dJx4agSE5`（現在Production/Current、コミット`5e20d80`）のBuild Logsが、Lint/型検査ステップを含めて警告2件（いずれもコードエラーではない）のみで正常完了していること
 - dsverify接続診断: `connected=true, orgIdMatches=true`
 
-### 推定にとどまる事項（実機での分岐証跡は未取得）
-- 「`extractDuplicateCandidates`が実際にSalesforceの生レスポンスを正しくパースし、`upsertContactAllowingOwnLeadDuplicate`内の候補検証ロジックを通過してから再送した」という**処理の中身そのもの**は、コード・単体テストでのみ確認済みです。今回の実機検証ではキューのステータス変化とタイムスタンプが観測できただけで、内部で候補検証ロジックが実際に通過したことを示すログ出力やAPIリクエスト/レスポンスの実記録は取得していません。
-- **本番判断に向けて残る検証**: この分岐を実機で直接証明するには、該当処理に一時的なログ出力を追加する、またはSalesforce側のAPI利用ログを参照するなどの追加作業が必要です（未着手）。
+### 追記（2026-10-03・後日）: 重複保存許可の分岐を実機で直接証明
+
+上記の「推定にとどまる事項」について、`scripts/verify-duplicate-retry-sandbox.ts`（本物の`upsertContactAllowingOwnLeadDuplicate`をそのまま呼び出す、Sandbox限定の再現スクリプト）を使い、dsverify Sandbox上で直接実行して確認した。
+
+**観測事実（実機で直接確認、コミット`236b682`〜`5cf497c`）**
+- 実行前にdsverify接続・組織ID一致を実測確認してから進行（`sandbox_host_check: true` → `connection_check: connected=true, orgIdMatches=true`）
+- **シナリオA（この医院自身の未コンバートLeadのみが候補）**: 実際に`DUPLICATES_DETECTED`が発生し、候補検証を経て`allowDuplicateSave`で再送、Contact作成に成功（`retried_and_succeeded`）
+- **シナリオB（無関係な医院のLeadが候補に混在）**: 実際に複数候補を含む`DUPLICATES_DETECTED`が発生し、検証の結果**保存を拒否**（`rejected`）。その後の別クエリでContactが実際に作成されていないことも確認済み（`contactExists: false`）
+
+**今回の検証条件として記録する事項（一般化しない）**
+- 1回目の実行では、無関係Lead側のCompany名をclinicBと別の文字列にして作成したところ、Standard Lead Matching Ruleが候補として検出せず、意図せずContactが作成されてしまった（`matchesExpectation: false`）。これはコードのバグではなく、**今回使用した再現条件（Company名を変えた）がSandboxの実際の重複判定条件を満たしていなかった**ことが原因。Company名を一致させてから再実行したところ、上記の正しい結果（保存拒否）を得た。
+- この結果から「Company名が一致していないと重複候補として検出されない」という事実が今回の検証環境・条件下で観測されたが、これはdsverify Sandboxの現在の重複ルール設定・この特定の再現データに基づく観測であり、Salesforceの重複判定アルゴリズム全般についての一般的な結論として扱わないこと。
+- **初回実行時に意図せず作成されたContact**（Company名不一致のケースでできてしまったもの）を含め、全ての作成レコード一覧は`scripts/output/`配下のJSONファイル（Git管理対象外）に相関IDごとに保存されている。削除は行っていない。
 
 ---
 
