@@ -8,6 +8,7 @@ coverage/
 .vercel
 .env*
 tsconfig.tsbuildinfo
+tsconfig.scripts.tsbuildinfo
 
 # Salesforce Sandbox検証用の接続情報と検証レポート(リポジトリに含めない)
 salesforce/.env.*

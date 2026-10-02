@@ -20,7 +20,8 @@
     "prisma:migrate:postgres:deploy": "prisma migrate deploy --schema prisma/postgres/schema.prisma",
     "smoke:openai-measurement": "tsx --conditions=react-server scripts/openai-measurement-smoke.ts",
     "ops:create-operator": "tsx --conditions=react-server scripts/create-operator.ts",
-    "salesforce:initial-sync": "tsx --conditions=react-server scripts/salesforce-initial-sync.ts"
+    "salesforce:initial-sync": "tsx --conditions=react-server scripts/salesforce-initial-sync.ts",
+    "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",
