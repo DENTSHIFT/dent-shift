@@ -276,6 +276,145 @@ describe("syncIntegrationEvent", () => {
     expect(order.indexOf("Account")).toBeLessThan(order.indexOf("Opportunity"));
   });
 
+  it("2026-10-03追加: 会員登録済み(Contactあり)の医院は、未コンバートでもLeadをupsertしない(自己衝突防止)", async () => {
+    // 背景: 同じ同期処理内で毎回Leadをupsertし続けると、直後のContact upsertが
+    // 「Standard Rule for Contacts with Duplicate Leads」でそのLead自身と衝突し、
+    // HTTP 400 DUPLICATES_DETECTEDになる事故が実際に発生した(2026-10-03調査)。
+    mocks.eventFindUnique.mockResolvedValue(event({ eventType: "email_verified" }));
+    mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
+
+    await syncIntegrationEvent("evt_1");
+
+    expect(upsertCallsFor("Lead")).toHaveLength(0);
+    expect(upsertCallsFor("Account")).toHaveLength(1);
+    expect(upsertCallsFor("Contact")).toHaveLength(1);
+  });
+
+  it("2026-10-03追加: 診断のみ(Contactなし)の医院は引き続きLeadをupsertする", async () => {
+    mocks.eventFindUnique.mockResolvedValue(event({ eventType: "diagnosis_completed" }));
+    mocks.clinicFindUnique.mockResolvedValue(clinicRow());
+
+    await syncIntegrationEvent("evt_1");
+
+    expect(upsertCallsFor("Lead")).toHaveLength(1);
+    expect(upsertCallsFor("Account")).toHaveLength(0);
+    expect(upsertCallsFor("Contact")).toHaveLength(0);
+  });
+
+  describe("2026-10-03追加: Contact upsertがDUPLICATES_DETECTEDになった場合の限定的な再送", () => {
+    function duplicatesDetectedError() {
+      return new SalesforceDeliveryError("Salesforce Contact upsert returned HTTP 400 DUPLICATES_DETECTED.", "DUPLICATES_DETECTED");
+    }
+
+    it("同じ医院・同じメールの未コンバートLead(自分自身が直前に作ったもの)だけを確認してから再送する", async () => {
+      mocks.eventFindUnique.mockResolvedValue(event({ eventType: "email_verified" }));
+      mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
+      mocks.upsert
+        .mockResolvedValueOnce({ id: "001AAA", created: true }) // Account
+        .mockRejectedValueOnce(duplicatesDetectedError()) // Contact: 1回目(失敗)
+        .mockResolvedValueOnce({ id: "003AAA", created: true }); // Contact: 2回目(allowSaveで成功)
+      mocks.getByExternalId.mockImplementation(async ({ sobject, externalId }) => {
+        if (sobject === "Lead" && externalId === "clinic_1") {
+          return { Id: "00Qown", Email: CONTACT.email, IsConverted: false };
+        }
+        return null;
+      });
+
+      await syncIntegrationEvent("evt_1");
+
+      const contactCalls = upsertCallsFor("Contact");
+      expect(contactCalls).toHaveLength(2);
+      expect(contactCalls[0].allowDuplicateSave).toBeFalsy();
+      expect(contactCalls[1].allowDuplicateSave).toBe(true);
+      expect(mocks.getByExternalId).toHaveBeenCalledWith(
+        expect.objectContaining({ sobject: "Lead", externalIdField: "DentShift_Clinic_Id__c", externalId: "clinic_1" })
+      );
+      expect(mocks.eventUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "synced" }) })
+      );
+    });
+
+    it("一致するLeadが見つからない場合はallowSaveを使わず、元のエラーのまま失敗させる(要確認)", async () => {
+      mocks.eventFindUnique.mockResolvedValue(event({ eventType: "email_verified" }));
+      mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
+      mocks.upsert
+        .mockResolvedValueOnce({ id: "001AAA", created: true }) // Account
+        .mockRejectedValueOnce(duplicatesDetectedError()); // Contact: 失敗のまま
+      mocks.getByExternalId.mockResolvedValue(null); // 自分自身のLeadが見つからない
+
+      await expect(syncIntegrationEvent("evt_1")).rejects.toThrow("DUPLICATES_DETECTED");
+
+      const contactCalls = upsertCallsFor("Contact");
+      expect(contactCalls).toHaveLength(1);
+      expect(mocks.eventUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "failed", lastError: expect.stringContaining("DUPLICATES_DETECTED") }),
+        })
+      );
+    });
+
+    it("同じ医院のLeadでもメールアドレスが異なる(無関係な重複の可能性)場合はallowSaveを使わない", async () => {
+      mocks.eventFindUnique.mockResolvedValue(event({ eventType: "email_verified" }));
+      mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
+      mocks.upsert
+        .mockResolvedValueOnce({ id: "001AAA", created: true }) // Account
+        .mockRejectedValueOnce(duplicatesDetectedError());
+      mocks.getByExternalId.mockImplementation(async ({ sobject, externalId }) => {
+        if (sobject === "Lead" && externalId === "clinic_1") {
+          return { Id: "00Qother", Email: "someone-else@example.com", IsConverted: false };
+        }
+        return null;
+      });
+
+      await expect(syncIntegrationEvent("evt_1")).rejects.toThrow("DUPLICATES_DETECTED");
+
+      expect(upsertCallsFor("Contact")).toHaveLength(1);
+      expect(mocks.eventUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) })
+      );
+    });
+
+    it("同じ医院・同じメールでもLeadが既にコンバート済みならallowSaveを使わない", async () => {
+      mocks.eventFindUnique.mockResolvedValue(event({ eventType: "email_verified" }));
+      mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
+      mocks.upsert
+        .mockResolvedValueOnce({ id: "001AAA", created: true })
+        .mockRejectedValueOnce(duplicatesDetectedError());
+      mocks.getByExternalId.mockImplementation(async ({ sobject, externalId }) => {
+        if (sobject === "Lead" && externalId === "clinic_1") {
+          return { Id: "00Qconverted", Email: CONTACT.email, IsConverted: true };
+        }
+        return null;
+      });
+
+      await expect(syncIntegrationEvent("evt_1")).rejects.toThrow("DUPLICATES_DETECTED");
+
+      expect(upsertCallsFor("Contact")).toHaveLength(1);
+      expect(mocks.eventUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) })
+      );
+    });
+
+    it("DUPLICATES_DETECTED以外のエラーでは、重複確認をせずそのまま失敗させる", async () => {
+      mocks.eventFindUnique.mockResolvedValue(event({ eventType: "email_verified" }));
+      mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
+      mocks.upsert
+        .mockResolvedValueOnce({ id: "001AAA", created: true })
+        .mockRejectedValueOnce(new SalesforceDeliveryError("Salesforce Contact upsert returned HTTP 400 INVALID_FIELD.", "INVALID_FIELD"));
+
+      await expect(syncIntegrationEvent("evt_1")).rejects.toThrow("INVALID_FIELD");
+
+      // readConvertedLead()によるコンバート確認(医院単位、常に1回)以外では
+      // Leadを読みに行かない(=DUPLICATES_DETECTED時だけの確認処理は実行されない)。
+      const leadReads = mocks.getByExternalId.mock.calls.filter(([arg]) => arg.sobject === "Lead");
+      expect(leadReads).toHaveLength(1);
+      expect(upsertCallsFor("Contact")).toHaveLength(1);
+      expect(mocks.eventUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "failed", lastError: expect.stringContaining("INVALID_FIELD") }) })
+      );
+    });
+  });
+
   it("同じイベントを再送しても同じ外部IDへのupsertになる(重複作成しない)", async () => {
     mocks.eventFindUnique.mockResolvedValue(event());
     mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT], subscriptions: [SUBSCRIPTION] }));
@@ -439,7 +578,9 @@ describe("syncIntegrationEvent", () => {
 
     await syncIntegrationEvent("evt_1");
 
-    expect(upsertCallsFor("Lead")[0].externalId).toBe("clinic_1");
+    // 医院はContactId_1 companies: 会員登録済み(contacts.length>0)のためLeadは
+    // upsertされず、Accountの外部IDとして医院IDが使われる(下記テストで検証)。
+    expect(upsertCallsFor("Account")[0].externalId).toBe("clinic_1");
   });
 
   it("一時的な失敗はretryCountを増やし次回再試行時刻を保存して例外を再送出する(通知はしない)", async () => {

@@ -6,6 +6,7 @@ import {
   type SalesforceOAuthConfig,
 } from "@/server/config/salesforceConfig";
 import {
+  DUPLICATES_DETECTED_ERROR_CODE,
   OAUTH_ERROR_CODE,
   ORG_MISMATCH_ERROR_CODE,
   SalesforceDeliveryError,
@@ -316,6 +317,70 @@ async function adoptConvertedRecord(input: {
   });
 }
 
+/**
+ * 2026-10-03追加(読み取り調査に基づく提案、承認待ち・未デプロイ)。
+ * Contact upsertがSalesforce標準の重複ルールでHTTP 400 DUPLICATES_DETECTEDになった場合、
+ * 無条件にallowSave=trueで再送するのではなく、まずこの医院自身の外部ID(clinic.id)で
+ * Leadを読み取り専用で引き、そのLeadのEmailが今回upsertしようとしているContactの
+ * Emailと一致し、かつ未コンバート(IsConverted=false)であることを確認してからだけ、
+ * 「自分自身の同期処理が直前に作ったLeadとの衝突」と判断して再送する。
+ * 一致しない・Leadが見つからない場合は、無関係な重複の可能性があるため、
+ * allowSaveは一切使わず元のエラーをそのまま呼び出し元へ伝える(安全側に倒す)。
+ */
+async function upsertContactAllowingOwnLeadDuplicate(input: {
+  config: SalesforceOAuthConfig;
+  clinic: ClinicSnapshot;
+  contact: ContactSnapshot;
+  fields: Record<string, unknown>;
+  beforeWrite: () => Promise<void>;
+}): Promise<void> {
+  const { config, clinic, contact, fields, beforeWrite } = input;
+  await beforeWrite();
+  try {
+    await upsertSalesforceRecordByExternalId({
+      config,
+      sobject: "Contact",
+      externalIdField: SF_FIELDS.contact.externalId,
+      externalId: contact.id,
+      fields,
+    });
+    return;
+  } catch (error) {
+    if (
+      !(error instanceof SalesforceDeliveryError) ||
+      error.errorCode !== DUPLICATES_DETECTED_ERROR_CODE
+    ) {
+      throw error;
+    }
+    const ownLead = await getSalesforceRecordByExternalId({
+      config,
+      sobject: "Lead",
+      externalIdField: SF_FIELDS.lead.externalId,
+      externalId: clinic.id,
+      fields: ["Email", "IsConverted"],
+    });
+    const ownLeadEmail = typeof ownLead?.Email === "string" ? ownLead.Email.toLowerCase() : null;
+    const isSameUnconvertedLead =
+      ownLead !== null &&
+      ownLead.IsConverted === false &&
+      ownLeadEmail !== null &&
+      ownLeadEmail === contact.email.toLowerCase();
+    if (!isSameUnconvertedLead) {
+      // 無関係な重複の可能性があるため、確認なしにallowSaveは使わない。
+      throw error;
+    }
+    await beforeWrite();
+    await upsertSalesforceRecordByExternalId({
+      config,
+      sobject: "Contact",
+      externalIdField: SF_FIELDS.contact.externalId,
+      externalId: contact.id,
+      fields,
+      allowDuplicateSave: true,
+    });
+  }
+}
+
 async function pushSnapshotToSalesforce(input: {
   config: SalesforceOAuthConfig;
   event: { id: string; eventType: string; contactId: string | null };
@@ -338,10 +403,20 @@ async function pushSnapshotToSalesforce(input: {
     return upsertSalesforceRecordByExternalId({ config, sobject, externalIdField, externalId, fields });
   };
 
+  const converted = await readConvertedLead(config, clinic.id);
+
+  // 2026-10-03修正(読み取り調査に基づく提案、承認待ち): 会員登録済み(hasAccount)の
+  // 医院には、このブロックでAccount/Contactを別途upsertするため、Leadを毎回
+  // 再upsertし続ける必要がない。むしろ未コンバートのLeadを残したまま同じ回の同期で
+  // 直後にContactをupsertすると、Salesforce標準の「Standard Rule for Contacts with
+  // Duplicate Leads」がそのLead(同一メール)を重複候補として検出し、Contact upsertが
+  // HTTP 400 DUPLICATES_DETECTEDで失敗する事故が実際に発生した(2026-10-03調査)。
+  // 診断のみの段階(hasAccountがfalse)ではLeadの作成・更新を継続する。
+  const hasAccount = contacts.length > 0 || subscriptions.length > 0 || Boolean(converted?.accountId);
+
   // 1. Lead(無料診断の医院)。外部ID=医院ID。コンバート済みならLeadは更新せず、コンバート先へ引き継ぐ。
   let leadId: string | null = null;
-  const converted = await readConvertedLead(config, clinic.id);
-  if (!converted) {
+  if (!converted && !hasAccount) {
     const lead = await upsert(
       "Lead",
       SF_FIELDS.lead.externalId,
@@ -356,7 +431,7 @@ async function pushSnapshotToSalesforce(input: {
       })
     );
     leadId = lead.id || null;
-  } else {
+  } else if (converted) {
     if (converted.accountId) {
       await adoptConvertedRecord({
         config,
@@ -392,7 +467,6 @@ async function pushSnapshotToSalesforce(input: {
   }
 
   // 2. Account / Contact(会員登録済み、またはコンバート済みの医院)。外部ID=医院ID / ユーザーID。
-  const hasAccount = contacts.length > 0 || subscriptions.length > 0 || Boolean(converted?.accountId);
   if (hasAccount) {
     await upsert(
       "Account",
@@ -402,7 +476,13 @@ async function pushSnapshotToSalesforce(input: {
     );
   }
   for (const contact of contacts) {
-    await upsert("Contact", SF_FIELDS.contact.externalId, contact.id, buildContactFields({ clinic, contact }));
+    await upsertContactAllowingOwnLeadDuplicate({
+      config,
+      clinic,
+      contact,
+      fields: buildContactFields({ clinic, contact }),
+      beforeWrite,
+    });
   }
 
   // 3. Opportunity(契約1件=商談1件)。外部ID=契約ID。Stripeの確定Webhookで更新されたDB値のみを使う。

@@ -63,6 +63,31 @@ describe("upsertSalesforceRecordByExternalId", () => {
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/query"))).toBe(false);
   });
 
+  it("allowDuplicateSave=trueの時だけSforce-Duplicate-Rule-Headerを送る(既定では送らない)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "00Q1", created: false }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "00Q1", created: false }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await upsert(); // allowDuplicateSave未指定(既定)
+    const [, defaultInit] = fetchMock.mock.calls[1]!;
+    expect(defaultInit.headers).not.toHaveProperty("Sforce-Duplicate-Rule-Header");
+
+    await upsertSalesforceRecordByExternalId({
+      config: CONFIG,
+      sobject: "Lead",
+      externalIdField: "DentShift_Clinic_Id__c",
+      externalId: "clinic_1",
+      fields: { Company: "テスト歯科" },
+      allowDuplicateSave: true,
+    });
+    // 2回目呼び出しはトークンをキャッシュから再利用するため、fetchはPATCH 1回だけ(index 2)。
+    const [, allowInit] = fetchMock.mock.calls[2]!;
+    expect(allowInit.headers["Sforce-Duplicate-Rule-Header"]).toBe("allowSave=true");
+  });
+
   it("既存レコードの更新(200)はcreated=falseを返す", async () => {
     vi.stubGlobal(
       "fetch",

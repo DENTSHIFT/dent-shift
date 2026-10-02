@@ -23,6 +23,12 @@ interface SalesforceAccessToken {
 
 export const ORG_MISMATCH_ERROR_CODE = "DENT_SHIFT_ORG_MISMATCH";
 export const OAUTH_ERROR_CODE = "DENT_SHIFT_OAUTH_FAILED";
+// Salesforce標準の重複ルールエラー(Setup側のアクションが「許可(Alert)」でも、
+// REST/SOAP APIはSforce-Duplicate-Rule-Headerのallowsave=trueを明示しない限り
+// デフォルト(false)でこのエラーを返す。UIの「このまま保存」ダイアログに相当する
+// 確認をAPI側では省略できないための仕様。
+// 出典: https://developer.salesforce.com/docs/platform/api-rest/guide/headers-duplicaterules.html
+export const DUPLICATES_DETECTED_ERROR_CODE = "DUPLICATES_DETECTED";
 
 let cachedToken: (SalesforceAccessToken & { cacheKey: string }) | null = null;
 
@@ -104,7 +110,8 @@ async function requestSalesforce(
   method: "GET" | "PATCH",
   path: string,
   label: string,
-  body?: Record<string, unknown>
+  body?: Record<string, unknown>,
+  options?: { allowDuplicateSave?: boolean }
 ): Promise<Response> {
   const send = async (token: SalesforceAccessToken) => {
     try {
@@ -113,6 +120,11 @@ async function requestSalesforce(
         headers: {
           Authorization: `Bearer ${token.accessToken}`,
           ...(body ? { "Content-Type": "application/json" } : {}),
+          // 呼び出し側が個別に安全確認した場合だけ明示的に付与する(既定では付けない=
+          // Setup側の重複ルール判定を常にそのまま尊重する)。
+          ...(options?.allowDuplicateSave
+            ? { "Sforce-Duplicate-Rule-Header": "allowSave=true" }
+            : {}),
         },
         ...(body ? { body: JSON.stringify(body) } : {}),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -156,6 +168,10 @@ export async function upsertSalesforceRecordByExternalId(input: {
   externalIdField: string;
   externalId: string;
   fields: Record<string, unknown>;
+  // 2026-10-03追加(読み取り調査に基づく提案、承認待ち): 呼び出し側が重複候補を
+  // 自分自身の関連レコードだと確認できた場合だけtrueを渡す。既定はfalse
+  // (Setup側の重複ルール判定をそのまま尊重し、未確認の重複は常に拒否させる)。
+  allowDuplicateSave?: boolean;
 }): Promise<SalesforceUpsertResult> {
   const label = `${input.sobject} upsert`;
   const response = await requestSalesforce(
@@ -163,7 +179,8 @@ export async function upsertSalesforceRecordByExternalId(input: {
     "PATCH",
     sobjectPath(input.sobject, input.externalIdField, input.externalId),
     label,
-    input.fields
+    input.fields,
+    { allowDuplicateSave: input.allowDuplicateSave }
   );
   if (!response.ok) await throwForResponse(response, label);
 
