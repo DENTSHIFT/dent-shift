@@ -356,11 +356,6 @@ async function pushSnapshotToSalesforce(input: {
       })
     );
     leadId = lead.id || null;
-    if (lead.created) {
-      // 「無料診断を理由とした営業電話はしない」公開方針をCRM上でも明示する。
-      // 作成時にだけ設定し、その後に医院の同意を得て担当者が外した値は上書きしない。
-      await upsert("Lead", SF_FIELDS.lead.externalId, clinic.id, { DoNotCall: true });
-    }
   } else {
     if (converted.accountId) {
       await adoptConvertedRecord({
@@ -447,6 +442,15 @@ async function pushSnapshotToSalesforce(input: {
       })
     );
   }
+
+  // 電話禁止(DentShift_Do_Not_Call__c)は同期で書き込まない。標準DoNotCallがこの組織に
+  // 存在しないため、Sandbox限定のカスタム項目を追加した(Lead/Contactとも既定値true)。
+  // 新規作成時の初期値はSalesforce項目自体の既定値(true)に任せ、担当者が医院の同意を
+  // 得てから手動で解除する(DentShift_Do_Not_Call_Reason__cに根拠を記入、変更者・日時は
+  // 項目履歴管理で自動記録)。同期が繰り返しこの項目を書き戻すと、担当者の承認済み変更を
+  // 上書きしてしまうため、同期コードは一切この項目に触れない。
+  // Lead→Contact/Accountのコンバート時の引き継ぎは、Salesforce標準の「リードの項目の
+  // 対応付け」(Lead Convert Field Mapping)で設定済み(Sandbox dsverifyのみ)。
 
   return { leadId };
 }

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>60.0</apiVersion>
+    <description>Leadの電話禁止(DentShift_Do_Not_Call__c)がtrueのままリードが変換された場合、変換直後の同一トランザクションで変換先Contactにも電話禁止を引き継ぐ(既存Contactが既にtrueの場合はそのまま、falseの場合はtrueへ補正)。既存の電話禁止(true)を誤って解除することはない(trueを設定するのみ)。DENT SHIFT同期専用ユーザーの権限は変更しない(本フローはSystem Contextで動作する宣言的自動化)。Sandbox dsverify限定。</description>
+    <environments>Default</environments>
+    <interviewLabel>DENT SHIFT 変換時電話禁止保持 {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>DENT SHIFT 変換時電話禁止保持</label>
+    <processMetadataValues>
+        <name>BuilderType</name>
+        <value>
+            <stringValue>LightningFlowBuilder</stringValue>
+        </value>
+    </processMetadataValues>
+    <processMetadataValues>
+        <name>CanvasMode</name>
+        <value>
+            <stringValue>AUTO_LAYOUT_CANVAS</stringValue>
+        </value>
+    </processMetadataValues>
+    <processMetadataValues>
+        <name>OriginBuilderType</name>
+        <value>
+            <stringValue>LightningFlowBuilder</stringValue>
+        </value>
+    </processMetadataValues>
+    <processType>AutoLaunchedFlow</processType>
+    <start>
+        <locationX>50</locationX>
+        <locationY>50</locationY>
+        <connector>
+            <targetReference>Update_Converted_Contact</targetReference>
+        </connector>
+        <filterFormula>AND(
+    ISCHANGED({!$Record.IsConverted}),
+    {!$Record.IsConverted} = true,
+    {!$Record.DentShift_Do_Not_Call__c} = true,
+    NOT(ISBLANK({!$Record.ConvertedContactId}))
+)</filterFormula>
+        <object>Lead</object>
+        <recordTriggerType>Update</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+    <recordUpdates>
+        <name>Update_Converted_Contact</name>
+        <label>変換先Contactの電話禁止をtrueにする</label>
+        <locationX>176</locationX>
+        <locationY>158</locationY>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Id</field>
+            <operator>EqualTo</operator>
+            <value>
+                <elementReference>$Record.ConvertedContactId</elementReference>
+            </value>
+        </filters>
+        <inputAssignments>
+            <field>DentShift_Do_Not_Call__c</field>
+            <value>
+                <booleanValue>true</booleanValue>
+            </value>
+        </inputAssignments>
+        <object>Contact</object>
+    </recordUpdates>
+</Flow>

@@ -113,7 +113,41 @@ async function main() {
         });
       }
       metadata.relatedLists = [...(metadata.relatedLists ?? []), ...missingLists];
-      await sf.call(`/tooling/sobjects/Layout/${layout.Id}`, { method: "PATCH", body: JSON.stringify({ Metadata: metadata }) });
+      // 注意: Tooling APIのLayout GETは、一部の「complexvalue」型項目
+      // (platformActionList.actionListContext、summaryLayout.summaryLayoutStyle等)を
+      // 単純な文字列("Record"・"Default"等)として返すが、同じ値をPATCHでそのまま
+      // 送り返すとJSON_PARSER_ERROR("VALUE_STRING値...をcomplexvalueのインスタンスに
+      // 非整列化できない")になる(GET/PATCHでこの種の項目のスキーマ表現が一致しない
+      // Tooling APIの既知の挙動)。これらは今回追加したいセクション・関連リストとは
+      // 無関係の既存設定(標準ボタン・概要レイアウトの表示形式)のため、PATCH対象から
+      // 除外する。Salesforce側は未指定時、既存の設定を保持する(update後に再取得して
+      // 両方とも消えていないことを確認する)。
+      // quickActionList: 一部のレイアウト(Lead/Contact=ContentDocumentLink、Account=Partner、
+      // Opportunity=OpportunityLineItemを参照するMass quick actions)でPATCH時に
+      // "Mass quick actions don't support <entity>. Use a valid entity." エラーになることを
+      // 確認した(全オブジェクトで発生、既存のクイックアクション設定自体は正当)。他の
+      // echo項目と同様、PATCH対象から除外し、既存の設定はSalesforce側でそのまま保持させる。
+      const UNPATCHABLE_ECHO_FIELDS = ["platformActionList", "summaryLayout", "quickActionList"];
+      const hadFields = UNPATCHABLE_ECHO_FIELDS.filter((f) => f in metadata);
+      for (const f of UNPATCHABLE_ECHO_FIELDS) delete metadata[f];
+      try {
+        await sf.call(`/tooling/sobjects/Layout/${layout.Id}`, { method: "PATCH", body: JSON.stringify({ Metadata: metadata }) });
+      } catch (error) {
+        // 注意: 既存のクイックアクション設定(Mass quick actionsがContentDocumentLinkを
+        // 含む等)がTooling APIのPATCHと非互換なレイアウトが一部にある(既知・対応保留)。
+        // 既存のクイックアクションを削除・変更して回避することはせず、そのレイアウトだけ
+        // スキップして他のオブジェクト・レイアウトの反映を止めない。
+        console.warn(`  ⚠ 反映できませんでした(既存クイックアクション等との非互換の可能性、保留中): ${error instanceof Error ? error.message : error}`);
+        continue;
+      }
+      if (hadFields.length) {
+        const after = await sf.call(`/tooling/sobjects/Layout/${layout.Id}`);
+        for (const f of hadFields) {
+          if (!after.Metadata[f]) {
+            console.warn(`  ⚠ ${f}(標準ボタン等)が更新後に失われました。手動確認が必要です。`);
+          }
+        }
+      }
       console.log("  → 反映しました");
     }
   }

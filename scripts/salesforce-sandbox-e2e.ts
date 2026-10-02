@@ -2,8 +2,11 @@
  * Salesforce Sandboxでの結合検証(実際のSalesforce APIに対して、DENT SHIFTの同期コードをそのまま実行する)。
  *
  * 安全装置:
- *   - 接続先が Sandbox(Organization.IsSandbox = true)でなければ、何も書き込まずに終了する。
- *   - SALESFORCE_EXPECTED_ORG_ID と実際の組織IDが一致しなければ終了する(同期コード側でも照合)。
+ *   - 接続先のMy DomainがSandbox命名規則(`--<sandbox名>.sandbox.`)でなければ、何も書き込まずに
+ *     終了する(連携専用ユーザーの最小権限ではOrganizationオブジェクトを読めないため、
+ *     Organization.IsSandboxではなくMy Domainの命名規則で判定する)。
+ *   - SALESFORCE_EXPECTED_ORG_ID と実際の組織IDが一致しなければ終了する(同期コード側でも照合、
+ *     こちらが本番取り違え防止の主たる安全装置)。
  *   - DENT SHIFT側のDBは一時SQLite(全マイグレーション適用)を使い、開発・本番DBには触れない。
  *   - 検証データは名前に「【検証】」を付け、メールは予約済みドメイン(example.com)のみ。
  *
@@ -31,15 +34,15 @@ function check(step: string, ok: boolean, detail: string) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${step} — ${detail}`);
 }
 
-async function salesforceSession() {
+async function salesforceSession(clientId = process.env.SALESFORCE_CLIENT_ID!, clientSecret = process.env.SALESFORCE_CLIENT_SECRET!) {
   const loginUrl = new URL(process.env.SALESFORCE_LOGIN_URL!).origin;
   const res = await fetch(`${loginUrl}/services/oauth2/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "client_credentials",
-      client_id: process.env.SALESFORCE_CLIENT_ID!,
-      client_secret: process.env.SALESFORCE_CLIENT_SECRET!,
+      client_id: clientId,
+      client_secret: clientSecret,
     }),
   });
   if (!res.ok) throw new Error(`OAuth failed: HTTP ${res.status}`);
@@ -55,7 +58,19 @@ async function salesforceSession() {
   };
   const soql = async <T = Record<string, unknown>>(q: string): Promise<T[]> =>
     ((await call(`/query?q=${encodeURIComponent(q)}`)) as { records: T[] }).records;
-  return { orgId, instanceUrl: body.instance_url, call, soql };
+  const executeAnonymous = async (apex: string) => {
+    const json = (await call(`/tooling/executeAnonymous?anonymousBody=${encodeURIComponent(apex)}`)) as {
+      compiled: boolean;
+      success: boolean;
+      compileProblem?: string;
+      exceptionMessage?: string;
+    };
+    if (!json.compiled || !json.success) {
+      throw new Error(`Apex failed: compiled=${json.compiled} success=${json.success} compileProblem=${json.compileProblem} exceptionMessage=${json.exceptionMessage}`);
+    }
+    return json;
+  };
+  return { orgId, instanceUrl: body.instance_url, call, soql, executeAnonymous };
 }
 
 async function main() {
@@ -63,8 +78,17 @@ async function main() {
     if (!process.env[name]) throw new Error(`${name} が必要です(salesforce/.env.sandbox から読み込む)`);
   }
   const sf = await salesforceSession();
-  const [org] = await sf.soql<{ IsSandbox: boolean }>("SELECT IsSandbox FROM Organization");
-  if (!org?.IsSandbox) throw new Error("接続先がSandboxではありません。本番組織では実行しません。");
+  // 注意: 当初は `SELECT IsSandbox FROM Organization` で確認していたが、連携専用ユーザー
+  // (Salesforce Integration License, 最小権限)の実行コンテキストではOrganizationオブジェクト
+  // 自体が「サポートされていない型」としてアクセス不可(INVALID_TYPE)になることを確認した。
+  // Organizationオブジェクトへの読み取り権限を連携ユーザーへ追加で付与する案もあったが、
+  // 連携ユーザーの権限は最小限に保つ設計(PO指示)のため見送り、代わりにSalesforceの
+  // SandboxのMy Domainが必ず `--<sandbox名>.sandbox.` を含むという確定的な命名規則で判定する。
+  // 本番との取り違え防止の実体はSALESFORCE_EXPECTED_ORG_IDの完全一致チェック(直後)であり、
+  // こちらが主たる安全装置であることに変わりはない。
+  const loginHost = new URL(process.env.SALESFORCE_LOGIN_URL!).host;
+  const isSandboxHost = /--[^.]+\.sandbox\./.test(loginHost);
+  if (!isSandboxHost) throw new Error("接続先がSandboxではありません(My DomainがSandbox命名規則と一致しません)。本番組織では実行しません。");
   if (sf.orgId.slice(0, 15) !== process.env.SALESFORCE_EXPECTED_ORG_ID!.slice(0, 15)) {
     throw new Error("接続先の組織IDが SALESFORCE_EXPECTED_ORG_ID と一致しません。");
   }
@@ -126,11 +150,49 @@ async function main() {
     },
   });
   await enqueueIntegrationEvent({ eventType: "diagnosis_completed", clinicId: clinic.id, payload: {} });
-  const leads = await one<{ Id: string; DoNotCall: boolean; DentShift_Latest_Score__c: number }>(
-    `SELECT Id, DoNotCall, DentShift_Latest_Score__c FROM Lead WHERE DentShift_Clinic_Id__c = '${clinic.id}'`
+  // Lead.DoNotCallはこの組織に存在しないため、Sandbox限定のカスタム項目
+  // DentShift_Do_Not_Call__c(既定値true)を代替として使う。同期コードはこの項目に
+  // 一切書き込まない(salesforceSync.ts参照)。初期値はSalesforce項目自体の
+  // defaultValueに任せる設計のため、ここでは「新規作成されたLeadの既定値がtrueで
+  // あること」をSandboxの実際の項目に対して確認する。
+  const leads = await one<{ Id: string; DentShift_Latest_Score__c: number }>(
+    `SELECT Id, DentShift_Latest_Score__c FROM Lead WHERE DentShift_Clinic_Id__c = '${clinic.id}'`
   );
   check("診断→リード作成", leads.length === 1, `リード${leads.length}件、スコア=${leads[0]?.DentShift_Latest_Score__c}`);
-  check("新規リードは電話お断り", leads[0]?.DoNotCall === true, `DoNotCall=${leads[0]?.DoNotCall}`);
+  const dnc1 = await one<{ DentShift_Do_Not_Call__c: boolean }>(
+    `SELECT DentShift_Do_Not_Call__c FROM Lead WHERE Id = '${leads[0]?.Id}'`
+  );
+  check("新規リードは電話禁止が既定値(Salesforce項目のdefaultValue)", dnc1[0]?.DentShift_Do_Not_Call__c === true, `DentShift_Do_Not_Call__c=${dnc1[0]?.DentShift_Do_Not_Call__c}`);
+
+  // 再送(同じ医院への2回目以降の同期)でも電話禁止の値を変更しないことを確認する。
+  await enqueueIntegrationEvent({ eventType: "diagnosis_result_viewed", clinicId: clinic.id, payload: {} });
+  const dnc2 = await one<{ DentShift_Do_Not_Call__c: boolean }>(
+    `SELECT DentShift_Do_Not_Call__c FROM Lead WHERE Id = '${leads[0]?.Id}'`
+  );
+  check("再送でも電話禁止の値は変わらない(true)", dnc2[0]?.DentShift_Do_Not_Call__c === true, `DentShift_Do_Not_Call__c=${dnc2[0]?.DentShift_Do_Not_Call__c}`);
+
+  // 担当者が医院の同意を得て手動で解除した後、再送しても上書きされないことを確認する。
+  // 連携専用ユーザーにはこの項目の編集権限を意図的に与えていない(DentShift_Sales_Staff
+  // 権限セットのみ編集可)ため、担当者操作の再現には管理者用認証(SALESFORCE_ADMIN_*)を使う。
+  if (process.env.SALESFORCE_ADMIN_CLIENT_ID && process.env.SALESFORCE_ADMIN_CLIENT_SECRET) {
+    const adminSf = await salesforceSession(process.env.SALESFORCE_ADMIN_CLIENT_ID, process.env.SALESFORCE_ADMIN_CLIENT_SECRET);
+    await adminSf.call(`/sobjects/Lead/${leads[0]?.Id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ DentShift_Do_Not_Call__c: false, DentShift_Do_Not_Call_Reason__c: "【検証】医院から電話OKの同意を確認(E2E)" }),
+    });
+    await enqueueIntegrationEvent({ eventType: "diagnosis_result_viewed", clinicId: clinic.id, payload: {} });
+    const dnc3 = await one<{ DentShift_Do_Not_Call__c: boolean }>(
+      `SELECT DentShift_Do_Not_Call__c FROM Lead WHERE Id = '${leads[0]?.Id}'`
+    );
+    check("同意後の担当者による解除は再送で上書きされない(false維持)", dnc3[0]?.DentShift_Do_Not_Call__c === false, `DentShift_Do_Not_Call__c=${dnc3[0]?.DentShift_Do_Not_Call__c}`);
+  } else {
+    check(
+      "同意後の担当者による解除は再送で上書きされない(false維持)",
+      false,
+      "未検証: SALESFORCE_ADMIN_CLIENT_ID/SECRET が未設定(担当者操作の再現には管理者用認証が必要)"
+    );
+  }
+
   const diagRecords = await one(`SELECT Id FROM DentShift_Diagnosis__c WHERE DentShift_Diagnosis_Id__c = '${diagnosis.id}'`);
   check("診断履歴レコード", diagRecords.length === 1, `${diagRecords.length}件`);
 
@@ -187,7 +249,15 @@ async function main() {
   const contacts = await one<{ AccountId: string }>(`SELECT AccountId FROM Contact WHERE DentShift_User_Id__c = '${contact.id}'`);
   check("登録→取引先1件・取引先責任者1件(取引先に紐づく)", accounts.length === 1 && contacts[0]?.AccountId === accounts[0]?.Id, `取引先${accounts.length}件 / 責任者${contacts.length}件`);
   const diagLinked = await one<{ DentShift_Account__c: string }>(`SELECT DentShift_Account__c FROM DentShift_Diagnosis__c WHERE DentShift_Diagnosis_Id__c = '${diagnosis.id}'`);
-  check("診断履歴が取引先に紐づく", diagLinked[0]?.DentShift_Account__c === accounts[0]?.Id, "取引先の関連リストに表示");
+  // 注意: ここで確認しているのはDentShift_Diagnosis__c.DentShift_Account__c(参照項目)が
+  // 正しい取引先IDを指していることのみで、取引先のページ上で実際に関連リストとして
+  // 表示されるかどうかは別途ページレイアウトの設定(現状未反映、保留中)に依存する。
+  // 誤解を招かないよう、詳細文言でも「データの紐づき」と「画面表示」を区別する。
+  check(
+    "診断履歴が取引先に紐づく(データ上の参照。画面表示はページレイアウト次第)",
+    diagLinked[0]?.DentShift_Account__c === accounts[0]?.Id,
+    `DentShift_Account__c=${diagLinked[0]?.DentShift_Account__c}(取引先ID=${accounts[0]?.Id}と一致)`
+  );
 
   // --- 5. Stripe: トライアル → 有料 → 遅延した古い通知 → 解約 ---
   const sub = `sub_${runId}`;
@@ -235,7 +305,12 @@ async function main() {
   }) as typeof fetch;
   await enqueueIntegrationEvent({ eventType: "diagnosis_result_viewed", clinicId: clinic.id, payload: {} });
   globalThis.fetch = realFetch;
-  const failed = await prisma.integrationEvent.findFirstOrThrow({ where: { eventType: "diagnosis_result_viewed" } });
+  // この医院に対しては電話禁止の再送・同意変更の検証で同種のイベントを複数発行済みのため、
+  // 最新(createdAt降順)の1件を見る(先頭の既にsynced済みイベントを誤って参照しないよう)。
+  const failed = await prisma.integrationEvent.findFirstOrThrow({
+    where: { eventType: "diagnosis_result_viewed", clinicId: clinic.id },
+    orderBy: { createdAt: "desc" },
+  });
   check("通信失敗→failed・試行1回で保留", failed.status === "failed" && failed.retryCount === 1, `状態=${failed.status} 試行=${failed.retryCount}`);
   await flush();
   const recovered = await prisma.integrationEvent.findUniqueOrThrow({ where: { id: failed.id } });
@@ -244,8 +319,11 @@ async function main() {
   // --- 7. 同じ医院の同時同期(ロック) ---
   const a = await prisma.integrationEvent.create({ data: { eventType: "diagnosis_result_viewed", clinicId: clinic.id, payloadJson: "{}" } });
   const b = await prisma.integrationEvent.create({ data: { eventType: "diagnosis_result_viewed", clinicId: clinic.id, payloadJson: "{}" } });
-  const outcomes = await Promise.all([syncIntegrationEvent(a.id), syncIntegrationEvent(b.id)]);
-  check("同時同期は1件ずつ(片方は待機)", outcomes.includes("busy") && outcomes.includes("synced"), outcomes.join(", "));
+  // Promise.allSettledで両方の結果を待ち受ける(片方が何らかの理由で失敗しても、
+  // もう片方の検証(ロックで待機したこと)を失わないため)。
+  const settled = await Promise.allSettled([syncIntegrationEvent(a.id), syncIntegrationEvent(b.id)]);
+  const outcomeLabels = settled.map((r) => (r.status === "fulfilled" ? r.value : `rejected:${(r.reason as Error).message.slice(0, 60)}`));
+  check("同時同期は1件ずつ(片方は待機)", outcomeLabels.includes("busy") && outcomeLabels.includes("synced"), outcomeLabels.join(", "));
   await flush();
 
   // --- 8. 重複が無いこと(全オブジェクト) ---
@@ -264,6 +342,50 @@ async function main() {
   );
   const leftover = await prisma.integrationEvent.count({ where: { status: { not: "synced" } } });
   check("未送信イベントが残っていない", leftover === 0, `${leftover}件`);
+
+  // --- 9. リード変換時の電話禁止保持(2026-10-02発見の欠落ケース) ---
+  // 修正前は「Lead=true(禁止)、既存Contact=false(通話可)」のまま変換すると、Salesforce標準の
+  // リード項目対応付けが既存Contactの値を上書きしないため、Leadの禁止情報が失われていた
+  // (変換直後からContactはfalseのまま=架電可能に見えてしまう隙間が生じていた)。
+  // Flow「DentShift_Preserve_Do_Not_Call_On_Convert」(After Save、変換と同一トランザクション)
+  // で、変換直後にContactへtrueを補正する。これを恒久的な回帰テストとして記録する。
+  if (process.env.SALESFORCE_ADMIN_CLIENT_ID && process.env.SALESFORCE_ADMIN_CLIENT_SECRET) {
+    const adminSf = await salesforceSession(process.env.SALESFORCE_ADMIN_CLIENT_ID, process.env.SALESFORCE_ADMIN_CLIENT_SECRET);
+    const convAccount = await adminSf.call(`/sobjects/Account`, {
+      method: "POST",
+      body: JSON.stringify({ Name: `【検証】既存取引先-conv-${runId}` }),
+    }) as { id: string };
+    const convContact = await adminSf.call(`/sobjects/Contact`, {
+      method: "POST",
+      body: JSON.stringify({
+        LastName: `【検証】既存責任者-conv-${runId}`,
+        AccountId: convAccount.id,
+        DentShift_Do_Not_Call__c: false,
+        DentShift_Do_Not_Call_Reason__c: "【検証】E2E: 事前に同意済み(通話可)として作成",
+      }),
+    }) as { id: string };
+    const convLead = await adminSf.call(`/sobjects/Lead`, {
+      method: "POST",
+      body: JSON.stringify({ LastName: `【検証】変換太郎-conv-${runId}`, Company: `【検証】変換医院-conv-${runId}`, Status: "Open - Not Contacted" }),
+    }) as { id: string };
+    await adminSf.executeAnonymous(
+      `Database.LeadConvert lc = new Database.LeadConvert();lc.setLeadId('${convLead.id}');lc.setContactId('${convContact.id}');lc.setAccountId('${convAccount.id}');lc.convertedStatus='Qualified';lc.setDoNotCreateOpportunity(true);Database.LeadConvertResult r = Database.convertLead(lc);if(!r.isSuccess()){throw new System.StringException(String.join(r.getErrors(),','));}`
+    );
+    const convContactAfter = await adminSf.call(`/sobjects/Contact/${convContact.id}`) as { DentShift_Do_Not_Call__c: boolean };
+    check(
+      "変換: Lead=禁止・既存Contact=通話可のマージで、禁止情報が失われず変換直後にContactへ反映される",
+      convContactAfter.DentShift_Do_Not_Call__c === true,
+      `既存Contact変換前=false → 変換直後=${convContactAfter.DentShift_Do_Not_Call__c}(trueが期待値)`
+    );
+    await adminSf.call(`/sobjects/Contact/${convContact.id}`, { method: "DELETE" });
+    await adminSf.call(`/sobjects/Account/${convAccount.id}`, { method: "DELETE" });
+  } else {
+    check(
+      "変換: Lead=禁止・既存Contact=通話可のマージで、禁止情報が失われず変換直後にContactへ反映される",
+      false,
+      "未検証: SALESFORCE_ADMIN_CLIENT_ID/SECRET が未設定(Database.convertLeadの実行には管理者用認証が必要)"
+    );
+  }
 
   const report = {
     runId,

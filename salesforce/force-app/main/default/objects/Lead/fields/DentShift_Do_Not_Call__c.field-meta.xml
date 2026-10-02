@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Do_Not_Call__c</fullName>
+    <label>電話禁止</label>
+    <description>電話禁止(Sandbox限定の代替項目。標準DoNotCallがこの組織に存在しないため追加。新規Lead作成時はSalesforce項目の既定値でtrue。担当者が医院の同意を得てから解除。同期では書き込まない)</description>
+    <inlineHelpText>電話禁止(Sandbox限定の代替項目。標準DoNotCallがこの組織に存在しないため追加。新規Lead作成時はSalesforce項目の既定値でtrue。担当者が医院の同意を得てから解除。同期では書き込まない)</inlineHelpText>
+    <type>Checkbox</type>
+    <defaultValue>true</defaultValue>
+</CustomField>

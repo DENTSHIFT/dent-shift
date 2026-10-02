@@ -3,7 +3,7 @@
 このファイルは `salesforce/tools/generate.py` が `salesforce/tools/fields.json` から生成する。手で編集しない。
 メタデータ本体は `salesforce/force-app/main/default/` 、デプロイ対象一覧は `salesforce/manifest/package.xml`。
 
-- 追加する項目: 80件 / 追加するカスタムオブジェクト: 2件 / 権限セット: 2件
+- 追加する項目: 84件 / 追加するカスタムオブジェクト: 2件 / 権限セット: 2件
 - 既存項目(`Event_Type__c` / `Registration_Step__c` / `Trial_Ends_At__c`)は変更しない。
 - 権限: 連携ユーザーには権限セット `DentShift_Integration`(連携項目の編集・削除権限なし)、営業・CS担当には `DentShift_Sales_Staff`(連携項目は閲覧のみ、相談の実施結果・メモだけ編集)。
 - 外部ID項目はアプリのID(医院ID・ユーザーID・契約ID・診断ID)とTimeRexの予約IDのみ。メールアドレスは外部IDにしない。
@@ -21,6 +21,8 @@
 | リード (`Lead`) | `DentShift_UTM_Content__c` | テキスト 255 |  | 初回流入 utm_content | 連携ユーザー | 閲覧 |
 | リード (`Lead`) | `DentShift_UTM_Term__c` | テキスト 255 |  | 初回流入 utm_term | 連携ユーザー | 閲覧 |
 | リード (`Lead`) | `DentShift_Signed_Up_At__c` | 日付/時間  |  | 会員登録日時 | 連携ユーザー | 閲覧 |
+| リード (`Lead`) | `DentShift_Do_Not_Call__c` | チェックボックス(担当者が入力、同期しない)  |  | 電話禁止(Sandbox限定の代替項目。標準DoNotCallがこの組織に存在しないため追加。新規Lead作成時はSalesforce項目の既定値でtrue。担当者が医院の同意を得てから解除。同期では書き込まない) | 担当者が入力(同期しない) | 編集 |
+| リード (`Lead`) | `DentShift_Do_Not_Call_Reason__c` | ロングテキストエリア 500 |  | 電話禁止の解除・変更の根拠(担当者が入力。同意の経緯を記録。同期では書き込まない) | 担当者が入力(同期しない) | 編集 |
 | リード (`Lead`) | `DentShift_Latest_Score__c` | 数値 5,0 |  | 最新診断の総合スコア | 連携ユーザー | 閲覧 |
 | リード (`Lead`) | `DentShift_Latest_Status__c` | テキスト 40 |  | 最新診断の総合判定 | 連携ユーザー | 閲覧 |
 | リード (`Lead`) | `DentShift_Latest_Provisional__c` | チェックボックス  |  | 最新診断が暫定値(サンプル/計測不能を含む)か | 連携ユーザー | 閲覧 |
@@ -29,9 +31,13 @@
 | リード (`Lead`) | `DentShift_Trial_Signup_Started_At__c` | 日付/時間  |  | 会員登録・トライアル申込の開始日時(初回) | 連携ユーザー | 閲覧 |
 | リード (`Lead`) | `DentShift_Consultation_Status__c` | テキスト 40 |  | 直近の相談予約の状態(予約成立/キャンセル) | 連携ユーザー | 閲覧 |
 | リード (`Lead`) | `DentShift_Next_Consultation_At__c` | 日付/時間  |  | 次回の相談予約日時(予約成立のもの) | 連携ユーザー | 閲覧 |
-| リード (`Lead`) | `Event_Type__c` | 既存項目(変更しない)  |  | 最後に同期したイベント種別(既存項目) | 既存 | 閲覧 |
-| リード (`Lead`) | `Registration_Step__c` | 既存項目(変更しない)  |  | 登録ステップ(既存項目) | 既存 | 閲覧 |
-| リード (`Lead`) | `Trial_Ends_At__c` | 既存項目(変更しない)  |  | トライアル終了予定(既存項目) | 既存 | 閲覧 |
+| リード (`Lead`) | `Event_Type__c` | 既存項目(変更しない)  |  | 最後に同期したイベント種別(既存項目) | 既存(読み取りのみ) | 閲覧 |
+| リード (`Lead`) | `Registration_Step__c` | 既存項目(変更しない)  |  | 登録ステップ(既存項目) | 既存(読み取りのみ) | 閲覧 |
+| リード (`Lead`) | `Trial_Ends_At__c` | 既存項目(変更しない)  |  | トライアル終了予定(既存項目) | 既存(読み取りのみ) | 閲覧 |
+| リード (`Lead`) | `Email` | 既存の標準項目(連携が書き込む)  |  | メール(標準項目。Stage 1検証で連携専用ユーザーの項目レベルセキュリティ不足が判明し追加) | 連携ユーザー | 閲覧 |
+| リード (`Lead`) | `Phone` | 既存の標準項目(連携が書き込む)  |  | 電話(標準項目。同上) | 連携ユーザー | 閲覧 |
+| リード (`Lead`) | `Website` | 既存の標準項目(連携が書き込む)  |  | Webサイト(標準項目。同上) | 連携ユーザー | 閲覧 |
+| リード (`Lead`) | `LeadSource` | 既存の標準項目(連携が書き込む)  |  | リードソース(標準項目。同上) | 連携ユーザー | 閲覧 |
 | 取引先 (`Account`) | `DentShift_Clinic_Id__c` | テキスト(外部ID・一意・大文字小文字区別) 64 | 一意 | DENT SHIFTの医院ID(外部ID・一意) | 連携ユーザー | 閲覧 |
 | 取引先 (`Account`) | `DentShift_Site_Domain__c` | テキスト 255 |  | 医院サイトのドメイン | 連携ユーザー | 閲覧 |
 | 取引先 (`Account`) | `DentShift_Signed_Up_At__c` | 日付/時間  |  | 会員登録日時 | 連携ユーザー | 閲覧 |
@@ -46,6 +52,8 @@
 | 取引先 (`Account`) | `DentShift_Trial_Signup_Started_At__c` | 日付/時間  |  | 会員登録・トライアル申込の開始日時(初回) | 連携ユーザー | 閲覧 |
 | 取引先 (`Account`) | `DentShift_Consultation_Status__c` | テキスト 40 |  | 直近の相談予約の状態(予約成立/キャンセル) | 連携ユーザー | 閲覧 |
 | 取引先 (`Account`) | `DentShift_Next_Consultation_At__c` | 日付/時間  |  | 次回の相談予約日時(予約成立のもの) | 連携ユーザー | 閲覧 |
+| 取引先 (`Account`) | `Website` | 既存の標準項目(連携が書き込む)  |  | Webサイト(標準項目。Stage 1検証で連携専用ユーザーの項目レベルセキュリティ不足が判明し追加) | 連携ユーザー | 閲覧 |
+| 取引先 (`Account`) | `Phone` | 既存の標準項目(連携が書き込む)  |  | 電話(標準項目。同上) | 連携ユーザー | 閲覧 |
 | 取引先責任者 (`Contact`) | `DentShift_User_Id__c` | テキスト(外部ID・一意・大文字小文字区別) 64 | 一意 | DENT SHIFTのユーザーID(外部ID・一意) | 連携ユーザー | 閲覧 |
 | 取引先責任者 (`Contact`) | `DentShift_Role__c` | テキスト 20 |  | 医院内の役割(owner/staff/agency) | 連携ユーザー | 閲覧 |
 | 取引先責任者 (`Contact`) | `DentShift_Registration_Step__c` | テキスト 20 |  | 登録ステップ | 連携ユーザー | 閲覧 |
@@ -54,6 +62,11 @@
 | 取引先責任者 (`Contact`) | `DentShift_SMS_Verification_Exempt__c` | チェックボックス  |  | SMS確認の例外対象 | 連携ユーザー | 閲覧 |
 | 取引先責任者 (`Contact`) | `DentShift_Consent_Accepted_At__c` | 日付/時間  |  | 規約同意日時 | 連携ユーザー | 閲覧 |
 | 取引先責任者 (`Contact`) | `DentShift_Signed_Up_At__c` | 日付/時間  |  | 会員登録日時 | 連携ユーザー | 閲覧 |
+| 取引先責任者 (`Contact`) | `DentShift_Do_Not_Call__c` | チェックボックス(担当者が入力、同期しない)  |  | 電話禁止(Sandbox限定の代替項目。標準DoNotCallがこの組織に存在しないため追加。新規Contact作成時はSalesforce項目の既定値でtrue。担当者が医院の同意を得てから解除。同期では書き込まない) | 担当者が入力(同期しない) | 編集 |
+| 取引先責任者 (`Contact`) | `DentShift_Do_Not_Call_Reason__c` | ロングテキストエリア 500 |  | 電話禁止の解除・変更の根拠(担当者が入力。同意の経緯を記録。同期では書き込まない) | 担当者が入力(同期しない) | 編集 |
+| 取引先責任者 (`Contact`) | `Email` | 既存の標準項目(連携が書き込む)  |  | メール(標準項目。Stage 1検証で連携専用ユーザーの項目レベルセキュリティ不足が判明し追加) | 連携ユーザー | 閲覧 |
+| 取引先責任者 (`Contact`) | `Phone` | 既存の標準項目(連携が書き込む)  |  | 電話(標準項目。同上) | 連携ユーザー | 閲覧 |
+| 取引先責任者 (`Contact`) | `AccountId` | 既存の標準項目(連携が書き込む)  |  | 取引先(標準項目。同上。Contact upsert時にAccountの外部ID参照(Account: {DentShift_Clinic_Id__c})経由で書き込まれるため編集可が必要) | 連携ユーザー | 閲覧 |
 | 商談 (`Opportunity`) | `DentShift_Subscription_Id__c` | テキスト(外部ID・一意・大文字小文字区別) 64 | 一意 | DENT SHIFTの契約ID(外部ID・一意) | 連携ユーザー | 閲覧 |
 | 商談 (`Opportunity`) | `DentShift_Plan__c` | テキスト 20 |  | プラン | 連携ユーザー | 閲覧 |
 | 商談 (`Opportunity`) | `DentShift_Billing_Status__c` | テキスト 30 |  | 契約状態(trial/active/past_due/cancelled等) | 連携ユーザー | 閲覧 |
@@ -68,6 +81,7 @@
 | 商談 (`Opportunity`) | `DentShift_Ended_At__c` | 日付/時間  |  | 契約終了日時 | 連携ユーザー | 閲覧 |
 | 商談 (`Opportunity`) | `DentShift_Billing_Exempt__c` | チェックボックス  |  | 課金免除(永久無料) | 連携ユーザー | 閲覧 |
 | 商談 (`Opportunity`) | `DentShift_Pilot__c` | チェックボックス  |  | Pilot(先行利用)契約 | 連携ユーザー | 閲覧 |
+| 商談 (`Opportunity`) | `AccountId` | 既存の標準項目(連携が書き込む)  |  | 取引先(標準項目。Opportunity upsert時にAccountの外部ID参照(Account: {DentShift_Clinic_Id__c})経由で書き込まれるため編集可が必要。Contact.AccountIdと同じ理由で追加) | 連携ユーザー | 閲覧 |
 | DENT SHIFT診断 (`DentShift_Diagnosis__c`) | `DentShift_Diagnosis_Id__c` | テキスト(外部ID・一意・大文字小文字区別) 64 | 一意 | DENT SHIFTの診断ID(外部ID・一意) | 連携ユーザー | 閲覧 |
 | DENT SHIFT診断 (`DentShift_Diagnosis__c`) | `DentShift_Clinic_Id__c` | テキスト(外部ID・重複可、検索用インデックス) 64 | 外部ID(重複可) | DENT SHIFTの医院ID(リード・取引先と同じ値) | 連携ユーザー | 閲覧 |
 | DENT SHIFT診断 (`DentShift_Diagnosis__c`) | `DentShift_Account__c` | 参照関係 → Account |  | 取引先(会員登録済みの医院のみ) | 連携ユーザー | 閲覧 |

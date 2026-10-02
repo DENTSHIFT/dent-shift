@@ -205,7 +205,10 @@ describe("syncIntegrationEvent", () => {
     );
   });
 
-  it("Leadを新規作成した場合だけ、営業電話禁止(DoNotCall)を設定する", async () => {
+  it("営業電話禁止(DentShift_Do_Not_Call__c)は同期で一切書き込まない", async () => {
+    // 新規作成時の既定値はSalesforce項目自体のdefaultValue(true)に任せ、担当者が医院の
+    // 同意を得てから手動で解除する。同期コードがこの項目に触れると、担当者の承認済み
+    // 変更を次回同期で上書きしてしまうため、Lead新規作成・更新のいずれでも書き込まない。
     mocks.eventFindUnique.mockResolvedValue(event());
     mocks.clinicFindUnique.mockResolvedValue(clinicRow());
     mocks.upsert.mockResolvedValueOnce({ id: "00Qnew", created: true });
@@ -213,8 +216,9 @@ describe("syncIntegrationEvent", () => {
     await syncIntegrationEvent("evt_1");
 
     const leadCalls = upsertCallsFor("Lead");
-    expect(leadCalls).toHaveLength(2);
-    expect(leadCalls[1].fields).toEqual({ DoNotCall: true });
+    expect(leadCalls).toHaveLength(1);
+    expect(leadCalls[0].fields).not.toHaveProperty("DoNotCall");
+    expect(leadCalls[0].fields).not.toHaveProperty("DentShift_Do_Not_Call__c");
 
     vi.clearAllMocks();
     mocks.resolveSalesforceConfig.mockReturnValue(SF);
@@ -223,8 +227,9 @@ describe("syncIntegrationEvent", () => {
     mocks.upsert.mockResolvedValue({ id: "00Qnew", created: false });
 
     await syncIntegrationEvent("evt_1");
-    expect(upsertCallsFor("Lead")).toHaveLength(1);
-    expect(JSON.stringify(mocks.upsert.mock.calls)).not.toContain("DoNotCall");
+    const retriedLeadCalls = upsertCallsFor("Lead");
+    expect(retriedLeadCalls).toHaveLength(1);
+    expect(retriedLeadCalls[0].fields).not.toHaveProperty("DentShift_Do_Not_Call__c");
   });
 
   it("同じメールアドレスでも医院IDが異なれば別々の外部IDで送り、メールで統合しない", async () => {

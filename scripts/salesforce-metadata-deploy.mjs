@@ -15,6 +15,7 @@
  * 出力には認証情報・レコード値を含めない。
  */
 import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -43,7 +44,7 @@ function inner(xml, rootTag) {
 // ソース形式(objects/<Obj>/fields/*.field-meta.xml)をMetadata API形式(objects/<Obj>.object)へ変換する。
 function buildMdapiDir() {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), "dentshift-sf-"));
-  const members = { CustomField: [], CustomObject: [], PermissionSet: [] };
+  const members = { CustomField: [], CustomObject: [], PermissionSet: [], ValidationRule: [], Flow: [] };
   fs.mkdirSync(path.join(out, "objects"));
   for (const obj of fs.readdirSync(path.join(SRC, "objects"))) {
     const dir = path.join(SRC, "objects", obj);
@@ -58,6 +59,14 @@ function buildMdapiDir() {
       parts.push(`<fields>\n${xml}\n</fields>`);
       members.CustomField.push(`${obj}.${file.replace(".field-meta.xml", "")}`);
     }
+    const validationRulesDir = path.join(dir, "validationRules");
+    if (fs.existsSync(validationRulesDir)) {
+      for (const file of fs.readdirSync(validationRulesDir).sort()) {
+        const xml = inner(fs.readFileSync(path.join(validationRulesDir, file), "utf8"), "ValidationRule");
+        parts.push(`<validationRules>\n${xml}\n</validationRules>`);
+        members.ValidationRule.push(`${obj}.${file.replace(".validationRule-meta.xml", "")}`);
+      }
+    }
     fs.writeFileSync(
       path.join(out, "objects", `${obj}.object`),
       `<?xml version="1.0" encoding="UTF-8"?>\n<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">\n${parts.join("\n")}\n</CustomObject>\n`
@@ -68,6 +77,15 @@ function buildMdapiDir() {
     const name = file.replace(".permissionset-meta.xml", "");
     fs.copyFileSync(path.join(SRC, "permissionsets", file), path.join(out, "permissionsets", `${name}.permissionset`));
     members.PermissionSet.push(name);
+  }
+  const flowsDir = path.join(SRC, "flows");
+  if (fs.existsSync(flowsDir)) {
+    fs.mkdirSync(path.join(out, "flows"));
+    for (const file of fs.readdirSync(flowsDir)) {
+      const name = file.replace(".flow-meta.xml", "");
+      fs.copyFileSync(path.join(flowsDir, file), path.join(out, "flows", `${name}.flow`));
+      members.Flow.push(name);
+    }
   }
   return { out, members };
 }
@@ -102,18 +120,36 @@ async function token() {
 }
 
 async function deployZip(auth, zipPath, checkOnly) {
-  const form = new FormData();
-  form.append(
-    "json",
-    new Blob([JSON.stringify({ deployOptions: { checkOnly, singlePackage: true, rollbackOnError: true, testLevel: "NoTestRun" } })], {
-      type: "application/json",
-    })
-  );
-  form.append("file", new Blob([fs.readFileSync(zipPath)], { type: "application/zip" }), "deploy.zip");
+  // 注意: Node(undici)のfetchへFormDataをそのまま渡すと、ボディをストリームとして送信し
+  // Content-Lengthを付けない。このSalesforce Metadata REST APIのmultipartパーサーは
+  // Content-Length無し(chunked相当)のリクエストを「invalid multipart format」として
+  // 拒否する(curl `-F` は常にContent-Lengthを計算して送るため成功する、と切り分け済み)。
+  // そのためmultipartボディを自前でBufferとして組み立て、Content-Lengthが確実に
+  // 付与されるようにする。
+  const boundary = `----dentshift${crypto.randomBytes(16).toString("hex")}`;
+  const jsonPart = JSON.stringify({ deployOptions: { checkOnly, singlePackage: true, rollbackOnError: true, testLevel: "NoTestRun" } });
+  const zipBuffer = fs.readFileSync(zipPath);
+  const body = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="json"\r\n` +
+        `Content-Type: application/json\r\n\r\n` +
+        `${jsonPart}\r\n` +
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="file"; filename="deploy.zip"\r\n` +
+        `Content-Type: application/zip\r\n\r\n`
+    ),
+    zipBuffer,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
   const res = await fetch(`${auth.instanceUrl}/services/data/${API}/metadata/deployRequest`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${auth.accessToken}` },
-    body: form,
+    headers: {
+      Authorization: `Bearer ${auth.accessToken}`,
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      "Content-Length": String(body.length),
+    },
+    body,
   });
   if (!res.ok) throw new Error(`deployRequest failed: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
   const { id } = await res.json();
@@ -151,11 +187,22 @@ async function main() {
   console.log(`mode=${mode} fields=${members.CustomField.length} objects=${members.CustomObject.length} permissionSets=${members.PermissionSet.length}`);
 
   const auth = await token();
-  const org = await fetch(
+  // 注意: Organization.IsSandboxの取得に失敗した場合(権限不足・API無効化等)、
+  // 「本番ではない」と誤認して安全装置を無効化してはならない。取得できなければ
+  // 「本番」と同様に扱い、接続先が確認できない状態では反映しない(fail-closed)。
+  const orgRes = await fetch(
     `${auth.instanceUrl}/services/data/${API}/query?q=${encodeURIComponent("SELECT IsSandbox FROM Organization")}`,
     { headers: { Authorization: `Bearer ${auth.accessToken}` } }
-  ).then((r) => r.json());
-  const isSandbox = org.records?.[0]?.IsSandbox === true;
+  );
+  if (!orgRes.ok) {
+    throw new Error(`接続先確認不能: Organizationの取得に失敗しました(HTTP ${orgRes.status} ${(await orgRes.text()).slice(0, 300)})。Sandboxであることを確認できないため中断します。`);
+  }
+  const org = await orgRes.json();
+  const sandboxRecord = org.records?.[0];
+  if (!sandboxRecord || typeof sandboxRecord.IsSandbox !== "boolean") {
+    throw new Error("接続先確認不能: OrganizationレコードからIsSandboxを取得できませんでした。中断します。");
+  }
+  const isSandbox = sandboxRecord.IsSandbox === true;
   console.log(`target: ${isSandbox ? "Sandbox" : "本番組織"}`);
   if (!isSandbox && mode !== "check" && !allowProduction) {
     throw new Error("本番組織への反映・取り消しは承認後に --allow-production を付けて実行してください。");

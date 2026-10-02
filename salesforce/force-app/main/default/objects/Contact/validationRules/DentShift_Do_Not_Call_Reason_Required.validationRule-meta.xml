@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DentShift_Do_Not_Call_Reason_Required</fullName>
+    <active>true</active>
+    <description>電話禁止(DentShift_Do_Not_Call__c)がfalse(通話可)の状態では、必ず根拠(DentShift_Do_Not_Call_Reason__c)の入力を要求する。対象は(1)trueからfalseへの解除、(2)根拠なしでfalseのまま新規作成、(3)false状態のまま根拠だけを後から削除、の3パターンすべて。根拠なしに電話禁止が解除・維持されることを防ぐ(Sandbox限定の代替項目)。</description>
+    <errorConditionFormula>AND(
+    DentShift_Do_Not_Call__c = FALSE,
+    ISBLANK(DentShift_Do_Not_Call_Reason__c)
+)</errorConditionFormula>
+    <errorDisplayField>DentShift_Do_Not_Call_Reason__c</errorDisplayField>
+    <errorMessage>電話禁止を解除するには、解除根拠(同意の経緯)の入力が必須です。</errorMessage>
+</ValidationRule>

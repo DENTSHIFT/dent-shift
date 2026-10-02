@@ -44,4 +44,11 @@ describe("Salesforce項目定義とアプリの送信項目の一致", () => {
     expect(Object.values(SF_FIELDS.consultation)).not.toContain("DentShift_Attendance__c");
     expect(Object.values(SF_FIELDS.consultation)).not.toContain("DentShift_Staff_Notes__c");
   });
+
+  it("営業電話禁止(DentShift_Do_Not_Call__c)とその根拠は同期で書き込まない(担当者入力専用)", () => {
+    expect(Object.values(SF_FIELDS.lead)).not.toContain("DentShift_Do_Not_Call__c");
+    expect(Object.values(SF_FIELDS.lead)).not.toContain("DentShift_Do_Not_Call_Reason__c");
+    expect(Object.values(SF_FIELDS.contact)).not.toContain("DentShift_Do_Not_Call__c");
+    expect(Object.values(SF_FIELDS.contact)).not.toContain("DentShift_Do_Not_Call_Reason__c");
+  });
 });

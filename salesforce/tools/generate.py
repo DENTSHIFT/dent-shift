@@ -34,6 +34,8 @@ TYPE_LABELS = {
     "StaffPicklist": "選択リスト",
     "StaffLongText": "ロングテキストエリア",
     "Existing": "既存項目(変更しない)",
+    "ExistingWritable": "既存の標準項目(連携が書き込む)",
+    "StaffCheckbox": "チェックボックス(担当者が入力、同期しない)",
 }
 
 
@@ -66,8 +68,8 @@ def field_xml(name, ftype, desc, opts):
         lines += ["    <type>Number</type>", f"    <precision>{opts['precision']}</precision>",
                   f"    <scale>{opts['scale']}</scale>", "    <required>false</required>", "    <externalId>false</externalId>",
                   "    <unique>false</unique>"]
-    elif ftype == "Checkbox":
-        lines += ["    <type>Checkbox</type>", "    <defaultValue>false</defaultValue>"]
+    elif ftype in ("Checkbox", "StaffCheckbox"):
+        lines += ["    <type>Checkbox</type>", f"    <defaultValue>{'true' if opts.get('default') else 'false'}</defaultValue>"]
     elif ftype in ("DateTime", "Date", "Url"):
         lines += [f"    <type>{ftype}</type>", "    <required>false</required>"]
     elif ftype in ("LongText", "StaffLongText"):
@@ -89,6 +91,8 @@ def field_xml(name, ftype, desc, opts):
                   "            <sorted>false</sorted>\n" + values + "\n        </valueSetDefinition>\n    </valueSet>"]
     else:
         raise ValueError(ftype)
+    if opts.get("trackHistory"):
+        lines += ["    <trackHistory>true</trackHistory>"]
     return ('<?xml version="1.0" encoding="UTF-8"?>\n<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">\n'
             + "\n".join(lines) + "\n</CustomField>\n")
 
@@ -118,7 +122,7 @@ def object_xml(obj, meta):
 
 
 def is_sync_written(ftype):
-    return ftype not in ("StaffPicklist", "StaffLongText", "Existing")
+    return ftype not in ("StaffPicklist", "StaffLongText", "StaffCheckbox", "Existing")
 
 
 def permission_set(name, label, description, objects_perm, field_editable):
@@ -173,7 +177,7 @@ def main():
             members["CustomObject"].append(obj)
         for f in expand(meta["fields"]):
             name, ftype, desc, opts = f
-            if ftype == "Existing":
+            if ftype in ("Existing", "ExistingWritable"):
                 continue
             (odir / "fields" / f"{name}.field-meta.xml").write_text(field_xml(name, ftype, desc, opts))
             members["CustomField"].append(f"{obj}.{name}")
@@ -189,7 +193,7 @@ def main():
         "DentShift_Sales_Staff", "DENT SHIFT 営業・CS担当",
         "DENT SHIFT連携項目の閲覧と、相談の実施結果・メモの入力。連携項目は読み取り専用。",
         lambda obj, meta: {"create": "false", "edit": "true", "viewAll": "false"} if meta.get("custom") else None,
-        lambda ftype: ftype in ("StaffPicklist", "StaffLongText"),
+        lambda ftype: ftype in ("StaffPicklist", "StaffLongText", "StaffCheckbox"),
     )
     (perm_dir / "DentShift_Integration.permissionset-meta.xml").write_text(integration)
     (perm_dir / "DentShift_Sales_Staff.permissionset-meta.xml").write_text(staff)
@@ -216,8 +220,11 @@ def main():
             if ftype == "StaffPicklist":
                 size = " / ".join(opts["values"])
             unique = "一意" if ftype == "ExternalText" else ("外部ID(重複可)" if ftype == "IndexedText" else "")
-            writer = "担当者が入力(同期しない)" if ftype in ("StaffPicklist", "StaffLongText") else ("既存" if ftype == "Existing" else "連携ユーザー")
-            staff_perm = "編集" if ftype in ("StaffPicklist", "StaffLongText") else "閲覧"
+            writer = (
+                "担当者が入力(同期しない)" if ftype in ("StaffPicklist", "StaffLongText", "StaffCheckbox")
+                else ("既存(読み取りのみ)" if ftype == "Existing" else "連携ユーザー")
+            )
+            staff_perm = "編集" if ftype in ("StaffPicklist", "StaffLongText", "StaffCheckbox") else "閲覧"
             rows.append(f"| {meta['label']} (`{obj}`) | `{name}` | {TYPE_LABELS[ftype]} {size} | {unique} | {desc} | {writer} | {staff_perm} |")
     doc = ROOT / "docs" / "SALESFORCE_CRM_FIELD_SPEC.md"
     doc.write_text(

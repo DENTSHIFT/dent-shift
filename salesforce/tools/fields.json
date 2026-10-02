@@ -25,10 +25,16 @@
         ["DentShift_UTM_Content__c", "Text", "初回流入 utm_content", {"length": 255}],
         ["DentShift_UTM_Term__c", "Text", "初回流入 utm_term", {"length": 255}],
         ["DentShift_Signed_Up_At__c", "DateTime", "会員登録日時", {}],
+        ["DentShift_Do_Not_Call__c", "StaffCheckbox", "電話禁止(Sandbox限定の代替項目。標準DoNotCallがこの組織に存在しないため追加。新規Lead作成時はSalesforce項目の既定値でtrue。担当者が医院の同意を得てから解除。同期では書き込まない)", {"default": true}],
+        ["DentShift_Do_Not_Call_Reason__c", "StaffLongText", "電話禁止の解除・変更の根拠(担当者が入力。同意の経緯を記録。同期では書き込まない)", {"length": 500}],
         ["@summary"],
         ["Event_Type__c", "Existing", "最後に同期したイベント種別(既存項目)", {}],
         ["Registration_Step__c", "Existing", "登録ステップ(既存項目)", {}],
-        ["Trial_Ends_At__c", "Existing", "トライアル終了予定(既存項目)", {}]
+        ["Trial_Ends_At__c", "Existing", "トライアル終了予定(既存項目)", {}],
+        ["Email", "ExistingWritable", "メール(標準項目。Stage 1検証で連携専用ユーザーの項目レベルセキュリティ不足が判明し追加)", {}],
+        ["Phone", "ExistingWritable", "電話(標準項目。同上)", {}],
+        ["Website", "ExistingWritable", "Webサイト(標準項目。同上)", {}],
+        ["LeadSource", "ExistingWritable", "リードソース(標準項目。同上)", {}]
       ]
     },
     "Account": {
@@ -40,7 +46,9 @@
         ["DentShift_Current_Plan__c", "Text", "契約プラン(最新の契約)", {"length": 40}],
         ["DentShift_Contract_Status__c", "Text", "契約状態(最新の契約)", {"length": 40}],
         ["DentShift_Ops_Url__c", "Url", "DENT SHIFT管理画面(連携イベント)への参照", {}],
-        ["@summary"]
+        ["@summary"],
+        ["Website", "ExistingWritable", "Webサイト(標準項目。Stage 1検証で連携専用ユーザーの項目レベルセキュリティ不足が判明し追加)", {}],
+        ["Phone", "ExistingWritable", "電話(標準項目。同上)", {}]
       ]
     },
     "Contact": {
@@ -53,7 +61,12 @@
         ["DentShift_Phone_Verified_At__c", "DateTime", "SMS確認日時(本人確認)", {}],
         ["DentShift_SMS_Verification_Exempt__c", "Checkbox", "SMS確認の例外対象", {}],
         ["DentShift_Consent_Accepted_At__c", "DateTime", "規約同意日時", {}],
-        ["DentShift_Signed_Up_At__c", "DateTime", "会員登録日時", {}]
+        ["DentShift_Signed_Up_At__c", "DateTime", "会員登録日時", {}],
+        ["DentShift_Do_Not_Call__c", "StaffCheckbox", "電話禁止(Sandbox限定の代替項目。標準DoNotCallがこの組織に存在しないため追加。新規Contact作成時はSalesforce項目の既定値でtrue。担当者が医院の同意を得てから解除。同期では書き込まない)", {"default": true}],
+        ["DentShift_Do_Not_Call_Reason__c", "StaffLongText", "電話禁止の解除・変更の根拠(担当者が入力。同意の経緯を記録。同期では書き込まない)", {"length": 500}],
+        ["Email", "ExistingWritable", "メール(標準項目。Stage 1検証で連携専用ユーザーの項目レベルセキュリティ不足が判明し追加)", {}],
+        ["Phone", "ExistingWritable", "電話(標準項目。同上)", {}],
+        ["AccountId", "ExistingWritable", "取引先(標準項目。同上。Contact upsert時にAccountの外部ID参照(Account: {DentShift_Clinic_Id__c})経由で書き込まれるため編集可が必要)", {}]
       ]
     },
     "Opportunity": {
@@ -72,7 +85,8 @@
         ["DentShift_Cancel_At__c", "DateTime", "解約予定日時", {}],
         ["DentShift_Ended_At__c", "DateTime", "契約終了日時", {}],
         ["DentShift_Billing_Exempt__c", "Checkbox", "課金免除(永久無料)", {}],
-        ["DentShift_Pilot__c", "Checkbox", "Pilot(先行利用)契約", {}]
+        ["DentShift_Pilot__c", "Checkbox", "Pilot(先行利用)契約", {}],
+        ["AccountId", "ExistingWritable", "取引先(標準項目。Opportunity upsert時にAccountの外部ID参照(Account: {DentShift_Clinic_Id__c})経由で書き込まれるため編集可が必要。Contact.AccountIdと同じ理由で追加)", {}]
       ]
     },
     "DentShift_Diagnosis__c": {
