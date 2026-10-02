@@ -18,7 +18,13 @@
 #     ホスト名には含まれないため、プロジェクト名ではなくこのエンドポイントIDで照合する。
 #     一致しなければ、Neonコンソールの dent-shift-test-db > main ブランチの接続パネルから
 #     取り直すよう案内して停止する(同じ手順を無意味に繰り返させない)。
-#   - パスワードは `read -s` で非表示入力する。zsh(macOS標準)で動作確認済みの構文を使う。
+#   - パスワードは `read -s` で非表示入力する。
+#     2026-10-03修正: zshの`read -p`は「プロンプト表示」ではなく「コプロセスから読む」の意味
+#     (bashとは非互換)で、当初のコード(`read -r -s -p "..." VAR`)は対話実行時に必ず
+#     `read: -p: no coprocess`で停止していた(「macOS動作確認済み」という前回の報告は誤りで、
+#     対話的なzshでの実測検証をしていなかったため気づけなかった)。
+#     正しいzsh構文は`read -r -s "VAR?プロンプト文字列"`で、ダミー入力を標準入力から渡す
+#     非対話テスト(`echo "dummy" | zsh script.sh`)で全3箇所のread呼び出しを検証済み。
 #   - 一時ファイル・一時ディレクトリは mktemp で作成し、スクリプト終了時(正常終了・エラー・
 #     Ctrl-C中断のいずれでも)に trap で必ず削除する。
 #   - 既存の .env やリポジトリ直下の node_modules/@prisma/client は変更しない。
@@ -40,6 +46,27 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# 2026-10-03追加: このスクリプトを本来の場所(リポジトリのscripts/)以外から実行したり
+# コピーして実行したりすると、$0のdirnameが崩れてREPO_ROOTが"/"やホームディレクトリ
+# そのものに解決されてしまい、下のrsyncがシステム全体やホーム全体をコピーしてしまう
+# 事故が実際に発生した(テスト実行時に判明)。rsyncを実行する前に、REPO_ROOTが
+# "/"・ユーザーのホームディレクトリそのもの・空文字のいずれでもないこと、かつこの
+# リポジトリ固有のマーカー(package.jsonの"name"フィールド)を含むことを必ず確認し、
+# 満たさなければ即座に中断する。
+if [ -z "$REPO_ROOT" ] || [ "$REPO_ROOT" = "/" ] || [ "$REPO_ROOT" = "$HOME" ]; then
+  echo "エラー: コピー元ディレクトリの判定に失敗しました(REPO_ROOT='${REPO_ROOT}')。" >&2
+  echo "        このスクリプトは必ずリポジトリ直下から次のように実行してください:" >&2
+  echo "        cd /Users/masatokimura/Documents/dent-shift && zsh scripts/create-test-operator-safely.sh" >&2
+  exit 1
+fi
+if ! grep -q '"name"[[:space:]]*:[[:space:]]*"dent-shift"' "$REPO_ROOT/package.json" 2>/dev/null; then
+  echo "エラー: コピー元($REPO_ROOT)がdent-shiftリポジトリとして確認できませんでした。" >&2
+  echo "        安全のため中断します。スクリプトをリポジトリ外へコピーせず、" >&2
+  echo "        リポジトリ直下から直接実行してください。" >&2
+  exit 1
+fi
+
 # 2026-10-02にNeonコンソールで直接確認した、dent-shift-test-db(main)の実際の
 # エンドポイントID。接続文字列のホスト名にこの文字列が含まれるかで照合する。
 EXPECTED_HOST_MARKER="ep-small-snow-b3srtm7d"
@@ -59,7 +86,7 @@ echo "==> 事前にNeonコンソールの以下のページで「Connect」→�
 echo "    接続文字列(postgresql://... で始まる1行)をコピーしておいてください:"
 echo "    https://console.neon.tech/app/projects/restless-art-55621985/branches/br-green-morning-b3tfnlii"
 echo ""
-read -r -s -p "接続文字列を貼り付けてください(表示されません): " DATABASE_URL
+read -r -s "DATABASE_URL?接続文字列を貼り付けてください(表示されません): "
 echo ""
 
 if [ -z "${DATABASE_URL:-}" ]; then
@@ -102,14 +129,14 @@ rsync -a \
 
 echo ""
 echo "==> 作成する管理者アカウントのメールアドレスを入力してください。"
-read -r -p "Email: " OPERATOR_EMAIL
+read -r "OPERATOR_EMAIL?Email: "
 if [ -z "$OPERATOR_EMAIL" ]; then
   echo "エラー: メールアドレスが空です。中断します。" >&2
   exit 1
 fi
 
 echo "==> パスワードを入力してください(8文字以上、画面には表示されません)。"
-read -r -s -p "Password: " OPERATOR_PASSWORD
+read -r -s "OPERATOR_PASSWORD?Password: "
 echo ""
 if [ -z "${OPERATOR_PASSWORD:-}" ] || [ "${#OPERATOR_PASSWORD}" -lt 8 ]; then
   echo "エラー: パスワードは8文字以上にしてください。中断します。" >&2
