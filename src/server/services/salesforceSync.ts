@@ -345,7 +345,7 @@ async function adoptConvertedRecord(input: {
  * 完全に防げる」とは言い切れない。現実的な発生可能性は極めて低い(同一医院・同一
  * メールのLeadという限定された条件下でのみ再送する設計のため)が、断定しない。
  */
-async function upsertContactAllowingOwnLeadDuplicate(input: {
+export async function upsertContactAllowingOwnLeadDuplicate(input: {
   config: SalesforceOAuthConfig;
   clinic: ClinicSnapshot;
   contact: ContactSnapshot;
