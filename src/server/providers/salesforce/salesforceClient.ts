@@ -6,9 +6,12 @@ const REQUEST_TIMEOUT_MS = 10_000;
 // Salesforceのセッション既定有効期限(2時間)より十分短く保持し、401時は即時再取得する。
 const TOKEN_TTL_MS = 20 * 60 * 1000;
 
-// DUPLICATES_DETECTED応答に含まれ得る、検出された重複候補1件分(オブジェクト種別+ID)。
-// 値(Email等の個人情報)は一切保持しない。種別・IDが読み取れなかった候補はnullのまま返す
-// (「候補はあるが種別かIDが不明」を「候補なし」と混同しないため)。
+// DUPLICATES_DETECTED応答に含まれる、検出された重複候補1件分(オブジェクト種別+ID)。
+// 値(Email等の個人情報)は一切保持しない。SalesforceDeliveryError.duplicateCandidates
+// がnullでない配列として返る場合、その中の各要素は必ずsobjectType・idとも
+// 文字列で埋まっている(一部だけ読み取れた不完全な候補は配列に含めず、
+// 応答全体をduplicateCandidates=nullとして扱う。詳細はsalesforceClient.tsの
+// extractDuplicateCandidates()を参照)。
 export interface SalesforceDuplicateCandidate {
   sobjectType: string | null;
   id: string | null;
@@ -102,27 +105,40 @@ async function getAccessToken(config: SalesforceOAuthConfig, forceRefresh = fals
 // DUPLICATES_DETECTEDの応答本体から、検出された重複候補(オブジェクト種別+ID)だけを
 // 取り出す。Salesforceの実際のキー名は"duplicateResult"だが、APIバージョンによっては
 // "duplicateResut"という綴りで返ることが確認されているため両方を見る。項目の値
-// (Email等)は一切読み取らない。1件もmatchRecordsが見つからない場合はnullを返す
-// (「候補が0件」と「構造自体が無い/未知」を区別しないため、呼び出し側は両方とも
-// 「候補情報が不足」として扱うこと)。
+// (Email等)は一切読み取らない。
+//
+// 2026-10-04修正: 一部のmatchResult・matchRecord・candidateレコードだけ形式が
+// 読み取れた場合に、読み取れなかった分を読み飛ばして「読み取れた候補だけ」を
+// 返すと、呼び出し側が実際には存在する別の候補を見落としたまま保存許可して
+// しまう恐れがある。そのため、構造のどこか1箇所でも期待した形式(配列・文字列の
+// Id・文字列のsobjectType)と異なる場合は、読み取れた分を部分的に返さず、
+// 応答全体を「候補情報が不足している」として呼び出し側へnullで伝える
+// (読み飛ばしによる取りこぼしより、安全側に倒して再送を止めることを優先する)。
 function extractDuplicateCandidates(first: unknown): SalesforceDuplicateCandidate[] | null {
   const container = first as { duplicateResult?: unknown; duplicateResut?: unknown } | null;
   const duplicateResult = container?.duplicateResult ?? container?.duplicateResut;
-  const matchResults = (duplicateResult as { matchResults?: unknown } | undefined)?.matchResults;
-  if (!Array.isArray(matchResults)) return null;
+  if (duplicateResult === null || duplicateResult === undefined) return null;
+  const matchResults = (duplicateResult as { matchResults?: unknown }).matchResults;
+  if (!Array.isArray(matchResults) || matchResults.length === 0) return null;
 
   const candidates: SalesforceDuplicateCandidate[] = [];
   for (const matchResult of matchResults) {
     const matchRecords = (matchResult as { matchRecords?: unknown } | null)?.matchRecords;
-    if (!Array.isArray(matchRecords)) continue;
+    // matchRecordsが配列でない・空の場合、この照合結果の中身を読み取れない
+    // (=候補が本当に0件なのか、構造が未知なだけなのか区別できない)ため、
+    // 読み飛ばさず応答全体を情報不足として扱う。
+    if (!Array.isArray(matchRecords) || matchRecords.length === 0) return null;
     for (const matchRecord of matchRecords) {
       const record = (matchRecord as { record?: unknown } | null)?.record as
         | { Id?: unknown; attributes?: { type?: unknown } }
         | undefined;
-      candidates.push({
-        sobjectType: typeof record?.attributes?.type === "string" ? record.attributes.type : null,
-        id: typeof record?.Id === "string" ? record.Id : null,
-      });
+      const id = typeof record?.Id === "string" && record.Id ? record.Id : null;
+      const sobjectType =
+        typeof record?.attributes?.type === "string" && record.attributes.type ? record.attributes.type : null;
+      // ID・種別のどちらかが欠けている(=形式不正)候補が1件でもあれば、
+      // その候補だけ読み飛ばさず、応答全体を情報不足として扱う。
+      if (id === null || sobjectType === null) return null;
+      candidates.push({ sobjectType, id });
     }
   }
   return candidates.length > 0 ? candidates : null;

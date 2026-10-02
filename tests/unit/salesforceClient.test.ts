@@ -197,6 +197,75 @@ describe("upsertSalesforceRecordByExternalId", () => {
     expect(error.duplicateCandidates).toEqual([{ sobjectType: "Lead", id: "00Qx" }]);
   });
 
+  it("複数のmatchResultsの一方に不正な候補(ID欠損)が混ざる場合、他が正常でも全体をnullにする", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(tokenResponse())
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify([
+              {
+                errorCode: "DUPLICATES_DETECTED",
+                duplicateResult: {
+                  matchResults: [
+                    {
+                      rule: "Standard Lead Matching Rule",
+                      matchRecords: [{ record: { Id: "00Qown000000000AAA", attributes: { type: "Lead" } } }],
+                    },
+                    {
+                      rule: "Standard Contact Duplicate Rule",
+                      // ID欠損の不正な候補(例: Salesforce側の応答が一部欠けている場合)
+                      matchRecords: [{ record: { attributes: { type: "Contact" } } }],
+                    },
+                  ],
+                },
+              },
+            ]),
+            { status: 400 }
+          )
+        )
+    );
+
+    const error = await upsert().catch((e) => e);
+    // 残りの「正常に見える」候補だけで保存許可してしまわないよう、全体を情報不足(null)扱いにする
+    expect(error.duplicateCandidates).toBeNull();
+  });
+
+  it("1つのmatchRecords内で、正常な候補の後にtype欠損の候補が混ざる場合も全体をnullにする", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(tokenResponse())
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify([
+              {
+                errorCode: "DUPLICATES_DETECTED",
+                duplicateResult: {
+                  matchResults: [
+                    {
+                      rule: "Standard Lead Matching Rule",
+                      matchRecords: [
+                        { record: { Id: "00Qown000000000AAA", attributes: { type: "Lead" } } },
+                        { record: { Id: "00Qextra000000AAA", attributes: {} } }, // typeが空
+                      ],
+                    },
+                  ],
+                },
+              },
+            ]),
+            { status: 400 }
+          )
+        )
+    );
+
+    const error = await upsert().catch((e) => e);
+    expect(error.duplicateCandidates).toBeNull();
+  });
+
   it("重複候補の構造自体が応答にない場合はduplicateCandidates=nullを返す", async () => {
     vi.stubGlobal(
       "fetch",
