@@ -42,14 +42,27 @@ const fieldsOf = (object) =>
     .filter((f) => f[1] !== "Lookup")
     .map((f) => f[0]);
 
-// 対象のFlexiPageごとに: 追加する項目と、関連リスト(relatedListApiNameは子リレーションのrelationshipName)。
+// 対象のFlexiPageごとに: 対象オブジェクト、追加する項目、関連リスト(relatedListApiNameは子リレーションのrelationshipName)。
+// LeadはこのSandboxでは動的な「レコード詳細」コンポーネントのページのため対象外
+// (クラシックのページレイアウト変更がそのまま画面に反映される。実機確認済み)。
 const PAGES = {
   Account_Record_Page_Three_Column: {
+    object: "Account",
     fields: fieldsOf("Account"),
     relatedLists: [
       { relatedListApiName: "DentShift_Diagnoses__r", label: "DENT SHIFT診断" },
       { relatedListApiName: "DentShift_Consultations__r", label: "DENT SHIFT相談予約" },
     ],
+  },
+  Contact_Record_Page_Three_Column: {
+    object: "Contact",
+    fields: fieldsOf("Contact"),
+    relatedLists: [],
+  },
+  Opportunity_Record_Page_Three_Column: {
+    object: "Opportunity",
+    fields: fieldsOf("Opportunity"),
+    relatedLists: [],
   },
 };
 
@@ -171,14 +184,14 @@ ${items}
     </flexiPageRegions>`;
 }
 
-function fieldSectionRelatedListsFacet(name, fieldSectionColumnsFacetName, relatedLists) {
+function fieldSectionRelatedListsFacet(name, fieldSectionColumnsFacetName, relatedLists, object) {
   const relatedListItems = relatedLists
     .map(
       (r, i) => `        <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
                     <name>parentFieldApiName</name>
-                    <value>Account.Id</value>
+                    <value>${object}.Id</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>relatedListApiName</name>
@@ -306,7 +319,14 @@ async function main() {
       const columnList = missingFields.slice(half).length ? [leftFacetName, rightFacetName] : [leftFacetName];
       additions.push(columnFacet(columnsFacetName, columnList));
     }
-    additions.push(fieldSectionRelatedListsFacet(tabBodyFacetName, columnsFacetName, missingLists.length ? missingLists : plan.relatedLists.filter((r) => !missingLists.includes(r))));
+    additions.push(
+      fieldSectionRelatedListsFacet(
+        tabBodyFacetName,
+        columnsFacetName,
+        missingLists.length ? missingLists : plan.relatedLists.filter((r) => !missingLists.includes(r)),
+        plan.object
+      )
+    );
     // 新しいDENT SHIFTタブ自体を追記する(関連リストのみ不足している場合も、項目セクション自体は
     // 既存のタブに既に存在しないため、常に新規タブとして追加する)。
     const newTabXml = `        <itemInstances>
