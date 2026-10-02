@@ -6,10 +6,20 @@ const REQUEST_TIMEOUT_MS = 10_000;
 // Salesforceのセッション既定有効期限(2時間)より十分短く保持し、401時は即時再取得する。
 const TOKEN_TTL_MS = 20 * 60 * 1000;
 
+// DUPLICATES_DETECTED応答に含まれ得る、検出された重複候補1件分(オブジェクト種別+ID)。
+// 値(Email等の個人情報)は一切保持しない。種別・IDが読み取れなかった候補はnullのまま返す
+// (「候補はあるが種別かIDが不明」を「候補なし」と混同しないため)。
+export interface SalesforceDuplicateCandidate {
+  sobjectType: string | null;
+  id: string | null;
+}
+
 export class SalesforceDeliveryError extends Error {
   constructor(
     message: string,
-    readonly errorCode: string | null = null
+    readonly errorCode: string | null = null,
+    // errorCode==="DUPLICATES_DETECTED"の場合のみ意味を持つ。それ以外は常にnull。
+    readonly duplicateCandidates: ReadonlyArray<SalesforceDuplicateCandidate> | null = null
   ) {
     super(message);
   }
@@ -89,18 +99,51 @@ async function getAccessToken(config: SalesforceOAuthConfig, forceRefresh = fals
   return cachedToken;
 }
 
-// Salesforceのエラー応答([{ errorCode, message, fields }])からerrorCodeと項目名だけを取り出す。
-// messageには送信値が含まれ得るため、例外・ログへは含めない。
-async function readErrorSummary(response: Response): Promise<{ errorCode: string | null; fields: string[] }> {
+// DUPLICATES_DETECTEDの応答本体から、検出された重複候補(オブジェクト種別+ID)だけを
+// 取り出す。Salesforceの実際のキー名は"duplicateResult"だが、APIバージョンによっては
+// "duplicateResut"という綴りで返ることが確認されているため両方を見る。項目の値
+// (Email等)は一切読み取らない。1件もmatchRecordsが見つからない場合はnullを返す
+// (「候補が0件」と「構造自体が無い/未知」を区別しないため、呼び出し側は両方とも
+// 「候補情報が不足」として扱うこと)。
+function extractDuplicateCandidates(first: unknown): SalesforceDuplicateCandidate[] | null {
+  const container = first as { duplicateResult?: unknown; duplicateResut?: unknown } | null;
+  const duplicateResult = container?.duplicateResult ?? container?.duplicateResut;
+  const matchResults = (duplicateResult as { matchResults?: unknown } | undefined)?.matchResults;
+  if (!Array.isArray(matchResults)) return null;
+
+  const candidates: SalesforceDuplicateCandidate[] = [];
+  for (const matchResult of matchResults) {
+    const matchRecords = (matchResult as { matchRecords?: unknown } | null)?.matchRecords;
+    if (!Array.isArray(matchRecords)) continue;
+    for (const matchRecord of matchRecords) {
+      const record = (matchRecord as { record?: unknown } | null)?.record as
+        | { Id?: unknown; attributes?: { type?: unknown } }
+        | undefined;
+      candidates.push({
+        sobjectType: typeof record?.attributes?.type === "string" ? record.attributes.type : null,
+        id: typeof record?.Id === "string" ? record.Id : null,
+      });
+    }
+  }
+  return candidates.length > 0 ? candidates : null;
+}
+
+// Salesforceのエラー応答([{ errorCode, message, fields, duplicateResult? }])から
+// errorCode・項目名・(あれば)重複候補の種別+IDだけを取り出す。messageや候補レコードの
+// 項目値には送信値・個人情報が含まれ得るため、例外・ログへは一切含めない。
+async function readErrorSummary(
+  response: Response
+): Promise<{ errorCode: string | null; fields: string[]; duplicateCandidates: SalesforceDuplicateCandidate[] | null }> {
   try {
     const body = (await response.json()) as unknown;
     const first = Array.isArray(body) ? (body[0] as { errorCode?: unknown; fields?: unknown }) : null;
     return {
       errorCode: typeof first?.errorCode === "string" ? first.errorCode : null,
       fields: Array.isArray(first?.fields) ? first.fields.filter((f): f is string => typeof f === "string") : [],
+      duplicateCandidates: extractDuplicateCandidates(first),
     };
   } catch {
-    return { errorCode: null, fields: [] };
+    return { errorCode: null, fields: [], duplicateCandidates: null };
   }
 }
 
@@ -111,8 +154,11 @@ async function requestSalesforce(
   path: string,
   label: string,
   body?: Record<string, unknown>,
-  options?: { allowDuplicateSave?: boolean }
+  options?: { allowDuplicateSave?: boolean; includeDuplicateRecordDetails?: boolean }
 ): Promise<Response> {
+  const duplicateRuleHeaderParts: string[] = [];
+  if (options?.allowDuplicateSave) duplicateRuleHeaderParts.push("allowSave=true");
+  if (options?.includeDuplicateRecordDetails) duplicateRuleHeaderParts.push("includeRecordDetails=true");
   const send = async (token: SalesforceAccessToken) => {
     try {
       return await fetch(`${token.instanceUrl}/services/data/${API_VERSION}${path}`, {
@@ -120,10 +166,12 @@ async function requestSalesforce(
         headers: {
           Authorization: `Bearer ${token.accessToken}`,
           ...(body ? { "Content-Type": "application/json" } : {}),
-          // 呼び出し側が個別に安全確認した場合だけ明示的に付与する(既定では付けない=
-          // Setup側の重複ルール判定を常にそのまま尊重する)。
-          ...(options?.allowDuplicateSave
-            ? { "Sforce-Duplicate-Rule-Header": "allowSave=true" }
+          // allowSave=trueは呼び出し側が個別に安全確認した場合だけ明示的に付与する
+          // (既定では付けない=Setup側の重複ルール判定を常にそのまま尊重する)。
+          // includeRecordDetails=trueは、失敗時に重複候補のオブジェクト種別/IDを
+          // 読み取れるようにするためだけに使い、allowSaveの値には影響しない。
+          ...(duplicateRuleHeaderParts.length > 0
+            ? { "Sforce-Duplicate-Rule-Header": duplicateRuleHeaderParts.join("; ") }
             : {}),
         },
         ...(body ? { body: JSON.stringify(body) } : {}),
@@ -145,7 +193,8 @@ async function throwForResponse(response: Response, label: string): Promise<neve
   const fieldsNote = summary.fields.length ? ` fields=${summary.fields.join(",")}` : "";
   throw new SalesforceDeliveryError(
     `Salesforce ${label} returned HTTP ${response.status}${summary.errorCode ? ` ${summary.errorCode}` : ""}${fieldsNote}.`,
-    summary.errorCode
+    summary.errorCode,
+    summary.duplicateCandidates
   );
 }
 
@@ -172,6 +221,10 @@ export async function upsertSalesforceRecordByExternalId(input: {
   // 自分自身の関連レコードだと確認できた場合だけtrueを渡す。既定はfalse
   // (Setup側の重複ルール判定をそのまま尊重し、未確認の重複は常に拒否させる)。
   allowDuplicateSave?: boolean;
+  // 2026-10-03追加: trueの場合、DUPLICATES_DETECTED発生時に重複候補の
+  // オブジェクト種別+IDをエラーへ含めるようSalesforceへ要求する(値は含まれない)。
+  // allowDuplicateSaveの可否には影響しない(確認用の読み取りフラグ)。
+  includeDuplicateRecordDetails?: boolean;
 }): Promise<SalesforceUpsertResult> {
   const label = `${input.sobject} upsert`;
   const response = await requestSalesforce(
@@ -180,7 +233,10 @@ export async function upsertSalesforceRecordByExternalId(input: {
     sobjectPath(input.sobject, input.externalIdField, input.externalId),
     label,
     input.fields,
-    { allowDuplicateSave: input.allowDuplicateSave }
+    {
+      allowDuplicateSave: input.allowDuplicateSave,
+      includeDuplicateRecordDetails: input.includeDuplicateRecordDetails,
+    }
   );
   if (!response.ok) await throwForResponse(response, label);
 

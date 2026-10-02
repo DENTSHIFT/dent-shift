@@ -318,14 +318,20 @@ async function adoptConvertedRecord(input: {
 }
 
 /**
- * 2026-10-03追加(読み取り調査に基づく提案、承認待ち・未デプロイ)。
+ * 2026-10-03追加・2026-10-04修正(読み取り調査に基づく提案、承認待ち・未デプロイ)。
  * Contact upsertがSalesforce標準の重複ルールでHTTP 400 DUPLICATES_DETECTEDになった場合、
- * 無条件にallowSave=trueで再送するのではなく、まずこの医院自身の外部ID(clinic.id)で
- * Leadを読み取り専用で引き、そのLeadのEmailが今回upsertしようとしているContactの
- * Emailと一致し、かつ未コンバート(IsConverted=false)であることを確認してからだけ、
- * 「自分自身の同期処理が直前に作ったLeadとの衝突」と判断して再送する。
- * 一致しない・Leadが見つからない場合は、無関係な重複の可能性があるため、
- * allowSaveは一切使わず元のエラーをそのまま呼び出し元へ伝える(安全側に倒す)。
+ * 無条件にallowSave=trueで再送しない。Salesforceが実際に返した重複候補一覧
+ * (duplicateCandidates: オブジェクト種別+IDのみ、値は含まない)を取得し、
+ * 「候補が1件以上あり、かつそのすべてが"この医院自身の、今回のContactと同じEmailを持つ、
+ * 未コンバートのLead"と一致する」場合だけ再送する。
+ * 以下はすべて「候補情報が不足」として扱い、確認なしにallowSaveは使わない(安全側に倒す):
+ *   - 候補情報自体が返ってこない(includeRecordDetails非対応の環境・古いAPIバージョン等)
+ *   - 候補が0件(構造はあるが中身がない)
+ *   - 候補にContact等Lead以外のオブジェクトが含まれる(別医院のContactなど無関係な重複)
+ *   - 候補のLead IDが、この医院自身のLead(外部ID=clinic.id)と一致しない
+ *   - 複数の候補があり、その中に上記いずれかに該当しないものが1件でもある
+ * これにより、「たまたま自分のLeadのEmailが一致していた」だけで、実際に検出された
+ * 別の無関係な重複まで一緒に保存許可してしまう事故を防ぐ。
  */
 async function upsertContactAllowingOwnLeadDuplicate(input: {
   config: SalesforceOAuthConfig;
@@ -343,6 +349,7 @@ async function upsertContactAllowingOwnLeadDuplicate(input: {
       externalIdField: SF_FIELDS.contact.externalId,
       externalId: contact.id,
       fields,
+      includeDuplicateRecordDetails: true,
     });
     return;
   } catch (error) {
@@ -350,6 +357,11 @@ async function upsertContactAllowingOwnLeadDuplicate(input: {
       !(error instanceof SalesforceDeliveryError) ||
       error.errorCode !== DUPLICATES_DETECTED_ERROR_CODE
     ) {
+      throw error;
+    }
+    const candidates = error.duplicateCandidates;
+    if (!candidates || candidates.length === 0) {
+      // 候補情報が取れなかった場合、確認のしようがないため拒否を維持する。
       throw error;
     }
     const ownLead = await getSalesforceRecordByExternalId({
@@ -360,13 +372,19 @@ async function upsertContactAllowingOwnLeadDuplicate(input: {
       fields: ["Email", "IsConverted"],
     });
     const ownLeadEmail = typeof ownLead?.Email === "string" ? ownLead.Email.toLowerCase() : null;
-    const isSameUnconvertedLead =
-      ownLead !== null &&
-      ownLead.IsConverted === false &&
-      ownLeadEmail !== null &&
-      ownLeadEmail === contact.email.toLowerCase();
-    if (!isSameUnconvertedLead) {
-      // 無関係な重複の可能性があるため、確認なしにallowSaveは使わない。
+    const ownLeadIsSafe =
+      ownLead !== null && ownLead.IsConverted === false && ownLeadEmail === contact.email.toLowerCase();
+    const allCandidatesAreOwnLead =
+      ownLeadIsSafe &&
+      candidates.every(
+        (candidate) =>
+          candidate.sobjectType === "Lead" &&
+          typeof candidate.id === "string" &&
+          sameSalesforceId(candidate.id, ownLead.Id)
+      );
+    if (!allCandidatesAreOwnLead) {
+      // 候補の中に、この医院自身の未コンバートLead以外(別オブジェクト・別レコード)が
+      // 1件でも含まれる可能性があるため、確認なしにallowSaveは使わない。
       throw error;
     }
     await beforeWrite();

@@ -301,51 +301,61 @@ describe("syncIntegrationEvent", () => {
     expect(upsertCallsFor("Contact")).toHaveLength(0);
   });
 
-  describe("2026-10-03追加: Contact upsertがDUPLICATES_DETECTEDになった場合の限定的な再送", () => {
-    function duplicatesDetectedError() {
-      return new SalesforceDeliveryError("Salesforce Contact upsert returned HTTP 400 DUPLICATES_DETECTED.", "DUPLICATES_DETECTED");
+  describe("2026-10-04修正: Contact upsertがDUPLICATES_DETECTEDになった場合の限定的な再送(重複候補を実際に検証)", () => {
+    function duplicatesDetectedError(
+      duplicateCandidates: { sobjectType: string | null; id: string | null }[] | null
+    ) {
+      return new SalesforceDeliveryError(
+        "Salesforce Contact upsert returned HTTP 400 DUPLICATES_DETECTED.",
+        "DUPLICATES_DETECTED",
+        duplicateCandidates
+      );
+    }
+    function mockOwnLead(overrides: Record<string, unknown> = {}) {
+      mocks.getByExternalId.mockImplementation(async ({ sobject, externalId }) => {
+        if (sobject === "Lead" && externalId === "clinic_1") {
+          return { Id: "00Qown000000000AAA", Email: CONTACT.email, IsConverted: false, ...overrides };
+        }
+        return null;
+      });
     }
 
-    it("同じ医院・同じメールの未コンバートLead(自分自身が直前に作ったもの)だけを確認してから再送する", async () => {
+    it("候補が1件だけで、それがこの医院自身の未コンバートLeadだと確認できた場合だけ再送する", async () => {
       mocks.eventFindUnique.mockResolvedValue(event({ eventType: "email_verified" }));
       mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
       mocks.upsert
         .mockResolvedValueOnce({ id: "001AAA", created: true }) // Account
-        .mockRejectedValueOnce(duplicatesDetectedError()) // Contact: 1回目(失敗)
+        .mockRejectedValueOnce(duplicatesDetectedError([{ sobjectType: "Lead", id: "00Qown000000000AAA" }])) // Contact: 1回目(失敗)
         .mockResolvedValueOnce({ id: "003AAA", created: true }); // Contact: 2回目(allowSaveで成功)
-      mocks.getByExternalId.mockImplementation(async ({ sobject, externalId }) => {
-        if (sobject === "Lead" && externalId === "clinic_1") {
-          return { Id: "00Qown", Email: CONTACT.email, IsConverted: false };
-        }
-        return null;
-      });
+      mockOwnLead();
 
       await syncIntegrationEvent("evt_1");
 
       const contactCalls = upsertCallsFor("Contact");
       expect(contactCalls).toHaveLength(2);
+      expect(contactCalls[0].includeDuplicateRecordDetails).toBe(true);
       expect(contactCalls[0].allowDuplicateSave).toBeFalsy();
       expect(contactCalls[1].allowDuplicateSave).toBe(true);
-      expect(mocks.getByExternalId).toHaveBeenCalledWith(
-        expect.objectContaining({ sobject: "Lead", externalIdField: "DentShift_Clinic_Id__c", externalId: "clinic_1" })
-      );
       expect(mocks.eventUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: "synced" }) })
       );
     });
 
-    it("一致するLeadが見つからない場合はallowSaveを使わず、元のエラーのまま失敗させる(要確認)", async () => {
+    it("重複候補の情報が1件も返らなかった場合はallowSaveを使わず、元のエラーのまま失敗させる", async () => {
       mocks.eventFindUnique.mockResolvedValue(event({ eventType: "email_verified" }));
       mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
       mocks.upsert
-        .mockResolvedValueOnce({ id: "001AAA", created: true }) // Account
-        .mockRejectedValueOnce(duplicatesDetectedError()); // Contact: 失敗のまま
-      mocks.getByExternalId.mockResolvedValue(null); // 自分自身のLeadが見つからない
+        .mockResolvedValueOnce({ id: "001AAA", created: true })
+        .mockRejectedValueOnce(duplicatesDetectedError(null)); // 候補情報なし
+      mockOwnLead();
 
       await expect(syncIntegrationEvent("evt_1")).rejects.toThrow("DUPLICATES_DETECTED");
 
-      const contactCalls = upsertCallsFor("Contact");
-      expect(contactCalls).toHaveLength(1);
+      expect(upsertCallsFor("Contact")).toHaveLength(1);
+      // 候補情報が無い時点で打ち切るため、自医院Leadの確認クエリ自体を呼ばない
+      // (readConvertedLead()による医院単位の1回を除く)。
+      const leadReads = mocks.getByExternalId.mock.calls.filter(([arg]) => arg.sobject === "Lead");
+      expect(leadReads).toHaveLength(1);
       expect(mocks.eventUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ status: "failed", lastError: expect.stringContaining("DUPLICATES_DETECTED") }),
@@ -353,18 +363,16 @@ describe("syncIntegrationEvent", () => {
       );
     });
 
-    it("同じ医院のLeadでもメールアドレスが異なる(無関係な重複の可能性)場合はallowSaveを使わない", async () => {
+    it("候補に自医院のLeadと無関係なContactが含まれる場合は、Leadだけ一致していてもallowSaveを使わない", async () => {
       mocks.eventFindUnique.mockResolvedValue(event({ eventType: "email_verified" }));
       mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
-      mocks.upsert
-        .mockResolvedValueOnce({ id: "001AAA", created: true }) // Account
-        .mockRejectedValueOnce(duplicatesDetectedError());
-      mocks.getByExternalId.mockImplementation(async ({ sobject, externalId }) => {
-        if (sobject === "Lead" && externalId === "clinic_1") {
-          return { Id: "00Qother", Email: "someone-else@example.com", IsConverted: false };
-        }
-        return null;
-      });
+      mocks.upsert.mockResolvedValueOnce({ id: "001AAA", created: true }).mockRejectedValueOnce(
+        duplicatesDetectedError([
+          { sobjectType: "Lead", id: "00Qown000000000AAA" }, // 自医院のLead(一致)
+          { sobjectType: "Contact", id: "003OTHER00000AAA" }, // 別医院の取引先責任者(無関係)
+        ])
+      );
+      mockOwnLead();
 
       await expect(syncIntegrationEvent("evt_1")).rejects.toThrow("DUPLICATES_DETECTED");
 
@@ -374,18 +382,32 @@ describe("syncIntegrationEvent", () => {
       );
     });
 
-    it("同じ医院・同じメールでもLeadが既にコンバート済みならallowSaveを使わない", async () => {
+    it("候補が複数のLeadで、自医院のLead以外も含まれる場合はallowSaveを使わない", async () => {
+      mocks.eventFindUnique.mockResolvedValue(event({ eventType: "email_verified" }));
+      mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
+      mocks.upsert.mockResolvedValueOnce({ id: "001AAA", created: true }).mockRejectedValueOnce(
+        duplicatesDetectedError([
+          { sobjectType: "Lead", id: "00Qown000000000AAA" }, // 自医院のLead(一致)
+          { sobjectType: "Lead", id: "00QOTHER000000AAA" }, // 別医院の未コンバートLead(無関係)
+        ])
+      );
+      mockOwnLead();
+
+      await expect(syncIntegrationEvent("evt_1")).rejects.toThrow("DUPLICATES_DETECTED");
+
+      expect(upsertCallsFor("Contact")).toHaveLength(1);
+      expect(mocks.eventUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) })
+      );
+    });
+
+    it("候補が自医院のLead1件のみでも、メールアドレスが異なればallowSaveを使わない", async () => {
       mocks.eventFindUnique.mockResolvedValue(event({ eventType: "email_verified" }));
       mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
       mocks.upsert
         .mockResolvedValueOnce({ id: "001AAA", created: true })
-        .mockRejectedValueOnce(duplicatesDetectedError());
-      mocks.getByExternalId.mockImplementation(async ({ sobject, externalId }) => {
-        if (sobject === "Lead" && externalId === "clinic_1") {
-          return { Id: "00Qconverted", Email: CONTACT.email, IsConverted: true };
-        }
-        return null;
-      });
+        .mockRejectedValueOnce(duplicatesDetectedError([{ sobjectType: "Lead", id: "00Qown000000000AAA" }]));
+      mockOwnLead({ Email: "someone-else@example.com" });
 
       await expect(syncIntegrationEvent("evt_1")).rejects.toThrow("DUPLICATES_DETECTED");
 
@@ -395,7 +417,23 @@ describe("syncIntegrationEvent", () => {
       );
     });
 
-    it("DUPLICATES_DETECTED以外のエラーでは、重複確認をせずそのまま失敗させる", async () => {
+    it("候補が自医院のLead1件のみでも、既にコンバート済みならallowSaveを使わない", async () => {
+      mocks.eventFindUnique.mockResolvedValue(event({ eventType: "email_verified" }));
+      mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
+      mocks.upsert
+        .mockResolvedValueOnce({ id: "001AAA", created: true })
+        .mockRejectedValueOnce(duplicatesDetectedError([{ sobjectType: "Lead", id: "00Qown000000000AAA" }]));
+      mockOwnLead({ IsConverted: true });
+
+      await expect(syncIntegrationEvent("evt_1")).rejects.toThrow("DUPLICATES_DETECTED");
+
+      expect(upsertCallsFor("Contact")).toHaveLength(1);
+      expect(mocks.eventUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) })
+      );
+    });
+
+    it("DUPLICATES_DETECTED以外のエラーでは、重複候補の確認をせずそのまま失敗させる", async () => {
       mocks.eventFindUnique.mockResolvedValue(event({ eventType: "email_verified" }));
       mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
       mocks.upsert
@@ -411,6 +449,54 @@ describe("syncIntegrationEvent", () => {
       expect(upsertCallsFor("Contact")).toHaveLength(1);
       expect(mocks.eventUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: "failed", lastError: expect.stringContaining("INVALID_FIELD") }) })
+      );
+    });
+
+    it("2026-10-04追加: 診断段階でLeadが作成され、後日会員登録してもそのLeadは残存するが、"
+      + "同一医院・同一メールの候補としてのみ検証されて同期が続けられる(Lead自体の自動変換・削除はしない)", async () => {
+      // フェーズ1: 診断のみ(Contactなし)。従来通りLeadが作成される。
+      mocks.eventFindUnique.mockResolvedValue(event({ id: "evt_diag", eventType: "diagnosis_completed" }));
+      mocks.clinicFindUnique.mockResolvedValue(clinicRow());
+      mocks.upsert.mockResolvedValueOnce({ id: "00Qlead1", created: true });
+
+      await syncIntegrationEvent("evt_diag");
+
+      expect(upsertCallsFor("Lead")).toHaveLength(1);
+      expect(upsertCallsFor("Account")).toHaveLength(0);
+
+      // フェーズ2: 後日会員登録(Contactが増える)。ライフサイクル修正によりLeadは
+      // 再upsertされないが、フェーズ1で作られたLead自体はSalesforce上に残存したまま
+      // (自動コンバート・削除は未承認のため実施しない)。そのLeadとの重複検出が
+      // 発生した場合、候補検証を通過すれば同期は継続する。
+      vi.clearAllMocks();
+      mocks.resolveSalesforceConfig.mockReturnValue(SF);
+      mocks.acquireLock.mockResolvedValue(true);
+      mocks.renewLock.mockResolvedValue(true);
+      mocks.releaseLock.mockResolvedValue(undefined);
+      mocks.eventFindUnique.mockResolvedValue(event({ id: "evt_signup", eventType: "email_verified" }));
+      mocks.clinicFindUnique.mockResolvedValue(clinicRow({ contacts: [CONTACT] }));
+      mocks.upsert
+        .mockResolvedValueOnce({ id: "001AAA", created: true }) // Account
+        .mockRejectedValueOnce(
+          duplicatesDetectedError([{ sobjectType: "Lead", id: "00Qlead1000000AAA" }])
+        ) // Contact: フェーズ1のLeadと衝突
+        .mockResolvedValueOnce({ id: "003AAA", created: true }); // Contact: 検証後に再送
+      mocks.getByExternalId.mockImplementation(async ({ sobject, externalId }) => {
+        if (sobject === "Lead" && externalId === "clinic_1") {
+          // フェーズ1で作られたLeadがそのまま残っている(削除・コンバートされていない)。
+          return { Id: "00Qlead1000000AAA", Email: CONTACT.email, IsConverted: false };
+        }
+        return null;
+      });
+
+      await syncIntegrationEvent("evt_signup");
+
+      expect(upsertCallsFor("Lead")).toHaveLength(0); // ライフサイクル修正により再upsertしない
+      const contactCalls = upsertCallsFor("Contact");
+      expect(contactCalls).toHaveLength(2);
+      expect(contactCalls[1].allowDuplicateSave).toBe(true);
+      expect(mocks.eventUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "synced" }) })
       );
     });
   });

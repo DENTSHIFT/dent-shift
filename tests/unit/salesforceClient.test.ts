@@ -127,6 +127,91 @@ describe("upsertSalesforceRecordByExternalId", () => {
     expect(fetchMock.mock.calls[3]![1].headers.Authorization).toBe("Bearer new");
   });
 
+  it("DUPLICATES_DETECTEDの応答から重複候補(オブジェクト種別+IDのみ)を取り出す", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(tokenResponse())
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify([
+              {
+                errorCode: "DUPLICATES_DETECTED",
+                message: "Use one of these records?",
+                duplicateResult: {
+                  matchResults: [
+                    {
+                      matchEngine: "ExactMatchEngine",
+                      rule: "Standard Lead Matching Rule",
+                      matchRecords: [
+                        {
+                          record: {
+                            Id: "00Qown000000000AAA",
+                            Email: "owner@example-dental.jp",
+                            attributes: { type: "Lead" },
+                          },
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ]),
+            { status: 400 }
+          )
+        )
+    );
+
+    const error = await upsert().catch((e) => e);
+    expect(error.errorCode).toBe("DUPLICATES_DETECTED");
+    expect(error.duplicateCandidates).toEqual([{ sobjectType: "Lead", id: "00Qown000000000AAA" }]);
+    // 候補レコードのEmail等の値は例外messageへ含めない
+    expect(error.message).not.toContain("owner@example-dental.jp");
+  });
+
+  it("綴り違いのduplicateResut(実機で確認済みの別綴り)でも重複候補を読み取る", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(tokenResponse())
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify([
+              {
+                errorCode: "DUPLICATES_DETECTED",
+                duplicateResut: {
+                  matchResults: [
+                    { matchRecords: [{ record: { Id: "00Qx", attributes: { type: "Lead" } } }] },
+                  ],
+                },
+              },
+            ]),
+            { status: 400 }
+          )
+        )
+    );
+
+    const error = await upsert().catch((e) => e);
+    expect(error.duplicateCandidates).toEqual([{ sobjectType: "Lead", id: "00Qx" }]);
+  });
+
+  it("重複候補の構造自体が応答にない場合はduplicateCandidates=nullを返す", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(tokenResponse())
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify([{ errorCode: "DUPLICATES_DETECTED", message: "x" }]), { status: 400 })
+        )
+    );
+
+    const error = await upsert().catch((e) => e);
+    expect(error.duplicateCandidates).toBeNull();
+  });
+
   it("エラー時はerrorCodeと項目名だけを例外に含め、送信値やclient secretを含めない", async () => {
     vi.stubGlobal(
       "fetch",
