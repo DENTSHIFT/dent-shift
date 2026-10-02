@@ -2,18 +2,36 @@
 # dent-shift-test (Vercel project) 限定で、ops管理者アカウントを1件だけ作成するための
 # 本人実行専用スクリプト。Claude(AI)はこのスクリプトを実行しません。
 #
+# 2026-10-02 修正: 当初案は `vercel env pull` でDATABASE_URLを取得する前提だったが、
+# このプロジェクトのDATABASE_URLはVercel側でSecret型(書き込み専用)に設定されており、
+# CLI/APIのどの経路からも平文を取得できない(アカウント所有者が実行しても同じ)。
+# そのため同じ手順を繰り返しても必ず [SENSITIVE] で失敗する。
+# 正しい取得元は Neon コンソール自身(Neonが発行する接続文字列の実体)であり、
+# 「Show password」で表示させてこのスクリプトへ貼り付ける方式に変更した。
+#
 # 安全対策:
-#   - env pull の結果が [SENSITIVE] なら直ちに停止する(秘密値が取得できていないのに
-#     誤った値で処理を進めない)。
-#   - 取得したDATABASE_URLのホスト名に、dent-shift-test-db の既知のNeonプロジェクト識別子
-#     (ep-restless-art-... / restless-art-55621985)が含まれることを確認してから処理を進める。
-#     一致しなければ停止する(誤って別DB・本番DBに接続しない)。
+#   - 接続文字列はNeonコンソールから直接貼り付ける(`read -s`、非表示・画面に残さない)。
+#     [SENSITIVE] のようなプレースホルダ文字列が貼り付けられた場合は直ちに停止する。
+#   - 貼り付けられた接続文字列のホスト名が、2026-10-02にNeonコンソールで直接確認した
+#     dent-shift-test-db の実際のエンドポイントID(ep-small-snow-b3srtm7d)と一致するかを
+#     検証してから処理を進める。Neonのプロジェクト名(restless-art-55621985)とは別物であり、
+#     ホスト名には含まれないため、プロジェクト名ではなくこのエンドポイントIDで照合する。
+#     一致しなければ、Neonコンソールの dent-shift-test-db > main ブランチの接続パネルから
+#     取り直すよう案内して停止する(同じ手順を無意味に繰り返させない)。
 #   - パスワードは `read -s` で非表示入力する。zsh(macOS標準)で動作確認済みの構文を使う。
 #   - 一時ファイル・一時ディレクトリは mktemp で作成し、スクリプト終了時(正常終了・エラー・
 #     Ctrl-C中断のいずれでも)に trap で必ず削除する。
 #   - 既存の .env やリポジトリ直下の node_modules/@prisma/client は変更しない。
 #     一時ディレクトリへコピーしたプロジェクトファイルの中だけで prisma generate を実行する。
-#   - 新しいパスワード・DATABASE_URLの値は、このスクリプトの出力に一切表示しない。
+#   - 接続文字列・パスワードの値は、このスクリプトの出力に一切表示しない。
+#
+# 事前準備(実行前に手動で行う):
+#   1. https://console.neon.tech/app/projects/restless-art-55621985/branches/br-green-morning-b3tfnlii
+#      を開く(プロジェクト dent-shift-test-db、ブランチ main)
+#   2. 左上の「Connect」ボタン→「Postgres database」タブ
+#   3. Database: neondb / Role: neondb_owner になっていることを確認
+#   4. 「Show password」をクリックし、表示された接続文字列(postgresql://... で始まる1行)
+#      をコピーする
 #
 # 使い方:
 #   cd /Users/masatokimura/Documents/dent-shift
@@ -22,12 +40,11 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROJECT_NAME="dent-shift-test"
-VERCEL_SCOPE="dentshift1"
-EXPECTED_HOST_MARKERS=("restless-art-55621985" "ep-restless-art")
+# 2026-10-02にNeonコンソールで直接確認した、dent-shift-test-db(main)の実際の
+# エンドポイントID。接続文字列のホスト名にこの文字列が含まれるかで照合する。
+EXPECTED_HOST_MARKER="ep-small-snow-b3srtm7d"
 
 WORKDIR="$(mktemp -d /tmp/dentshift-ops-create.XXXXXX)"
-# 失敗・中断時も含め、関数の戻り値に関わらず必ず最後に実行される。
 cleanup() {
   local exit_code=$?
   rm -rf "$WORKDIR" 2>/dev/null || true
@@ -37,57 +54,39 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "==> 一時作業ディレクトリ: $WORKDIR (終了時に自動削除されます)"
-echo "==> ${PROJECT_NAME} の環境変数を一時ディレクトリへ取得します(リポジトリ本体の .env には触れません)"
+echo ""
+echo "==> 事前にNeonコンソールの以下のページで「Connect」→「Show password」から"
+echo "    接続文字列(postgresql://... で始まる1行)をコピーしておいてください:"
+echo "    https://console.neon.tech/app/projects/restless-art-55621985/branches/br-green-morning-b3tfnlii"
+echo ""
+read -r -s -p "接続文字列を貼り付けてください(表示されません): " DATABASE_URL
+echo ""
 
-ENV_FILE="$WORKDIR/.env.pull"
-
-(
-  cd "$WORKDIR"
-  npx --yes vercel@latest link --project="$PROJECT_NAME" --scope="$VERCEL_SCOPE" --yes >/dev/null
-  npx --yes vercel@latest env pull "$ENV_FILE" --environment=production --scope="$VERCEL_SCOPE" --yes >/dev/null
-)
-
-if [ ! -f "$ENV_FILE" ]; then
-  echo "エラー: 環境変数ファイルを取得できませんでした。中断します。" >&2
+if [ -z "${DATABASE_URL:-}" ]; then
+  echo "エラー: 接続文字列が空です。中断します。" >&2
   exit 1
 fi
 
-DB_LINE="$(grep '^DATABASE_URL=' "$ENV_FILE" || true)"
-if [ -z "$DB_LINE" ]; then
-  echo "エラー: DATABASE_URL が見つかりませんでした。中断します。" >&2
+if echo "$DATABASE_URL" | grep -qi 'SENSITIVE'; then
+  echo "エラー: 貼り付けられた値がプレースホルダ([SENSITIVE]等)のようです。" >&2
+  echo "        Vercelの環境変数一覧ではなく、Neonコンソールの「Show password」から" >&2
+  echo "        表示される実際の接続文字列をコピーしてください。中断します。" >&2
   exit 1
 fi
 
-if echo "$DB_LINE" | grep -q '\[SENSITIVE\]'; then
-  echo "エラー: DATABASE_URL が [SENSITIVE] のまま取得できませんでした。" >&2
-  echo "        (Vercel側でSecret型のため、CLIでは平文を取得できない設定です)" >&2
-  echo "        この先には進めません。中断します。" >&2
+if ! echo "$DATABASE_URL" | grep -q "$EXPECTED_HOST_MARKER"; then
+  echo "エラー: 貼り付けられた接続文字列のホスト名が、既知の dent-shift-test-db の" >&2
+  echo "        エンドポイント(${EXPECTED_HOST_MARKER})と一致しませんでした。" >&2
+  echo "        別のNeonプロジェクト・別ブランチの接続文字列を貼り付けていないか、" >&2
+  echo "        上記URLのページで再度「Show password」から取り直してご確認ください。" >&2
+  echo "        安全のため、ここで中断します。" >&2
   exit 1
 fi
+export DATABASE_URL
 
-# DATABASE_URL=".../....." の値部分だけを取り出す(値自体は表示しない)。
-DB_URL="$(echo "$DB_LINE" | sed -E 's/^DATABASE_URL=//; s/^"(.*)"$/\1/')"
-export DATABASE_URL="$DB_URL"
-
-HOST_MATCHED=0
-for marker in "${EXPECTED_HOST_MARKERS[@]}"; do
-  if echo "$DATABASE_URL" | grep -q "$marker"; then
-    HOST_MATCHED=1
-    break
-  fi
-done
-
-if [ "$HOST_MATCHED" -ne 1 ]; then
-  echo "エラー: 取得した接続先のホスト名が、既知の dent-shift-test-db (Neon project" >&2
-  echo "        restless-art-55621985) のものと一致しませんでした。誤った接続先の" >&2
-  echo "        可能性があるため、安全のため中断します。" >&2
-  exit 1
-fi
-
-echo "==> 接続先の検証に成功しました(dent-shift-test-db と一致)。値そのものは表示しません。"
+echo "==> 接続先の検証に成功しました(dent-shift-test-db のエンドポイントと一致)。値そのものは表示しません。"
 
 echo "==> プロジェクトを一時ディレクトリへコピーし、そこだけで Prisma Client を再生成します"
-# .git や node_modules 等の重いものは除外し、スキーマとpackage.json類だけをコピーする。
 rsync -a \
   --exclude='node_modules' \
   --exclude='.git' \
@@ -97,7 +96,7 @@ rsync -a \
 
 (
   cd "$WORKDIR/project"
-  npm install --no-audit --no-fund --omit=dev=false >/dev/null
+  npm install --no-audit --no-fund >/dev/null
   npx prisma generate --schema prisma/postgres/schema.prisma >/dev/null
 )
 
@@ -126,4 +125,5 @@ export OPERATOR_PASSWORD
 
 echo ""
 echo "==> 完了しました。表示されたメールアドレス・パスワードで https://test.dentshift.jp/ops/login へログインしてください。"
+echo "==> ログイン後の接続診断の取得はClaude側で行いますので、パスワードの共有は不要です。"
 echo "==> 一時ファイル・一時ディレクトリ・環境変数はこの後の終了処理で自動的に削除されます。"
