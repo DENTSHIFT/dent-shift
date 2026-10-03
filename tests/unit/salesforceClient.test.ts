@@ -427,3 +427,18 @@ describe("querySalesforceRecords(2026-10-03追加、読み取り専用SOQL)", ()
     await expect(querySalesforceRecords({ config: CONFIG, soql: "SELECT" })).rejects.toMatchObject({ errorCode: "MALFORMED_QUERY" });
   });
 });
+
+describe("getSalesforceSObjectFieldNames(2026-10-03追加、describe読み取り)", () => {
+  it("describeの項目API名を集合で返す(GETのみ)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ fields: [{ name: "Id" }, { name: "Company" }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { getSalesforceSObjectFieldNames } = await import("@/server/providers/salesforce/salesforceClient");
+    const names = await getSalesforceSObjectFieldNames({ config: CONFIG, sobject: "Lead" });
+    expect([...names]).toEqual(["Id", "Company"]);
+    expect(String(fetchMock.mock.calls[1]![0])).toBe("https://instance.salesforce.com/services/data/v60.0/sobjects/Lead/describe");
+    expect(fetchMock.mock.calls[1]![1].method).toBe("GET");
+  });
+});

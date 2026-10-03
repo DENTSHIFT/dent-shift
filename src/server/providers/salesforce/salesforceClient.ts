@@ -360,6 +360,23 @@ export async function querySalesforceRecords(input: {
   return records;
 }
 
+/** sobjects/{sobject}/describe から項目API名の集合を返す(読み取り専用)。 */
+export async function getSalesforceSObjectFieldNames(input: {
+  config: SalesforceOAuthConfig;
+  sobject: string;
+}): Promise<Set<string>> {
+  const label = `${input.sobject} describe`;
+  const response = await requestSalesforce(input.config, "GET", `/sobjects/${encodeURIComponent(input.sobject)}/describe`, label);
+  if (!response.ok) await throwForResponse(response, label);
+  const body = (await response.json().catch(() => null)) as { fields?: unknown } | null;
+  if (!body || !Array.isArray(body.fields)) throw new SalesforceDeliveryError(`Salesforce ${label} response was malformed.`);
+  return new Set(
+    body.fields
+      .map((f) => (f && typeof (f as { name?: unknown }).name === "string" ? ((f as { name: string }).name) : null))
+      .filter((n): n is string => n !== null)
+  );
+}
+
 /** Salesforce IDを指定して既存レコードの項目を更新する(作成はしない)。 */
 export async function updateSalesforceRecordById(input: {
   config: SalesforceOAuthConfig;

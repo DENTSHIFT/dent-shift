@@ -44,7 +44,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { prisma } from "../src/server/db/prismaClient";
 import { parseSalesforceCredentialsForDiagnosticsOnly, SalesforceConfigError } from "../src/server/config/salesforceConfig";
-import { querySalesforceRecords } from "../src/server/providers/salesforce/salesforceClient";
+import { getSalesforceSObjectFieldNames, querySalesforceRecords } from "../src/server/providers/salesforce/salesforceClient";
 import { SF_FIELDS } from "../src/domain/integration/salesforceCrmMapping";
 
 type MatchKind = "external_id" | "email" | "url" | "name";
@@ -182,15 +182,20 @@ async function main() {
   }
 
   // --- Salesforce側(読み取りのみ: GET /query) ---
+  // 外部ID項目は本番組織に未デプロイの可能性がある(2026-10-03読み取り: 本番LeadにDentShift_*項目なし)。
+  // describeで存在を確認し、無い場合はSELECTに含めない(存在しない項目を選択するとINVALID_FIELDで停止するため)。
   const ext = SF_FIELDS.lead.externalId;
-  const soql = `SELECT Id, Company, Website, Email, ${ext} FROM Lead WHERE IsConverted = false`;
+  const leadFields = (await getSalesforceSObjectFieldNames({ config, sobject: "Lead" }));
+  const hasExt = leadFields.has(ext);
+  console.log(JSON.stringify({ event: "lead_external_id_field", field: ext, exists: hasExt }));
+  const soql = `SELECT Id, Company, Website, Email${hasExt ? `, ${ext}` : ""} FROM Lead WHERE IsConverted = false`;
   const leadRecords = await querySalesforceRecords({ config, soql });
   const leads: LeadRow[] = leadRecords.map((r) => ({
     Id: r.Id,
     Company: typeof r.Company === "string" ? r.Company : null,
     Website: typeof r.Website === "string" ? r.Website : null,
     Email: typeof r.Email === "string" ? r.Email : null,
-    externalId: typeof r[ext] === "string" && (r[ext] as string).trim() ? (r[ext] as string).trim() : null,
+    externalId: hasExt && typeof r[ext] === "string" && (r[ext] as string).trim() ? (r[ext] as string).trim() : null,
   }));
 
   // --- 照合 ---
@@ -228,6 +233,7 @@ async function main() {
   const count = (pred: (r: MatchResult) => boolean) => results.filter(pred).length;
   const summary = {
     salesforceTarget: targetKind,
+    leadExternalIdFieldExists: hasExt,
     clinicsInDb: clinicRows.length,
     unconvertedLeads: leads.length,
     leadsWithExternalId: count((r) => r.hasExternalId),

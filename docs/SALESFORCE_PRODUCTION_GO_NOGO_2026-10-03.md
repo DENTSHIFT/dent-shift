@@ -108,7 +108,7 @@
 |---|---|---|---|
 | S1 | **TimeRexの医院紐付け・日程変更後の紐付け維持が確認済み** | **未解決(サポート回答待ち)。完了扱いにしない。** | PO確定の必須条件。`PRODUCTION_MIGRATION_PLAN` 4.1/4.2c、`TIMEREX_URL_PARAMS_INVESTIGATION_2026-10-03.md` |
 | S2 | **allowSave方式の本番適用についてPOの明示承認**、または代替案への切替完了 | 未承認(Sandbox限定許容のみ) | `SALESFORCE_ALLOWSAVE_ALTERNATIVES` 冒頭PO前提。本書1-2章の「衝突は残る」を理解したうえでの判断が必要 |
-| S3 | 本番Salesforce組織IDの同一性照合完了、`SALESFORCE_EXPECTED_ORG_ID`に照合済みの値を設定 | 未完了 | `PRODUCTION_MIGRATION_PLAN` 3章#4、`SALESFORCE_PRODUCTION_ROLLOUT.md` 1章。不一致時は`ORG_MISMATCH`で書き込み前に停止する設計(`isConnectionLevelError`) |
+| S3 | 本番Salesforce組織IDの同一性照合完了、`SALESFORCE_EXPECTED_ORG_ID`に照合済みの値を設定 | 組織IDは管理者画面「組織情報」で読み取り済み(My Domain・2026-10-02読み取り記録と整合、試用残14日=期限2026-10-18と整合)。**契約情報との照合は未了**、`SALESFORCE_EXPECTED_ORG_ID`はローカル・Vercel本番とも未設定 | `PRODUCTION_MIGRATION_PLAN` 3章#4、`SALESFORCE_PRODUCTION_ROLLOUT.md` 1章。不一致時は`ORG_MISMATCH`で書き込み前に停止する設計(`isConnectionLevelError`) |
 | S4 | 連携ユーザーが専用Integration User(最小権限)に切替済み | 未完了(現状システム管理者) | `PRODUCTION_MIGRATION_PLAN` 3章#5 |
 | S5 | 本番組織の重複ルール・マッチングルール設定の確認(「Contacts with Duplicate Leads」が有効か、アクションがブロックか警告か) | **未確認**(リポジトリ内にメタデータなし) | `SALESFORCE_LEAD_MANUAL_CONVERSION_PROCEDURE` 7章。設定次第で1-2章の衝突挙動自体が変わるため、有効化前に把握が必要 |
 | S6 | `DentShift_Preserve_Do_Not_Call_On_Convert` Flowの本番組織反映とActiveバージョンの確認 | **Sandboxは確認済み**(V1有効、転記先=Contactカスタム項目`DentShift_Do_Not_Call__c`。既存Contact=false+Lead=trueの実変換でfalse→trueになり架電対象リストから外れることを実測(ドライラン計画10.5)。この組織に標準`DoNotCall`は存在しない)。**本番組織は未確認** | 同手順書 8.7.2/8.8節 |
@@ -116,7 +116,7 @@
 | S7 | 手動変換の担当者が決まり、その人がConvert Leads権限を持つことを確認 | **担当者未決**。Sandboxではシステム管理者・標準ユーザー両プロファイルで「リードの取引の開始」有効を確認。ただし営業担当(Sandbox)検証ユーザーは無効化状態。本番は未確認 | 同手順書 8.7.1節 |
 | S8 | 本番既存Lead 37件の扱い決定(手動変換対象リスト、外部ID未設定31件は個別確認扱い) | **未着手(照合は保留)**。本番Salesforce/本番DBの読み取りはこのセッションの自動権限判定で拒否されるため、本人実行用の読み取り専用スクリプト `scripts/salesforce-lead-clinic-match-readonly.ts` を用意した(一意一致/候補複数/一致なし/情報不足の件数とIDのみ出力、個人情報なし。組織ID不一致で照会前に停止、`--expect-db-host`とDATABASE_URLのホスト名不一致でDB接続前に停止。秘密値はファイルを`source`して渡し、コマンド行に書かない)。実行はPO本人 | 同手順書 7章・8.3節運用ルール、`SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md` |
 | S9 | `/ops/integration-events`と`/api/ops/salesforce-connection-check`が本番で管理者のみアクセス可能であることの確認 | 要確認 | 4章・6章の手順がこれらに依存する |
-| S10 | 本番用DBが新規作成され、`IntegrationEvent`・`CrmSyncLock`テーブルがマイグレーション済み | 未完了 | `PRODUCTION_MIGRATION_PLAN` 3章#8、5章手順7 |
+| S10 | 本番用DBが新規作成され、`IntegrationEvent`・`CrmSyncLock`テーブルがマイグレーション済み | **DBは存在**(Neon `neon-byzantine-tree`、Sep 22、`DATABASE_URL`注入済み。2026-10-03 Vercel読み取り)。マイグレーション適用状況は**未確認**(本番DB資格情報の安全な読込経路なし、`SALESFORCE_PRODUCTION_METADATA_DEPLOY_PLAN` 2章) | `PRODUCTION_MIGRATION_PLAN` 3章#8 |
 | S11 | 5章の停止条件と6章の復旧手順について、監視担当者と停止権限者が決まっている | 未決 | 監視はログ目視のみ(`PRODUCTION_MIGRATION_PLAN` 7章) |
 
 ### 3.1 本番組織の読み取り確認結果(2026-10-03、管理者セッションでSetup画面を目視、変更なし)
@@ -141,7 +141,7 @@
 
 | # | 条件 | 現状 | 根拠 |
 |---|---|---|---|
-| S12 | 本番組織へのDentShift_*メタデータ(外部ID項目・電話禁止項目・検証ルール・Flow・権限セット)のデプロイ完了と、デプロイ後のS6/S6b/対応付けの再確認 | **未実施(未承認)** | 本節 |
+| S12 | 本番組織へのDentShift_*メタデータ(外部ID項目・電話禁止項目・検証ルール・Flow・権限セット)のデプロイ完了と、デプロイ後のS6/S6b/対応付けの再確認 | **未実施(未承認)**。計画: `SALESFORCE_PRODUCTION_METADATA_DEPLOY_PLAN_2026-10-03.md` | 本節 |
 
 S1〜S12のいずれか1つでも未充足なら**No-Go**とする。特にS1はPO判断で必須条件と確定しており、「運用フォールバック(メール完全一致)があるから許容」という判断は本書では行わない。
 
