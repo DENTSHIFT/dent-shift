@@ -121,3 +121,64 @@ Lead変換画面には「取引を作成しない」チェックボックスが�
 - Lead運用方針の最終決定(新規Leadの担当割当ルール等、`PRODUCTION_MIGRATION_PLAN_2026-10-03.md` 4.2a節)、および医院重複統合の要否(同4.2b節)は、本書では決定しない。これらが決定され次第、本書のチェックリスト(6章)を更新する必要がある。
 - 本番組織の既存Lead(37件、`docs/SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md`)のうち、本書の手順で手動変換すべき対象の洗い出しは別途必要(本書は手順のみを定め、対象リストの作成は行っていない)。
 - 重複ルール・マッチングルールのSalesforceメタデータ(`.duplicateRule-meta.xml` 等)はリポジトリ内に見つからなかった。本番組織側で標準の重複ルール・マッチングルールがどう設定されているか(あるいは未設定か)は本書の調査範囲では確認できていない。6章のチェックリストはアプリ側のexternal ID突き合わせに基づくものであり、Salesforce標準の重複検出機能の設定状況とは独立している点に留意する。
+
+---
+
+## 8. Sandbox dsverifyでの事前確認結果(2026-10-03、読み取り専用)
+
+> 本章はSandbox `dsverify`に対し、**SELECT/メタデータ読み取りAPIのみ**を使って行った確認結果である。Lead変換・レコード作成・更新・削除・設定変更は一切行っていない。接続は`scripts/salesforce-sandbox-e2e.ts`と同じOAuth Client Credentials Flow(`salesforce/.env.sandbox`、連携専用Integration User)を使用し、接続先がSandbox命名規則(`--dsverify.sandbox.`)かつ`SALESFORCE_EXPECTED_ORG_ID`と一致することを確認した上で実行した。本番Salesforceへは接続していない。個人情報(氏名・メール・電話番号等)は取得・記録していない。
+
+### 8.1 外部ID項目・カスタム項目の実在確認(1章関連)
+
+`sobjects/{Lead,Account,Contact}/describe` で確認した結果、1章・2章が参照する項目はすべて実在する。
+
+| オブジェクト | 項目API名 | 存在 | 型 | nillable |
+|---|---|---|---|---|
+| Lead | `DentShift_Clinic_Id__c` | Yes | string | true |
+| Lead | `DentShift_Do_Not_Call__c` | Yes | boolean | false(デフォルト値あり) |
+| Account | `DentShift_Clinic_Id__c` | Yes | string | true |
+| Contact | `DentShift_User_Id__c` | Yes | string | true |
+| Contact | `DentShift_Do_Not_Call__c` | Yes | boolean | false(デフォルト値あり) |
+
+いずれも必須(必ず入力)項目ではなく(nillable=true、またはboolean型でデフォルト値を持つ)、空欄のレコードが存在しうる設定である。
+
+### 8.2 権限の確認(Convert Leads権限)— **確認不能**
+
+- 接続中のIntegration User(連携専用、最小権限設計)は、`PermissionSet` オブジェクトへのSOQLクエリで `INVALID_TYPE`(`sObject type 'PermissionSet' is not supported`)となり、プロファイル/権限セットの内容を読み取れなかった。
+- Tooling API(`/tooling/query`)で `Flow`・`FlowDefinition` 等を参照しても常に0件が返り、Tooling API自体への可視性がない(`salesforce-sandbox-e2e.ts`のコメントにある「Organizationオブジェクトが読めない」のと同種の、連携ユーザー最小権限によるアクセス制限と考えられる)。
+- 結論: **このIntegration Userの認証情報では、Convert Leads権限の有無をAPI経由で確認できなかった**。確認するには、管理者権限を持つユーザー(`salesforce/.env.sandbox-admin`等、人間のログインが必要な認証情報)でのSetup画面確認、または連携ユーザーに一時的に権限参照用のアクセスを付与する必要がある(後者はPO指示により連携ユーザーの最小権限方針に反するため推奨しない)。
+
+### 8.3 既存Account/Contact/Leadの外部ID設定状況(6章チェックリスト関連)
+
+件数集計のみ(個人情報は取得していない)。
+
+| オブジェクト | 総件数 | 外部ID設定済み | 未設定 |
+|---|---|---|---|
+| Account(`DentShift_Clinic_Id__c`) | 23 | 22 | 1 |
+| Contact(`DentShift_User_Id__c`) | 20 | 20 | 0 |
+| Lead(`DentShift_Clinic_Id__c`) | 35 | 28 | 7 |
+
+- Leadの約2割(35件中7件)が医院ID未設定であり、6章チェックリスト項目2(「情報が不十分」)に該当しうるレコードがSandbox内にも一定数存在することを確認した。ただしこれはSandboxのテストデータであり、本番環境(37件中31件が医院ID未設定、`SALESFORCE_PRODUCTION_ROLLOUT.md`記載)の実態とは割合が異なる。
+- 外部IDの重複(同一値を持つレコードが複数ある状態)の有無は、件数集計のみでは判別できないため未確認(個別の値を突き合わせる追加クエリが必要)。
+
+### 8.4 Owner(所有者)の設定状況(3章関連)
+
+`GROUP BY OwnerId` による集計のみ(OwnerIdは先頭6文字のみ記録、個人を特定しない)。
+
+- Lead: Ownerグループ2種類(28件/7件)。大半が単一のOwnerに集中している。
+- Account: Ownerグループ2種類(22件/1件)。同様に単一Ownerへの集中。
+- Contact: Ownerグループ1種類(20件全件)。全件が単一Owner。
+
+Sandboxのテストデータでは、Owner割当がほぼ単一ユーザーに集中しており、3章が指摘する「既存Accountの所有者とLeadの所有者が異なる」競合パターンを検証するには、Sandbox内のデータだけでは実例が乏しい(本番運用での複数担当者体制を想定した検証には別途テストデータの準備が必要)。
+
+### 8.5 DoNotCall保持Flow(`DentShift_Preserve_Do_Not_Call_On_Convert`)の有効化状況 — **確認不能**
+
+- 8.2と同じ理由(Integration UserがTooling APIで0件しか返さない)により、Flowが実際にActive状態かをAPI経由で確認できなかった。
+- `FlowDefinitionView`(通常のREST API)も`INVALID_TYPE`で参照不可。
+- 結論: 2章の「Flowが対象組織で有効化されているか」は、**今回の読み取り専用確認では確認できなかった**。確認するには管理者権限でのSetup画面(フロー・ビルダー一覧)確認、またはメタデータAPI(権限を持つ認証情報)でのretrieveが必要。
+
+### 8.6 総括・次に必要な判断
+
+- **確認できた**: 外部ID・カスタム項目(`DentShift_Clinic_Id__c`/`DentShift_User_Id__c`/`DentShift_Do_Not_Call__c`)はdsverify Sandbox上に実在し、型・必須設定も手順書の前提と矛盾しない。また外部ID未設定レコードが実データにも一定数存在することを確認した。
+- **確認できなかった(阻害要因)**: (1) 接続ユーザーのConvert Leads権限、(2) DoNotCall保持Flowの有効化状態。いずれも、現在使用している連携専用Integration User(最小権限設計)がPermissionSetオブジェクト・Tooling APIへのアクセス権を持たないことが原因。この権限設計自体は`scripts/salesforce-sandbox-e2e.ts`のOrganizationオブジェクト読み取り不可と同じ設計方針(連携ユーザーは最小権限に保つ、PO指示)によるものであり、不具合ではない。
+- **次に必要な判断**: 上記2点を確認するには、(a) 管理者権限を持つユーザーでSandboxにログインしてSetup画面で目視確認する(`salesforce/.env.sandbox-admin`の認証情報は人間のログイン用であり、本タスクのスクリプト接続方式とは別経路)、または(b) 確認作業専用に限定した読み取り権限(PermissionSet参照・Tooling API参照)を連携ユーザーに一時付与するか、どちらの方法を取るかをPOに判断してもらう必要がある。本タスクの指示(既存のSandbox用スクリプト・認証情報を使う)の範囲では、これ以上の確認はできなかった。
