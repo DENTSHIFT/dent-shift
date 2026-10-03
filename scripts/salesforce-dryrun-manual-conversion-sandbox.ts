@@ -177,6 +177,36 @@ async function create(sf: SF) {
   console.log(JSON.stringify({ event: "created", ids, out }));
 }
 
+// 追加シナリオ(g)(PO承認 2026-10-03): 既存Contact(電話禁止=false)+Lead(電話禁止=true)を
+// 既存Account/Contactへ変換し、Flowで変換先Contactがtrueになること・架電対象リストから外れることを確認する。
+// Contactの電話禁止false化(根拠入力)は連携ユーザーでは書けないため管理者が画面で行う。
+async function createSg(sf: SF) {
+  const ownerId = argValue("--owner-id");
+  if (!ownerId || !/^005/.test(ownerId)) throw new Error("--owner-id <実行者のUser Id(005...)> が必要です");
+  const existing = await sf.count(`SELECT COUNT() FROM Lead WHERE Name LIKE '${PREFIX}Sg%'`);
+  if (existing > 0) throw new Error(`既に ${PREFIX}Sg Leadが${existing}件あります。停止します。`);
+  const ids: Record<string, string> = {};
+  ids.accountSg = await sf.create("Account", { Name: `${PREFIX}Sg 既存Account`, DentShift_Clinic_Id__c: `dryrun-mc-${DATE_TAG}-sg-clinic`, DentShift_Site_Domain__c: `dryrun-mc-sg.invalid`, OwnerId: ownerId });
+  ids.contactSg = await sf.create("Contact", { LastName: `${PREFIX}Sg 既存Contact(false)`, AccountId: ids.accountSg, DentShift_User_Id__c: `dryrun-mc-${DATE_TAG}-sg-user`, OwnerId: ownerId });
+  ids.leadSg = await sf.create("Lead", { LastName: `${PREFIX}Sg Lead(電話禁止true)`, Company: `${PREFIX}Sg Lead(電話禁止true)`, DentShift_Clinic_Id__c: `dryrun-mc-${DATE_TAG}-sg-clinic`, DentShift_Site_Domain__c: `dryrun-mc-sg.invalid`, OwnerId: ownerId });
+  mkdirSync("scripts/output", { recursive: true });
+  const out = `scripts/output/dryrun-mc-${DATE_TAG}-sg-created.json`;
+  writeFileSync(out, JSON.stringify({ createdAt: new Date().toISOString(), orgId: sf.orgId.slice(0, 15), ids }, null, 2));
+  console.log(JSON.stringify({ event: "created", ids, out }));
+}
+
+// 架電対象リストビュー(DENT SHIFT Call Targets - Contact / 架電対象リード)と同じ絞り込みで、ダミーが含まれるか。
+async function callTargets(sf: SF) {
+  const contacts = await sf.soql<{ Id: string; Name: string }>(
+    `SELECT Id, Name FROM Contact WHERE DentShift_Do_Not_Call__c = false AND DentShift_User_Id__c != null AND Name LIKE '${PREFIX}%'`
+  );
+  console.log("call-target Contacts (list view条件 + DRYRUN-MC):", JSON.stringify(contacts.map((c) => ({ Id: c.Id, Name: c.Name }))));
+  const leads = await sf.soql<{ Id: string; Name: string }>(
+    `SELECT Id, Name FROM Lead WHERE IsConverted = false AND DentShift_Do_Not_Call__c = false AND DentShift_Clinic_Id__c != null AND Name LIKE '${PREFIX}%'`
+  );
+  console.log("call-target Leads (list view条件 + DRYRUN-MC):", JSON.stringify(leads.map((l) => ({ Id: l.Id, Name: l.Name }))));
+}
+
 async function verify(sf: SF) {
   const stdL = sf.hasStdDoNotCall.lead ? ", DoNotCall" : "";
   const stdC = sf.hasStdDoNotCall.contact ? ", DoNotCall" : "";
@@ -213,7 +243,9 @@ async function main() {
   if (cmd === "precheck") return precheck(sf);
   if (cmd === "create") return create(sf);
   if (cmd === "verify") return verify(sf);
-  throw new Error("subcommand: precheck | create | verify");
+  if (cmd === "create-sg") return createSg(sf);
+  if (cmd === "call-targets") return callTargets(sf);
+  throw new Error("subcommand: precheck | create | verify | create-sg | call-targets");
 }
 
 main().catch((e) => {

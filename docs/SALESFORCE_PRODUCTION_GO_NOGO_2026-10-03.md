@@ -111,7 +111,7 @@
 | S3 | 本番Salesforce組織IDの同一性照合完了、`SALESFORCE_EXPECTED_ORG_ID`に照合済みの値を設定 | 未完了 | `PRODUCTION_MIGRATION_PLAN` 3章#4、`SALESFORCE_PRODUCTION_ROLLOUT.md` 1章。不一致時は`ORG_MISMATCH`で書き込み前に停止する設計(`isConnectionLevelError`) |
 | S4 | 連携ユーザーが専用Integration User(最小権限)に切替済み | 未完了(現状システム管理者) | `PRODUCTION_MIGRATION_PLAN` 3章#5 |
 | S5 | 本番組織の重複ルール・マッチングルール設定の確認(「Contacts with Duplicate Leads」が有効か、アクションがブロックか警告か) | **未確認**(リポジトリ内にメタデータなし) | `SALESFORCE_LEAD_MANUAL_CONVERSION_PROCEDURE` 7章。設定次第で1-2章の衝突挙動自体が変わるため、有効化前に把握が必要 |
-| S6 | `DentShift_Preserve_Do_Not_Call_On_Convert` Flowの本番組織反映とActiveバージョンの確認 | **Sandboxは確認済み**(V1有効、Lead更新トリガー、変換時のみ発火、転記先=Contactカスタム項目`DentShift_Do_Not_Call__c`。この組織に標準`DoNotCall`は存在しない。2026-10-03管理者画面で目視)。**本番組織は未確認** | 同手順書 8.7.2節 |
+| S6 | `DentShift_Preserve_Do_Not_Call_On_Convert` Flowの本番組織反映とActiveバージョンの確認 | **Sandboxは確認済み**(V1有効、転記先=Contactカスタム項目`DentShift_Do_Not_Call__c`。既存Contact=false+Lead=trueの実変換でfalse→trueになり架電対象リストから外れることを実測(ドライラン計画10.5)。この組織に標準`DoNotCall`は存在しない)。**本番組織は未確認** | 同手順書 8.7.2/8.8節 |
 | S6b | 手動変換で「取引先を新規作成」した場合に新規Accountの`DentShift_Clinic_Id__c`が空になる問題への対処決定(既存Account選択の徹底、変換直後の人手入力、または対応付け設定変更のいずれか) | **未決**(Sandboxドライランで判明) | 同手順書 8.8節、ドライラン計画 10.3節 |
 | S7 | 手動変換の担当者が決まり、その人がConvert Leads権限を持つことを確認 | **担当者未決**。Sandboxではシステム管理者・標準ユーザー両プロファイルで「リードの取引の開始」有効を確認。ただし営業担当(Sandbox)検証ユーザーは無効化状態。本番は未確認 | 同手順書 8.7.1節 |
 | S8 | 本番既存Lead 37件の扱い決定(手動変換対象リスト、外部ID未設定31件は個別確認扱い) | **未着手(照合は保留)**。本番Salesforce/本番DBの読み取りはこのセッションの自動権限判定で拒否されるため、本人実行用の読み取り専用スクリプト `scripts/salesforce-lead-clinic-match-readonly.ts` を用意した(一意一致/候補複数/一致なし/情報不足の件数とIDのみ出力、個人情報なし。組織ID不一致で照会前に停止、`--expect-db-host`とDATABASE_URLのホスト名不一致でDB接続前に停止。秘密値はファイルを`source`して渡し、コマンド行に書かない)。実行はPO本人 | 同手順書 7章・8.3節運用ルール、`SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md` |

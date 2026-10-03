@@ -217,6 +217,7 @@ Sandboxのテストデータでは、Owner割当がほぼ単一ユーザーに�
 
 - (a) 既存Account紐付け ✓、(b) 既存Account+既存Contact紐付け ✓(外部ID不変、新規Contactなし)、(e) 変換先Contactの`DentShift_Do_Not_Call__c = true` ✓、(f) Task/Eventが変換先Contactの活動に引き継ぎ ✓。全件で商談0件、Owner=実行者を維持、既存(ダミー以外)の変換済みLead件数は6のまま不変。
 - (c) 外部ID未設定 → 変換せず停止(期待どおり)。(d) 所有者差異 → **未検証**(有効な第2の人間ユーザーが無く、無効ユーザーの有効化は行わない方針)。
+- (g) 追加(PO承認): 既存Contact=false + Lead=true を既存Account/Contactへ変換 → 変換先Contactの`DentShift_Do_Not_Call__c`が**false→true**、架電対象リストビュー条件から外れることを確認。既存Contactには項目対応付けが適用されないため、**Flowの動作証明として成立**(ドライラン計画10.5)。
 - **新たな注意点**: 「取引先を新規作成」で変換した場合、新規Accountの`DentShift_Clinic_Id__c`は**空**になる(対応付け「なし」のため)。アプリ同期はAccountを外部IDでupsertするため、この状態で同期が走ると**別Accountが新規作成される**(`adoptConvertedRecord`はLead側の外部IDで変換先を採用する設計だが、採用前に同期が先行した場合の挙動は未検証)。手順書1.2の「既存Accountを選ぶ」原則を守るか、新規Account作成時は変換直後に外部IDを人が転記する手順が必要(本番前に要決定)。
 - 本番組織への同Flowのデプロイ有無・有効化状態は未確認(S6は「Sandboxでは充足、本番は未確認」)。
 

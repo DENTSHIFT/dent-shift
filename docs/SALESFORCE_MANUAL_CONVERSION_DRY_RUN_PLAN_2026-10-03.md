@@ -340,10 +340,25 @@ Sandbox全体では **人手作成12件 + 変換による新規5件(Account 2 / 
 3. 変換画面の「既存の取引先を選択」「既存の取引先責任者を選択」は、名称一致の自動候補が0件でも検索欄から任意の既存レコードを指定できる(外部IDで事前に特定したレコードを名称で検索して選ぶ運用が成立する)。
 4. 検証ルール`DentShift_Do_Not_Call_Reason_Required`により、電話禁止をfalseにするには根拠の入力が必須(ダミーでは「【DRYRUN-MC】検証用ダミー(実在の同意ではない)」と入力)。
 
+### 10.5 追加シナリオ(g): Flow動作証明(2026-10-03、PO承認で追加実施)
+
+| 項目 | 内容 |
+|---|---|
+| 目的 | 既存Contact(`DentShift_Do_Not_Call__c = false`)+Lead(同 = true)を**既存Account/既存Contact**へ変換し、Flow `DentShift_Preserve_Do_Not_Call_On_Convert` が変換先Contactをtrueにすることと、架電対象リストから外れることを確認する。既存Contactへの変換では「リード項目の対応付け」は適用されない(新規作成時のみ)ため、trueになればFlow由来と判断できる |
+| 作成(連携ユーザーAPI、`create-sg`) | Account `001BS00001m7jW0YAI`(外部ID `dryrun-mc-20261003-sg-clinic`)/ Contact `003BS00000qy3Q7YAI`(`DentShift_User_Id__c = dryrun-mc-20261003-sg-user`)/ Lead `00QBS00000RPHNt2AP`(外部ID同上、電話禁止=true(既定値)) |
+| 管理者画面での準備 | Contact Sgの電話禁止をfalseに変更+根拠入力(検証ルールのため)。新規Account作成・設定変更は行っていない |
+| 変換前(SOQL) | Contact Sg: false(根拠あり)。架電対象リストビュー条件(`DentShift_Do_Not_Call__c = false AND DentShift_User_Id__c != null`)に**該当** |
+| 変換 | 管理者セッションで「取引の開始」→ 既存Account Sg・既存Contact Sg を検索して選択、「商談は作成しない」 |
+| 変換後(SOQL) | Lead: IsConverted=true、ConvertedAccountId=`001BS00001m7jW0YAI`、ConvertedContactId=`003BS00000qy3Q7YAI`、ConvertedOpportunityId=null。**Contact Sg: `DentShift_Do_Not_Call__c = true`**(根拠文は残存)。架電対象リストビュー条件に**非該当**(SOQLで同条件を実行: ダミーではSb Contactのみ該当。管理者画面でリストビュー「DENT SHIFT Call Targets - Contact」(`00BBS000007rvDp2AI`)を開き、7件中ダミーはSb既存Contactのみ・Sgが含まれないことを目視確認)。Opportunity 16→16、ダミー以外の変換済みLead 6→6 |
+| 結論 | **Flowは既存Contactへの変換で発火し、カスタム項目をtrueへ更新する**ことを確認。運用上の電話禁止(カスタム項目)は維持される。標準`DoNotCall`はこの組織に存在しないため対象外 |
+| 補足 | Contact側の「電話禁止の解除・変更の根拠」はfalse時の文言のまま残る(Flowは根拠を書き換えない)。運用上「trueなのに解除根拠が残っている」状態になるため、根拠欄の扱い(Flowでクリアするか、人が追記するか)は別途判断 |
+
+出力: `scripts/output/dryrun-mc-20261003-sg-created.json`、`scripts/output/dryrun-mc-20261003-sg-after-conversion.txt`(gitignore対象)。
+
 ### 10.4 本計画で未検証のまま残るもの
 
 - (d) 所有者差異での停止判断(第2ユーザー不在)。
-- Flowの動作証明(既存Contact=false、Lead=trueの組み合わせ。6章のとおり手順書6章項目5との整合をPOと要相談)。
+- ~~Flowの動作証明~~ → 10.5で確認済み。
 - 本番組織での同一挙動(対応付け設定・Flow・検証ルールの本番反映状況は未確認)。
 
 ## 参照
