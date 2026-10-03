@@ -109,6 +109,18 @@ describe("POST /api/auth/password-reset/sms/send: 対象限定ガード(未認�
     expect(mocks.sendVerification).not.toHaveBeenCalled();
   });
 
+  it("APP_BASE_URLが未設定・不正な値でも本番と断定せず、許可リスト未設定ならTwilio呼び出しは0回", async () => {
+    delete process.env.APP_BASE_URL;
+    const response = await runPostAndAfter({ email: "test@example.com" });
+    expect(response.status).toBe(200);
+    expect(mocks.sendVerification).not.toHaveBeenCalled();
+
+    process.env.APP_BASE_URL = "not a url";
+    const response2 = await runPostAndAfter({ email: "test@example.com" });
+    expect(response2.status).toBe(200);
+    expect(mocks.sendVerification).not.toHaveBeenCalled();
+  });
+
   it("Contact IDは一致するが電話番号が不一致ならTwilio呼び出しは0回", async () => {
     process.env.SMS_TEST_ALLOWED_CONTACT_ID = "contact-1";
     process.env.SMS_TEST_ALLOWED_PHONE = "+819099999999";
