@@ -80,8 +80,15 @@ export async function verifyEmailToken(
   const currentStep = contact.registrationStep as RegistrationStep;
   const updatedStep = canTransitionRegistrationStep(currentStep, nextStep) ? nextStep : currentStep;
 
-  await prisma.contact.update({
-    where: { id: contact.id },
+  // 2026-10-03: 同一トークンへの同時多重アクセス(例: メールクライアントのリンク先読み
+  // による二重リクエスト、同じリンクを2タブで開く等)でSalesforce連携イベントが
+  // 二重発行されるのを防ぐため、findFirstで見つけた行を無条件updateするのではなく、
+  // 「まだこのトークンハッシュを持っている行」だけを対象にした条件付きupdateMany
+  // (emailVerificationTokenHash: tokenHashをwhereに含める)で原子的に消費する。
+  // 競合した側はcount: 0になるので、二重にemailVerifiedAtを設定したりイベントを
+  // 発行したりしない(既にverified済みとして扱う)。
+  const { count } = await prisma.contact.updateMany({
+    where: { id: contact.id, emailVerificationTokenHash: tokenHash },
     data: {
       emailVerifiedAt: new Date(),
       emailVerificationTokenHash: null,
@@ -89,6 +96,11 @@ export async function verifyEmailToken(
       registrationStep: updatedStep,
     },
   });
+
+  if (count === 0) {
+    // 他の並行リクエストが先にこのトークンを消費した。
+    return { status: "already_verified", contactId: contact.id, email: contact.email };
+  }
 
   await enqueueIntegrationEvent({
     eventType: "email_verified",

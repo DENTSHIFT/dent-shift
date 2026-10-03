@@ -5,12 +5,20 @@ const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
   findUnique: vi.fn(),
   update: vi.fn(),
+  updateMany: vi.fn(),
   enqueueIntegrationEvent: vi.fn(),
   activateTrialIfEligible: vi.fn(),
 }));
 
 vi.mock("@/server/db/prismaClient", () => ({
-  prisma: { contact: { findFirst: mocks.findFirst, findUnique: mocks.findUnique, update: mocks.update } },
+  prisma: {
+    contact: {
+      findFirst: mocks.findFirst,
+      findUnique: mocks.findUnique,
+      update: mocks.update,
+      updateMany: mocks.updateMany,
+    },
+  },
 }));
 vi.mock("@/server/db/integrationEventRepository", () => ({
   enqueueIntegrationEvent: mocks.enqueueIntegrationEvent,
@@ -37,6 +45,7 @@ beforeEach(() => {
   });
   mocks.findUnique.mockResolvedValue(null);
   mocks.update.mockResolvedValue({});
+  mocks.updateMany.mockResolvedValue({ count: 1 });
   mocks.enqueueIntegrationEvent.mockResolvedValue(undefined);
   mocks.activateTrialIfEligible.mockResolvedValue(undefined);
 });
@@ -82,8 +91,8 @@ describe("verifyEmailToken", () => {
   it("正常系: verifiedを返し、emailVerifiedAt設定・トークン削除・registrationStep前進・Salesforce連携を行う(次は規約同意ステップ)", async () => {
     const result = await verifyEmailToken(RAW_TOKEN);
     expect(result).toEqual({ status: "verified", contactId: "contact-1", email: "owner@example.com" });
-    expect(mocks.update).toHaveBeenCalledWith({
-      where: { id: "contact-1" },
+    expect(mocks.updateMany).toHaveBeenCalledWith({
+      where: { id: "contact-1", emailVerificationTokenHash: TOKEN_HASH },
       data: expect.objectContaining({
         emailVerifiedAt: expect.any(Date),
         emailVerificationTokenHash: null,
@@ -95,6 +104,16 @@ describe("verifyEmailToken", () => {
       expect.objectContaining({ eventType: "email_verified", contactId: "contact-1" })
     );
     expect(mocks.activateTrialIfEligible).not.toHaveBeenCalled();
+  });
+
+  it("同一トークンへの同時多重アクセス(race condition): 先行リクエストが既にトークンを消費済みなら、updateManyのcountが0になり、already_verifiedとして扱い、Salesforce連携イベントを二重発行しない(2026-10-03追加)", async () => {
+    // 2つの並行リクエストがどちらもfindFirstでは未消費のcontactを見つける
+    // (レースなので両方とも更新前の状態を読む)が、DB側の条件付きupdateMany
+    // (where: tokenHash一致)は先着1件にしかマッチしない想定。
+    mocks.updateMany.mockResolvedValue({ count: 0 });
+    const result = await verifyEmailToken(RAW_TOKEN);
+    expect(result).toEqual({ status: "already_verified", contactId: "contact-1", email: "owner@example.com" });
+    expect(mocks.enqueueIntegrationEvent).not.toHaveBeenCalled();
   });
 
   describe("使用済みリンクの再アクセス(2026-10-03、PO承認)", () => {
