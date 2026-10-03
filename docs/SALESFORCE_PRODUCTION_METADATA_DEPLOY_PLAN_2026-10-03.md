@@ -131,8 +131,10 @@
 | `IntegrationEvent.alertedAt` 列追加 | 追加 | なし |
 | `CrmSyncLock` テーブル作成 | 追加 | なし(同期有効化の前提) |
 | `ConsultationBooking` テーブル作成 + インデックス | 追加 | なし。**現状の本番にはこのテーブルが無い**ため、TimeRex Webhookが本番に届いた場合は保存できない(現行デプロイのコードがどのバージョンかは未確認) |
-| **`UPDATE "Subscription" SET firstActivatedAt = …`(バックフィル2文)** | **データ更新** | 条件: `status='active'` かつ Stripe契約(`externalSubscriptionId` が `pilot_`以外、`billingExempt=false`)、または `subscription_activated:` の`IntegrationEvent`がある契約。本番の対象行数は未集計(3医院分では `status=trial` 1件のみで対象外)。適用前に `SELECT count(*)` で対象行数を確認する |
-| ロールバック | Prismaは自動ロールバック不可。列・テーブル追加は残しても害がない。バックフィルは`firstActivatedAt`を元のNULLへ戻すUPDATEで復元可能(対象行をあらかじめ記録) | — |
+| **`UPDATE "Subscription" SET firstActivatedAt = …`(バックフィル2文)** | **データ更新** | **本番全体の読み取り集計(2026-10-03、Neon main)**: `Subscription` 総数 **1**(`trial` 1)。更新1(`status='active'` かつ Stripe契約: `externalSubscriptionId` が `pilot_`以外・`billingExempt=false`)の対象 **0件**、更新2(`subscription_activated:` の`IntegrationEvent`が存在する契約)の対象 **0件**(`subscription_activated` イベント自体 0件、`pilot_` 契約 0件、`billingExempt` 契約 0件)。`firstActivatedAt` 列は未存在(=追加後は全行NULL)。**現時点で適用してもバックフィルは1行も更新しない** |
+| 更新前値の保存(適用時) | 適用直前に、更新1・更新2の `WHERE` と同じ条件で `SELECT id, "externalSubscriptionId", status, "statusEventAt", "createdAt"` を取得し、`scripts/output/`(gitignore)に JSON 保存する(列が無いため更新前の`firstActivatedAt`は定義上NULL)。加えてNeonで `pre-migration-20261001-salesforce-crm-sync` ブランチを作成(過去2回と同じ運用)。**実行は未承認** | — |
+| 復旧(バックフィルのみ戻す場合) | **一律NULL化はしない**。保存した対象行IDに限り、`UPDATE "Subscription" SET "firstActivatedAt" = NULL WHERE id IN (<保存ID>) AND "firstActivatedAt" = <バックフィルで入った値>` のように「適用時に入れた値と現在値が一致する行だけ」を戻す。適用後にアプリ(`billingRepository`)が正常に設定した値は一致しないため保持される。現状は対象0件のため、復旧対象も0件 | — |
+| ロールバック(DDL) | Prismaは自動ロールバック不可。列・テーブル追加は残しても害がない(アプリが参照しない限り受動的)。削除は行わない | — |
 
 適用は `prisma migrate deploy`(Vercelビルド時、または手動)。**未承認**。適用前の確認: 対象行数のSELECT、Neonのバックアップブランチ作成(過去の`pre-migration-*`ブランチと同じ運用)。
 
@@ -145,7 +147,50 @@
 | `cmupfwkc600027nyls4s7e5vj` | 10-01 | 0 | — | 1 | 0 | 2(`diagnosis_completed`, `online_consultation_clicked`) | 一致なし。上の`cmuf3t…`と同一ホスト・同一メール(未ログイン再診断による重複) |
 
 - 本番Salesforceの既存Account 3件・Contact 2件・Opportunity 50件はすべて**2026-09-16作成**(組織作成時のサンプルデータと推定)で、Clinicとは一致しない。Lead 37件は全件同一所有者、うち31件はLeadSource「DENT SHIFT 無料AI診断」(過去に本番へ同期された痕跡。Neon履歴に9/23〜25の医院削除クエリがあり、対応Clinicが削除済みのLeadが大半と推定)。
-- 段階4(同期有効化)で起きること: `cmujiyx…`はAccount+Contact作成時にContact upsertで既存Lead(同メール)と`DUPLICATES_DETECTED`→allowSave分岐(手順書/Go-NoGo 2章の衝突)に入る可能性が高い。**この1件を先に手動変換しておくことが、allowSave残存リスクを下げる唯一の実例**。重複Clinic 2件は別Lead 2件として作られる(統合しない方針のままなら許容の判断が必要)。
+- メール一致1件(Lead `00Qd500000EroeXEAR` ↔ Clinic `cmujiyx…`)は、**本人・医院の同一性が未確定**(メールのみ一致、名称・URLは不一致)。現在の方針「**外部IDが一致する既存Account/Contactへの変換に限定**」に照らすと、本番には外部ID項目も該当Account/Contactも存在しないため、**先行変換は実行できない/しない**。
+- 段階4(同期有効化)で起きること: `cmujiyx…`は`hasAccount=true`(Contact 1・契約 1)のため、Lead upsertは行わず Account/Contact を外部IDで新規作成する。Contact upsert時に「Contacts with Duplicate Leads」規則が既存Lead(同メール)を候補に挙げると `DUPLICATES_DETECTED` → 12章のとおり**限定allowSaveでは救済されず**、8回失敗で上限到達(要確認扱い)になる見込み。重複Clinic 2件は`hasAccount=false`(契約なし。`cmuf3t…`はContact 1件あり→`hasAccount=true`でAccount/Contact作成、`cmupfw…`はLead作成)となり、同一メールのLead/Contactが同時に存在する状態が生じうる。
+
+## 11. 段階的同期(承認対象の医院・イベントだけを送る)の可否 — 既存実装の確認
+
+| 確認箇所 | 実装 | 結果 |
+|---|---|---|
+| Cron `GET /api/internal/salesforce/retry` → `retryPendingIntegrationEvents(limit=50)` | `status in (pending, failed) AND retryCount < 8 AND (nextRetryAt IS NULL OR <= now)` を `createdAt` 昇順で最大50件。**医院・イベント種別の絞り込みなし** | 有効化すると初回Cronで保留32件が全件対象 |
+| 新規イベントの即時送信(`enqueueIntegrationEvent` / `attemptIntegrationEventSync`) | 作成直後に `syncIntegrationEvent` を1回試行。絞り込みなし | 有効化後に発生する新規イベントも即時送信される |
+| `syncIntegrationEvent` | `provider=disabled` なら即 `"disabled"`。医院単位のロックのみ | 医院単位の「送らない」判定は無い |
+| 運用画面の再送(`/api/ops/integration-events/[id]/retry`、`bulk-retry`) | **failed → pending に戻す**操作のみ(送信そのものは Cron/即時試行が行う) | 「特定医院だけ送る」用途には使えない。pending→保留へ落とす操作も無い |
+| `scripts/salesforce-initial-sync.ts` | `--max-clinics`・`--since`・`--event-types` で医院数/期間/種別は絞れるが、**医院IDの指定は不可**。かつ `SALESFORCE_PROVIDER=salesforce` が必要=同時にCron・即時送信も有効になる | 単独では段階化できない |
+
+**結論: 現行実装では、承認対象の医院・イベントだけを段階的に同期することはできない。**
+
+### 11.1 設計案(未実装・未承認)
+
+| 案 | 内容 | 影響範囲 |
+|---|---|---|
+| **A. 医院許可リスト(推奨)** | 環境変数 `SALESFORCE_SYNC_CLINIC_ALLOWLIST`(医院IDのカンマ区切り。**未設定=全件停止**、`*`=全件許可)。`syncIntegrationEvent` の先頭(`resolveClinicId` 直後)で許可外なら **`"held"` を返し、status/retryCountを変えない**。`retryPendingIntegrationEvents` の `where` にも `clinicId in 許可リスト` を加え、Cronが許可外を毎回なめないようにする。即時送信も同じ関数を通るため自動的に対象 | `salesforceSync.ts`、`salesforceConfig.ts`(解析)、テスト追加。既存の `disabled` 判定は維持 |
+| B. イベントの保留ステータス | 保留したいイベントを `status='held'` に更新する運用画面操作を追加し、Cronは `held` を対象外にする。許可する医院の分だけ `pending` に戻す | DBの状態変更(運用画面経由)+ `integrationEventRepository` の対象条件変更。有効化後の新規イベントは `pending` で作られるため、別途「新規は held で作る」設定が必要 |
+| C. イベント種別の許可リスト | `SALESFORCE_SYNC_EVENT_TYPES` で種別を絞る(例: まず `diagnosis_completed` のみ) | 医院単位の制御はできないためAと併用 |
+
+A案の安全性: 許可リスト未設定時は何も送らない(fail-closed)。許可リストに載せた医院のみ、保留分32件のうち該当分と、以後の新規イベントが送られる。Go/No-Go 4.2節手順4「有効化した瞬間に最大50件送られる」はA案で解消できる。
+
+## 12. 限定allowSaveは既存Leadを救済できるか — 実コード条件での整理
+
+`upsertContactAllowingOwnLeadDuplicate`(`src/server/services/salesforceSync.ts` L348–412)の再送条件:
+
+1. Contact upsert が `DUPLICATES_DETECTED` で失敗し、応答に重複候補(ID付き)が含まれる。
+2. **`Lead` を外部ID `DentShift_Clinic_Id__c = clinic.id` で1件読み、見つかること**(`ownLead !== null`)。
+3. その Lead が `IsConverted = false` かつ `Email`(小文字)が Contact の email と一致。
+4. 候補が**すべて**その Lead 1件(同じSalesforce ID)であること。
+
+→ 条件2により、**外部IDが未設定の既存Lead(本番37件すべて)は「自医院のLead」と認識されず、再送しない(例外をそのまま投げる)**。したがって:
+
+| ケース | 結果 |
+|---|---|
+| 既存Lead(外部IDなし、同メール)が重複候補になる | 救済されない → `recordFailure` で再試行、8回で上限到達(要確認)。Contact/Account の作成が完了しない |
+| 既存Leadに外部ID(=医院ID)を人が入力してから同期 | 条件2〜4を満たせば再送(allowSave)。ただし外部ID入力は入力規則(3.1節)と電話禁止値(7章)の整理が前提 |
+| 既存Leadを外部ID一致の既存Account/Contactへ手動変換してから同期 | `readConvertedLead` → `adoptConvertedRecord` 経路。本番には変換先が無いため現状は該当なし |
+| Lead自体の upsert(`hasAccount=false` の医院)が「Standard Lead Duplicate Rule」で `DUPLICATES_DETECTED` になる場合 | Lead には allowSave 分岐が無い(2.1節のとおり Contact のみ) → 同様に上限到達。本番の重複ルール設定(S5)は未確認 |
+
+結論: **「既存Leadが残っていても限定allowSaveで救済される」とは言えない。** 救済経路は「外部ID付与」か「変換」のどちらかが先に必要で、どちらも本番では未着手・前提未成立(S12)。
 
 ## 10. 本書で決めないこと
 
