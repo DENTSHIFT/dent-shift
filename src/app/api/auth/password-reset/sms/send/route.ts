@@ -5,6 +5,7 @@ import { createTwilioVerifySmsProvider } from "@/server/providers/sms/twilioVeri
 import { logSmsEvent } from "@/server/providers/sms/smsLog";
 import { SmsDeliveryError } from "@/server/providers/sms/twilioVerifySmsProvider";
 import { decideSmsSend, PASSWORD_RESET_SMS_GENERIC_MESSAGE } from "@/domain/auth/passwordReset";
+import { isSmsSendAllowed } from "@/server/providers/sms/smsTestSendAllowlist";
 
 // 電話番号はユーザーに入力させない。登録メールアドレスで指定されたContactの、
 // 認証済みの登録番号にだけ送る。該当しない場合も同一レスポンスを返す。
@@ -37,6 +38,10 @@ export async function POST(request: NextRequest) {
       try {
         const config = resolveSmsConfigFromProcessEnv();
         if (config.provider === "disabled") return;
+        if (!isSmsSendAllowed({ contactId: contact.id, phoneNumberE164: phoneNumber })) {
+          logSmsEvent({ purpose: "password_reset_sms_send", result: "skipped", reason: "test_allowlist_mismatch" });
+          return;
+        }
         const sent = await createTwilioVerifySmsProvider(config).sendVerification(phoneNumber);
         logSmsEvent({
           purpose: "password_reset_sms_send",

@@ -9,6 +9,7 @@ import {
 } from "@/server/providers/sms/twilioVerifySmsProvider";
 import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository";
 import { logSmsEvent } from "@/server/providers/sms/smsLog";
+import { isSmsSendAllowed } from "@/server/providers/sms/smsTestSendAllowlist";
 
 const RESEND_MIN_INTERVAL_MS = 1000 * 60; // 1分
 const MAX_RESEND_COUNT = 5; // 1登録あたりの送信上限
@@ -90,6 +91,11 @@ export async function POST(request: NextRequest) {
       { error: "SMS認証は現在利用できません" },
       { status: 503 }
     );
+  }
+
+  if (!isSmsSendAllowed({ contactId: contact.id, phoneNumberE164: normalizedPhone })) {
+    logSmsEvent({ purpose: "phone_verify_send", result: "skipped", reason: "test_allowlist_mismatch" });
+    return NextResponse.json({ error: "SMS認証は現在利用できません" }, { status: 503 });
   }
 
   const provider = createTwilioVerifySmsProvider(config);

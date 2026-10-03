@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
@@ -172,5 +172,65 @@ describe("POST /api/auth/phone/send: 送信失敗からの復帰", () => {
     const second = await POST(request({ phoneNumber: "09012345678" }));
     expect(second.status).toBe(200);
     expect(mocks.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("POST /api/auth/phone/send: テスト環境の対象限定ガード", () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it("許可された組み合わせなら送信される", async () => {
+    process.env.SMS_TEST_SEND_ALLOWLIST_ENABLED = "true";
+    process.env.SMS_TEST_ALLOWED_CONTACT_ID = "contact-1";
+    process.env.SMS_TEST_ALLOWED_PHONE = "+819012345678";
+    const response = await POST(request({ phoneNumber: "09012345678" }));
+    expect(response.status).toBe(200);
+    expect(mocks.sendVerification).toHaveBeenCalledTimes(1);
+  });
+
+  it("許可設定が未設定ならTwilio呼び出しは0回", async () => {
+    process.env.SMS_TEST_SEND_ALLOWLIST_ENABLED = "true";
+    delete process.env.SMS_TEST_ALLOWED_CONTACT_ID;
+    delete process.env.SMS_TEST_ALLOWED_PHONE;
+    const response = await POST(request({ phoneNumber: "09012345678" }));
+    expect(response.status).toBe(503);
+    expect(mocks.sendVerification).not.toHaveBeenCalled();
+  });
+
+  it("許可設定の電話番号が不正な形式ならTwilio呼び出しは0回", async () => {
+    process.env.SMS_TEST_SEND_ALLOWLIST_ENABLED = "true";
+    process.env.SMS_TEST_ALLOWED_CONTACT_ID = "contact-1";
+    process.env.SMS_TEST_ALLOWED_PHONE = "090-1234-5678";
+    const response = await POST(request({ phoneNumber: "09012345678" }));
+    expect(response.status).toBe(503);
+    expect(mocks.sendVerification).not.toHaveBeenCalled();
+  });
+
+  it("Contact IDは一致するが電話番号が不一致ならTwilio呼び出しは0回", async () => {
+    process.env.SMS_TEST_SEND_ALLOWLIST_ENABLED = "true";
+    process.env.SMS_TEST_ALLOWED_CONTACT_ID = "contact-1";
+    process.env.SMS_TEST_ALLOWED_PHONE = "+819099999999";
+    const response = await POST(request({ phoneNumber: "09012345678" }));
+    expect(response.status).toBe(503);
+    expect(mocks.sendVerification).not.toHaveBeenCalled();
+  });
+
+  it("電話番号は一致するがContact IDが不一致ならTwilio呼び出しは0回", async () => {
+    process.env.SMS_TEST_SEND_ALLOWLIST_ENABLED = "true";
+    process.env.SMS_TEST_ALLOWED_CONTACT_ID = "contact-other";
+    process.env.SMS_TEST_ALLOWED_PHONE = "+819012345678";
+    const response = await POST(request({ phoneNumber: "09012345678" }));
+    expect(response.status).toBe(503);
+    expect(mocks.sendVerification).not.toHaveBeenCalled();
+  });
+
+  it("ガード無効(環境変数未設定)なら従来どおり送信される(本番の既存動作を変えない)", async () => {
+    delete process.env.SMS_TEST_SEND_ALLOWLIST_ENABLED;
+    const response = await POST(request({ phoneNumber: "09012345678" }));
+    expect(response.status).toBe(200);
+    expect(mocks.sendVerification).toHaveBeenCalledTimes(1);
   });
 });
