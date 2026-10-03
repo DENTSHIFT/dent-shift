@@ -4,6 +4,7 @@ import {
   SalesforceDeliveryError,
   clearSalesforceTokenCacheForTests,
   getSalesforceRecordByExternalId,
+  querySalesforceRecords,
   updateSalesforceRecordById,
   upsertSalesforceRecordByExternalId,
 } from "@/server/providers/salesforce/salesforceClient";
@@ -355,5 +356,74 @@ describe("getSalesforceRecordByExternalId / updateSalesforceRecordById", () => {
     expect(url).toBe("https://instance.salesforce.com/services/data/v60.0/sobjects/Account/001A");
     expect(init.method).toBe("PATCH");
     expect(JSON.parse(init.body)).toEqual({ DentShift_Clinic_Id__c: "clinic_1" });
+  });
+});
+
+describe("querySalesforceRecords(2026-10-03追加、読み取り専用SOQL)", () => {
+  it("GET /query で読み、nextRecordsUrlがあれば続きを辿って全件返す(PATCHは一切送らない)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            totalSize: 3,
+            done: false,
+            nextRecordsUrl: "/services/data/v60.0/query/01gXX-2000",
+            records: [{ Id: "00Q1" }, { Id: "00Q2" }],
+          }),
+          { status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ totalSize: 3, done: true, records: [{ Id: "00Q3" }] }), { status: 200 })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const records = await querySalesforceRecords({ config: CONFIG, soql: "SELECT Id FROM Lead WHERE IsConverted = false" });
+
+    expect(records.map((r) => r.Id)).toEqual(["00Q1", "00Q2", "00Q3"]);
+    expect(String(fetchMock.mock.calls[1]![0])).toBe(
+      "https://instance.salesforce.com/services/data/v60.0/query?q=SELECT%20Id%20FROM%20Lead%20WHERE%20IsConverted%20%3D%20false"
+    );
+    expect(String(fetchMock.mock.calls[2]![0])).toBe("https://instance.salesforce.com/services/data/v60.0/query/01gXX-2000");
+    expect(fetchMock.mock.calls.slice(1).every(([, init]) => init.method === "GET")).toBe(true);
+  });
+
+  it("maxRecordsに達したら続きを辿らない", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ done: false, nextRecordsUrl: "/services/data/v60.0/query/01gXX-2000", records: [{ Id: "00Q1" }, { Id: "00Q2" }] }),
+          { status: 200 }
+        )
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const records = await querySalesforceRecords({ config: CONFIG, soql: "SELECT Id FROM Lead", maxRecords: 1 });
+
+    expect(records.map((r) => r.Id)).toEqual(["00Q1"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("応答が不正(recordsが配列でない/Idが無い)ならSalesforceDeliveryError", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(tokenResponse()).mockResolvedValueOnce(new Response(JSON.stringify({ records: [{ Name: "x" }] }), { status: 200 }))
+    );
+    await expect(querySalesforceRecords({ config: CONFIG, soql: "SELECT Id FROM Lead" })).rejects.toBeInstanceOf(SalesforceDeliveryError);
+  });
+
+  it("HTTPエラーはerrorCode付きのSalesforceDeliveryErrorになる", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(tokenResponse())
+        .mockResolvedValueOnce(new Response(JSON.stringify([{ errorCode: "MALFORMED_QUERY", message: "x" }]), { status: 400 }))
+    );
+    await expect(querySalesforceRecords({ config: CONFIG, soql: "SELECT" })).rejects.toMatchObject({ errorCode: "MALFORMED_QUERY" });
   });
 });

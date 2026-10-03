@@ -311,6 +311,55 @@ export async function getSalesforceRecordById(input: {
   return readRecord(response, label);
 }
 
+/**
+ * SOQLで複数レコードを読む(GET /query、読み取り専用)。nextRecordsUrlがある限り
+ * 続きを辿って全件返す(maxRecordsで打ち切り可)。
+ *
+ * 2026-10-03追加: 本番移行前のLead/Clinic照合(scripts/salesforce-lead-clinic-match-readonly.ts)
+ * 用。同期経路(salesforceSync.ts)からは呼ばない。SOQL文字列は呼び出し側が固定文字列で
+ * 組み立て、ユーザー入力を埋め込まない前提(このヘルパーはエスケープを行わない)。
+ */
+export async function querySalesforceRecords(input: {
+  config: SalesforceOAuthConfig;
+  soql: string;
+  maxRecords?: number;
+}): Promise<SalesforceRecord[]> {
+  const label = "SOQL query";
+  const limit = input.maxRecords ?? Number.POSITIVE_INFINITY;
+  const records: SalesforceRecord[] = [];
+  let path: string | null = `/query?q=${encodeURIComponent(input.soql)}`;
+  while (path && records.length < limit) {
+    const response = await requestSalesforce(input.config, "GET", path, label);
+    if (!response.ok) await throwForResponse(response, label);
+    const body = (await response.json().catch(() => null)) as {
+      records?: unknown;
+      done?: unknown;
+      nextRecordsUrl?: unknown;
+    } | null;
+    if (!body || !Array.isArray(body.records)) {
+      throw new SalesforceDeliveryError(`Salesforce ${label} response was malformed.`);
+    }
+    for (const record of body.records) {
+      if (!record || typeof (record as { Id?: unknown }).Id !== "string") {
+        throw new SalesforceDeliveryError(`Salesforce ${label} response was malformed.`);
+      }
+      records.push(record as SalesforceRecord);
+      if (records.length >= limit) break;
+    }
+    if (body.done === false && typeof body.nextRecordsUrl === "string") {
+      // nextRecordsUrlは "/services/data/vXX.X/query/01g..." の形で返る。
+      // requestSalesforceは "/services/data/vXX.X" を前置するため、その部分を取り除く。
+      const marker = `/services/data/${API_VERSION}`;
+      const index = body.nextRecordsUrl.indexOf(marker);
+      path = index >= 0 ? body.nextRecordsUrl.slice(index + marker.length) : null;
+      if (!path) throw new SalesforceDeliveryError(`Salesforce ${label} nextRecordsUrl was unexpected.`);
+    } else {
+      path = null;
+    }
+  }
+  return records;
+}
+
 /** Salesforce IDを指定して既存レコードの項目を更新する(作成はしない)。 */
 export async function updateSalesforceRecordById(input: {
   config: SalesforceOAuthConfig;
