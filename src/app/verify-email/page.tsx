@@ -70,6 +70,38 @@ export default async function VerifyEmailPage({
 
   const invite = await findActiveUnusedPilotInviteByEmail(result.email).catch(() => null);
 
+  // 「このリンク自体が有効で、その確認処理が成功した」ことと、
+  // 「(このリンクの成否とは無関係に)現在ログイン中のアカウントは既に確認済みである」ことを
+  // 文言上はっきり区別する(PO指摘: 2026-10-03)。
+  // already_verified_via_session は、開いたリンクのトークン自体は無効/使用済みで、
+  // たまたま現在ログイン中のセッション本人が別途確認済みだっただけのケース。
+  // この場合に「確認が完了しました」と表示すると、あたかも「このリンクが成功した」
+  // (=リンクの持ち主の確認が成功した)ように誤読されるため、見出し・本文ともに分ける。
+  if (result.status === "already_verified_via_session") {
+    return (
+      <Shell>
+        <h1 className={styles.title}>このリンクは無効ですが、ログイン中のアカウントは確認済みです</h1>
+        <p className={styles.description}>
+          開いた確認リンクはすでに使用されているか無効です。ただし、現在ログイン中のアカウント({result.email})はメールアドレスの確認が完了しています。
+        </p>
+        <div style={{ marginTop: 20, display: "grid", gap: 10 }}>
+          {invite && (
+            <Link className={styles.primaryButton} style={{ textAlign: "center", textDecoration: "none" }} href={`/invite/${invite.inviteCode}`}>
+              招待ページに戻る
+            </Link>
+          )}
+          <Link
+            className={invite ? styles.secondaryButton : styles.primaryButton}
+            style={{ textAlign: "center", textDecoration: "none" }}
+            href="/dashboard"
+          >
+            DENT SHIFTへ戻る
+          </Link>
+        </div>
+      </Shell>
+    );
+  }
+
   return (
     <Shell>
       <h1 className={styles.title}>メールアドレスの確認が完了しました</h1>

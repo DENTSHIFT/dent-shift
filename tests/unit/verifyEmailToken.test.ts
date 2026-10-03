@@ -112,7 +112,7 @@ describe("verifyEmailToken", () => {
       expect(mocks.update).not.toHaveBeenCalled();
     });
 
-    it("(b) ログイン済み本人 + 使用済みトークン: 本人が確認済みなのでalready_verifiedの穏当な案内にする", async () => {
+    it("(b) ログイン済み本人 + 使用済みトークン: 本人が確認済みなのでalready_verified_via_sessionの穏当な案内にする(トークン自体が成功したわけではないことをステータス名で区別)", async () => {
       mocks.findFirst.mockResolvedValue(null);
       mocks.findUnique.mockResolvedValue({
         id: "contact-1",
@@ -120,9 +120,29 @@ describe("verifyEmailToken", () => {
         emailVerifiedAt: new Date(),
       });
       const result = await verifyEmailToken(RAW_TOKEN, { sessionContactId: "contact-1" });
-      expect(result).toEqual({ status: "already_verified", contactId: "contact-1", email: "owner@example.com" });
+      expect(result).toEqual({
+        status: "already_verified_via_session",
+        contactId: "contact-1",
+        email: "owner@example.com",
+      });
       expect(mocks.findUnique).toHaveBeenCalledWith({ where: { id: "contact-1" } });
       expect(mocks.update).not.toHaveBeenCalled();
+    });
+
+    it("(b-2) 回帰テスト: already_verified_via_session分岐でも認証状態(emailVerifiedAt/セッション)には一切書き込みが発生しない(表示専用の文言区別であることの確認)", async () => {
+      mocks.findFirst.mockResolvedValue(null);
+      mocks.findUnique.mockResolvedValue({
+        id: "contact-1",
+        email: "owner@example.com",
+        emailVerifiedAt: new Date("2026-01-01T00:00:00Z"),
+      });
+      await verifyEmailToken(RAW_TOKEN, { sessionContactId: "contact-1" });
+      // DBへの書き込み系メソッドが一切呼ばれていないこと(emailVerifiedAt等を変更しない)
+      expect(mocks.update).not.toHaveBeenCalled();
+      expect(mocks.enqueueIntegrationEvent).not.toHaveBeenCalled();
+      // findUniqueは読み取り専用の参照であり、本人のcontactIdでのみ照会している
+      expect(mocks.findUnique).toHaveBeenCalledTimes(1);
+      expect(mocks.findUnique).toHaveBeenCalledWith({ where: { id: "contact-1" } });
     });
 
     it("(c) 無効/期限切れトークン単体: セッションが無ければ(本人確認できないため)成功扱いにしない", async () => {

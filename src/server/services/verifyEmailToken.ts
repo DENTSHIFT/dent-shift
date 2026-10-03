@@ -7,6 +7,12 @@ import { enqueueIntegrationEvent } from "@/server/db/integrationEventRepository"
 export type VerifyEmailTokenResult =
   | { status: "verified"; contactId: string; email: string }
   | { status: "already_verified"; contactId: string; email: string }
+  // 2026-10-03(PO指摘): トークン自体は無効/使用済みで見つからないが、
+  // 現在ログイン中のセッション本人が別途確認済みだった場合のフォールバック。
+  // 「このリンクが成功した」わけではない(トークンの持ち主の確認が成功したとは言えない)ため、
+  // UI側で"already_verified"(トークン自身の持ち主が確認済み)と文言を区別できるよう
+  // 別ステータスにする。認可ロジック(どのcontactを見るか)自体は変更していない。
+  | { status: "already_verified_via_session"; contactId: string; email: string }
   | { status: "error"; code: "invalid" | "expired"; message: string };
 
 /**
@@ -50,7 +56,7 @@ export async function verifyEmailToken(
       // ここには該当せず、下のinvalidエラーにフォールバックする)
       if (sessionContact?.emailVerifiedAt) {
         return {
-          status: "already_verified",
+          status: "already_verified_via_session",
           contactId: sessionContact.id,
           email: sessionContact.email,
         };
