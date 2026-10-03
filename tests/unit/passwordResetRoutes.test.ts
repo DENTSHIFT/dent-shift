@@ -50,6 +50,11 @@ const eligible = {
 beforeEach(() => {
   vi.clearAllMocks();
   transaction.mockImplementation(async (ops: unknown[]) => Promise.all(ops));
+  // 対象限定ガード(非本番では必須)がこのファイルの既存テストに影響しないよう、
+  // 本番ドメインを既定値にする(2026-10-03追加)。
+  process.env.APP_BASE_URL = "https://dentshift.jp";
+  delete process.env.SMS_TEST_ALLOWED_CONTACT_ID;
+  delete process.env.SMS_TEST_ALLOWED_PHONE;
 });
 
 describe("SMS再設定 send", () => {

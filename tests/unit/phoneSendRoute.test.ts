@@ -46,6 +46,11 @@ function request(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // 既定では本番ドメインを想定し、対象限定ガード(非本番では必須)がこのファイルの
+  // 他のテスト(ガード自体を検証する下のdescribeを除く)に影響しないようにする。
+  process.env.APP_BASE_URL = "https://dentshift.jp";
+  delete process.env.SMS_TEST_ALLOWED_CONTACT_ID;
+  delete process.env.SMS_TEST_ALLOWED_PHONE;
   mocks.currentContact.mockResolvedValue({
     id: "contact-1",
     clinicId: "clinic-1",
@@ -175,15 +180,15 @@ describe("POST /api/auth/phone/send: 送信失敗からの復帰", () => {
   });
 });
 
-describe("POST /api/auth/phone/send: テスト環境の対象限定ガード", () => {
+describe("POST /api/auth/phone/send: 対象限定ガード(非本番環境では必須)", () => {
   const ORIGINAL_ENV = { ...process.env };
 
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
   });
 
-  it("許可された組み合わせなら送信される", async () => {
-    process.env.SMS_TEST_SEND_ALLOWLIST_ENABLED = "true";
+  it("非本番(test.dentshift.jp)で許可された組み合わせなら送信される", async () => {
+    process.env.APP_BASE_URL = "https://test.dentshift.jp";
     process.env.SMS_TEST_ALLOWED_CONTACT_ID = "contact-1";
     process.env.SMS_TEST_ALLOWED_PHONE = "+819012345678";
     const response = await POST(request({ phoneNumber: "09012345678" }));
@@ -191,8 +196,8 @@ describe("POST /api/auth/phone/send: テスト環境の対象限定ガード", (
     expect(mocks.sendVerification).toHaveBeenCalledTimes(1);
   });
 
-  it("許可設定が未設定ならTwilio呼び出しは0回", async () => {
-    process.env.SMS_TEST_SEND_ALLOWLIST_ENABLED = "true";
+  it("非本番で許可設定が未設定(欠落)ならTwilio呼び出しは0回(設定漏れを送信許可にしない)", async () => {
+    process.env.APP_BASE_URL = "https://test.dentshift.jp";
     delete process.env.SMS_TEST_ALLOWED_CONTACT_ID;
     delete process.env.SMS_TEST_ALLOWED_PHONE;
     const response = await POST(request({ phoneNumber: "09012345678" }));
@@ -200,8 +205,17 @@ describe("POST /api/auth/phone/send: テスト環境の対象限定ガード", (
     expect(mocks.sendVerification).not.toHaveBeenCalled();
   });
 
-  it("許可設定の電話番号が不正な形式ならTwilio呼び出しは0回", async () => {
-    process.env.SMS_TEST_SEND_ALLOWLIST_ENABLED = "true";
+  it("APP_BASE_URL自体が未設定でも本番と断定せず、Twilio呼び出しは0回", async () => {
+    delete process.env.APP_BASE_URL;
+    delete process.env.SMS_TEST_ALLOWED_CONTACT_ID;
+    delete process.env.SMS_TEST_ALLOWED_PHONE;
+    const response = await POST(request({ phoneNumber: "09012345678" }));
+    expect(response.status).toBe(503);
+    expect(mocks.sendVerification).not.toHaveBeenCalled();
+  });
+
+  it("非本番で許可設定の電話番号が不正な形式ならTwilio呼び出しは0回", async () => {
+    process.env.APP_BASE_URL = "https://test.dentshift.jp";
     process.env.SMS_TEST_ALLOWED_CONTACT_ID = "contact-1";
     process.env.SMS_TEST_ALLOWED_PHONE = "090-1234-5678";
     const response = await POST(request({ phoneNumber: "09012345678" }));
@@ -210,7 +224,7 @@ describe("POST /api/auth/phone/send: テスト環境の対象限定ガード", (
   });
 
   it("Contact IDは一致するが電話番号が不一致ならTwilio呼び出しは0回", async () => {
-    process.env.SMS_TEST_SEND_ALLOWLIST_ENABLED = "true";
+    process.env.APP_BASE_URL = "https://test.dentshift.jp";
     process.env.SMS_TEST_ALLOWED_CONTACT_ID = "contact-1";
     process.env.SMS_TEST_ALLOWED_PHONE = "+819099999999";
     const response = await POST(request({ phoneNumber: "09012345678" }));
@@ -219,7 +233,7 @@ describe("POST /api/auth/phone/send: テスト環境の対象限定ガード", (
   });
 
   it("電話番号は一致するがContact IDが不一致ならTwilio呼び出しは0回", async () => {
-    process.env.SMS_TEST_SEND_ALLOWLIST_ENABLED = "true";
+    process.env.APP_BASE_URL = "https://test.dentshift.jp";
     process.env.SMS_TEST_ALLOWED_CONTACT_ID = "contact-other";
     process.env.SMS_TEST_ALLOWED_PHONE = "+819012345678";
     const response = await POST(request({ phoneNumber: "09012345678" }));
@@ -227,8 +241,10 @@ describe("POST /api/auth/phone/send: テスト環境の対象限定ガード", (
     expect(mocks.sendVerification).not.toHaveBeenCalled();
   });
 
-  it("ガード無効(環境変数未設定)なら従来どおり送信される(本番の既存動作を変えない)", async () => {
-    delete process.env.SMS_TEST_SEND_ALLOWLIST_ENABLED;
+  it("本番ドメイン(dentshift.jp)では許可リスト未設定でも従来どおり送信される(本番の既存動作を変えない)", async () => {
+    process.env.APP_BASE_URL = "https://dentshift.jp";
+    delete process.env.SMS_TEST_ALLOWED_CONTACT_ID;
+    delete process.env.SMS_TEST_ALLOWED_PHONE;
     const response = await POST(request({ phoneNumber: "09012345678" }));
     expect(response.status).toBe(200);
     expect(mocks.sendVerification).toHaveBeenCalledTimes(1);

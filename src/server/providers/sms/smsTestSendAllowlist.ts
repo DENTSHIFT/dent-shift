@@ -1,20 +1,35 @@
 import "server-only";
 
 /**
- * SMS実送信の対象限定ガード(テスト環境限定)。
+ * SMS実送信の対象限定ガード(非本番環境では必須)。
  *
- * `dent-shift-test`のようなSMS_PROVIDERを共有するテスト環境で、SMS_PROVIDER自体は
- * プロセス全体のグローバル設定であり、対象外の利用者が偶然SMS認証フローに到達しても
- * 送信を止める仕組みがなかった(2026-10-03調査)。このモジュールは、Twilioへの実送信
- * 呼び出しの直前に挟む「最後の砦」として、許可されたContact ID・電話番号の両方が
- * 一致した場合だけ送信を許可する。
+ * `SMS_PROVIDER`はプロセス全体のグローバル設定であり、`smsVerificationExempt`は
+ * 保護ページへのアクセス許可を制御するだけでSMS送信自体を防がない。そのため、
+ * `dent-shift-test`のような共有テスト環境でSMS_PROVIDERを有効化すると、対象外の
+ * 利用者が偶然SMS認証フローに到達しても実際に送信されてしまう(2026-10-03調査)。
  *
- * 有効化は`SMS_TEST_SEND_ALLOWLIST_ENABLED=true`を明示的に設定した場合のみ。
- * 未設定(本番含む既存の全環境)では本モジュールは何もせず、既存の送信動作は
- * 一切変更しない。
+ * 2026-10-03訂正: 当初は`SMS_TEST_SEND_ALLOWLIST_ENABLED`という明示フラグ未設定なら
+ * 常に許可する設計だったが、これは「設定漏れが送信許可になる」という安全側と逆の
+ * 挙動だったため撤回する。
+ *
+ * 環境識別は`VERCEL_ENV`(test.dentshift.jpも"production"を返すため使えない)ではなく、
+ * `APP_BASE_URL`のホスト名で行う(`resultEmailConfig.ts`のEMAIL_LINK_ALLOWED_HOSTS、
+ * `docs/PRODUCTION_MIGRATION_PLAN_2026-10-03.md`の対象環境表と同じ、このコードベース
+ * 既存の判定方法)。本番ドメイン(dentshift.jp/www.dentshift.jp/app.dentshift.jp)の
+ * 場合のみガードは無効(従来どおり無条件で送信、本番の既存動作を一切変えない)。
+ * それ以外(test.dentshift.jp、Vercel Preview URL、APP_BASE_URL未設定・不正な場合を
+ * 含む全て)では、許可リストとの一致が**必須**になる。
  */
-export function isSmsTestSendAllowlistEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return env.SMS_TEST_SEND_ALLOWLIST_ENABLED?.trim() === "true";
+const PRODUCTION_HOSTS = new Set(["dentshift.jp", "www.dentshift.jp", "app.dentshift.jp"]);
+
+export function isKnownProductionHost(env: Record<string, string | undefined> = process.env): boolean {
+  try {
+    const host = new URL(env.APP_BASE_URL ?? "").host.toLowerCase();
+    return PRODUCTION_HOSTS.has(host);
+  } catch {
+    // APP_BASE_URL未設定・不正な場合は本番と断定しない(非本番として扱い、ガードを必須にする)。
+    return false;
+  }
 }
 
 export interface SmsSendAllowlistCheck {
@@ -24,16 +39,18 @@ export interface SmsSendAllowlistCheck {
 }
 
 /**
- * ガードが有効な環境で、指定されたContact ID・電話番号の組み合わせが許可リストと
- * 一致するかどうかを判定する。
- * - ガード無効(SMS_TEST_SEND_ALLOWLIST_ENABLED未設定)の場合は常にtrue(素通り)。
- * - ガード有効時、許可リストが未設定・不正な形式・いずれか一方でも不一致なら false。
+ * 指定されたContact ID・電話番号の組み合わせで送信してよいかどうかを判定する。
+ * - 本番ドメイン(APP_BASE_URLのホストがPRODUCTION_HOSTSに含まれる)では常にtrue
+ *   (従来どおり無条件で送信、本番の既存動作を変えない)。
+ * - それ以外の環境では、許可リスト(SMS_TEST_ALLOWED_CONTACT_ID・SMS_TEST_ALLOWED_PHONE)
+ *   が両方設定されていて、かつ両方が一致した場合のみtrue。未設定・不正な形式・
+ *   いずれか一方でも不一致ならfalse(拒否)。
  */
 export function isSmsSendAllowed(
   check: SmsSendAllowlistCheck,
   env: Record<string, string | undefined> = process.env
 ): boolean {
-  if (!isSmsTestSendAllowlistEnabled(env)) return true;
+  if (isKnownProductionHost(env)) return true;
 
   const allowedContactId = env.SMS_TEST_ALLOWED_CONTACT_ID?.trim();
   const allowedPhone = env.SMS_TEST_ALLOWED_PHONE?.trim();
