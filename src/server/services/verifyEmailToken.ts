@@ -15,14 +15,47 @@ export type VerifyEmailTokenResult =
  * 2026-09-24: /api/auth/verify-email/route.tsから処理本体をここへ切り出し、
  * /verify-emailページ(UI)からも同じ処理を直接呼べるようにした
  * (API層とUI表示を分離。既存のAPI挙動・レスポンス形は変えない)。
+ *
+ * 2026-10-03(PO承認): 確認成功時にトークンハッシュをnull化して消費するため、
+ * 「使用済みリンクをもう一度開く」操作は(契機のレース以外)原則としてここで
+ * contactが見つからず"invalid"になる。これは正しいトークンでも再訪時は
+ * 無効扱いになってしまい、「無効です・再送してください」という誤解を招く案内に
+ * なっていた。対策として、呼び出し元から現在ログイン中のセッションのcontactId
+ * (sessionContactId)を渡せるようにし、
+ *   - トークン自体はDB上で見つからない(=使用済み/不正)が、
+ *   - かつ現在ログイン中の本人(sessionContactIdで特定されるcontact)が
+ *     既にemailVerifiedAt済みである
+ * ことをサーバー側で確認できた場合に限り、"already_verified"として穏当な案内を
+ * 返す。トークンの有効性チェック自体は一切緩めない(無効トークン単体では
+ * 絶対に成功扱いにしない。セッションが無い、またはセッション本人が未確認の場合は
+ * 従来通りinvalidのまま)。
  */
-export async function verifyEmailToken(token: string): Promise<VerifyEmailTokenResult> {
+export async function verifyEmailToken(
+  token: string,
+  options?: { sessionContactId?: string | null }
+): Promise<VerifyEmailTokenResult> {
   const tokenHash = hashEmailVerificationToken(token);
   const contact = await prisma.contact.findFirst({
     where: { emailVerificationTokenHash: tokenHash },
   });
 
   if (!contact) {
+    const sessionContactId = options?.sessionContactId;
+    if (sessionContactId) {
+      const sessionContact = await prisma.contact.findUnique({
+        where: { id: sessionContactId },
+      });
+      // ログイン中の本人が既に確認済みの場合に限り、穏当な案内にする。
+      // (トークンが他人のものだったり不正な場合は、本人が未確認のままなので
+      // ここには該当せず、下のinvalidエラーにフォールバックする)
+      if (sessionContact?.emailVerifiedAt) {
+        return {
+          status: "already_verified",
+          contactId: sessionContact.id,
+          email: sessionContact.email,
+        };
+      }
+    }
     return { status: "error", code: "invalid", message: "確認リンクが無効です" };
   }
   if (contact.emailVerifiedAt) {

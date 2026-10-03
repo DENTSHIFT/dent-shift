@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { verifyEmailToken } from "@/server/services/verifyEmailToken";
 import { findActiveUnusedPilotInviteByEmail } from "@/server/db/inviteRepository";
+import { getCurrentContact } from "@/server/auth/session";
 import styles from "../auth.module.css";
 
 /**
@@ -29,9 +30,15 @@ export default async function VerifyEmailPage({
     );
   }
 
-  const result = await verifyEmailToken(token);
+  const sessionContact = await getCurrentContact().catch(() => null);
+  const result = await verifyEmailToken(token, { sessionContactId: sessionContact?.id ?? null });
 
   if (result.status === "error") {
+    // 未ログインで、かつ「使用済みトークン(=既にどこかで確認済み)」の可能性がある場合は、
+    // ここで無根拠に成功扱いにはしない。ログインしてもらえれば、本人のセッションで
+    // 確認済みかどうかをサーバー側で確認した上で穏当な案内に切り替えられるため、
+    // 既存のログイン導線(next付きリダイレクト)に合わせて案内する。
+    const loginNext = `/verify-email?token=${encodeURIComponent(token)}`;
     return (
       <Shell>
         <h1 className={styles.title}>確認できませんでした</h1>
@@ -40,6 +47,22 @@ export default async function VerifyEmailPage({
             ? "確認リンクの有効期限が切れています。ダッシュボードから再送してください。"
             : "この確認リンクは無効です。リンクの有効期限切れ、または既に使用済みの可能性があります。"}
         </p>
+        {!sessionContact && (
+          <p className={styles.description}>
+            既にメールアドレスの確認が完了している場合は、ログインすると状況を確認できます。
+          </p>
+        )}
+        {!sessionContact && (
+          <div style={{ marginTop: 20 }}>
+            <Link
+              className={styles.primaryButton}
+              style={{ textAlign: "center", textDecoration: "none" }}
+              href={`/login?next=${encodeURIComponent(loginNext)}`}
+            >
+              ログインする
+            </Link>
+          </div>
+        )}
         <BackToDashboardLink />
       </Shell>
     );

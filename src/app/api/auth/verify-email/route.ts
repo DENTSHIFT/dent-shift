@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyEmailToken } from "@/server/services/verifyEmailToken";
+import { getCurrentContact } from "@/server/auth/session";
 
 /**
  * メール本文中のリンク(GET)からの確認を受け付けるAPI。
@@ -14,7 +15,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "確認トークンが指定されていません" }, { status: 400 });
   }
 
-  const result = await verifyEmailToken(token);
+  const sessionContact = await getCurrentContact().catch(() => null);
+  const result = await verifyEmailToken(token, { sessionContactId: sessionContact?.id ?? null });
   if (result.status === "error") {
     return NextResponse.json(
       { error: result.message, ...(result.code === "expired" ? { code: result.code } : {}) },
