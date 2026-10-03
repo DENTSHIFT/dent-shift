@@ -203,11 +203,21 @@ Sandboxのテストデータでは、Owner割当がほぼ単一ユーザーに�
 | 種別 | レコードトリガーフロー、オブジェクト=リード、トリガー=**レコードが更新された**(作成時は対象外) |
 | 実行タイミング | 「レコードを更新し、条件の要件に一致するたび」(after-save、「アクションと関連レコード」最適化) |
 | エントリ条件(数式、全文) | `AND( ISCHANGED({!$Record.IsConverted}), {!$Record.IsConverted} = true, {!$Record.DentShift_Do_Not_Call__c} = true, NOT(ISBLANK({!$Record.ConvertedContactId})) )` |
-| 要素 | 「レコードを更新」1つのみ(API参照名 `Update_Converted_Contact`)。対象=取引先責任者、条件=`取引先責任者 ID` が `{!$Record.ConvertedContactId}` と一致、設定=**`電話禁止`(DoNotCall)← True** |
+| 要素 | 「レコードを更新」1つのみ(API参照名 `Update_Converted_Contact`)。対象=取引先責任者、条件=`取引先責任者 ID` が `{!$Record.ConvertedContactId}` と一致、設定=**`電話禁止` ← True** |
 | 非同期パス | なし |
 
-- 読み取りからの解釈(断定ではなく数式・設定からの推論): Leadが「変換された」更新でのみ発火し、Lead側の`DentShift_Do_Not_Call__c`がtrueのときに限り、変換先Contactの**標準項目DoNotCall**をtrueにする。Contact側カスタム項目`DentShift_Do_Not_Call__c`(8.1)には書き込まない。Lead側の`DentShift_Do_Not_Call__c`がfalseの場合は何もしない(Contact側をfalseに「戻す」動作はない)。
-- 既存Contactへ変換(マージ)する場合も`ConvertedContactId`が入るため条件上は発火するが、**実際の発火はドライラン(手順書別紙)で確認する**。
+- **訂正(同日)**: 画面上の「電話禁止」は、Contactの**カスタム項目 `DentShift_Do_Not_Call__c`(表示ラベル「電話禁止」)**である。リポジトリの`DentShift_Preserve_Do_Not_Call_On_Convert.flow-meta.xml`の`<inputAssignments><field>DentShift_Do_Not_Call__c</field>`と一致。当初「標準項目DoNotCallへ転記」と記載したのは誤り。**この組織(dsverify)にはLead/Contactとも標準項目`DoNotCall`が存在しない**(`describe`で確認、2026-10-03)。
+- 読み取りからの解釈: Leadが「変換された」更新でのみ発火し、Lead側の`DentShift_Do_Not_Call__c`がtrueのときに限り、変換先Contactの`DentShift_Do_Not_Call__c`をtrueにする。falseの場合は何もしない(Contact側をfalseに「戻す」動作はない)。
+- **項目の対応付け(リード項目の対応付け、2026-10-03読み取り)**: Lead `電話禁止`→Contact `電話禁止`、Lead `電話禁止の解除・変更の根拠`→Contact 同名項目 が対応付け済み。新規Contact作成での変換では、Flowとは別にこの対応付けでLeadの値がそのまま転記される(ドライラン(a)(e)(f)で確認: Lead false→Contact false、Lead true→Contact true)。**Lead `DENT SHIFTの医院ID`→Account は「なし」**(8.8参照)。
+- **運用上の参照先**: 営業リストビュー「架電対象リード(DENT SHIFT)」(Lead)・「DENT SHIFT Call Targets - Contact」(Contact)はいずれも`DentShift_Do_Not_Call__c = false`で絞り込んでおり、アプリ同期(`salesforceSync.ts`)はこの項目を書き込まない。したがって、運用上の電話禁止はカスタム項目1つで決まり、標準項目の有無は影響しない(この組織に標準項目が無いため「標準だけ保持されてカスタムが外れる」ずれは起きない)。
+
+### 8.8 Sandbox手動変換ドライラン実施結果(2026-10-03、PO限定承認)
+
+実施内容・レコードIdの一覧は `SALESFORCE_MANUAL_CONVERSION_DRY_RUN_PLAN_2026-10-03.md` 10章。要点のみ:
+
+- (a) 既存Account紐付け ✓、(b) 既存Account+既存Contact紐付け ✓(外部ID不変、新規Contactなし)、(e) 変換先Contactの`DentShift_Do_Not_Call__c = true` ✓、(f) Task/Eventが変換先Contactの活動に引き継ぎ ✓。全件で商談0件、Owner=実行者を維持、既存(ダミー以外)の変換済みLead件数は6のまま不変。
+- (c) 外部ID未設定 → 変換せず停止(期待どおり)。(d) 所有者差異 → **未検証**(有効な第2の人間ユーザーが無く、無効ユーザーの有効化は行わない方針)。
+- **新たな注意点**: 「取引先を新規作成」で変換した場合、新規Accountの`DentShift_Clinic_Id__c`は**空**になる(対応付け「なし」のため)。アプリ同期はAccountを外部IDでupsertするため、この状態で同期が走ると**別Accountが新規作成される**(`adoptConvertedRecord`はLead側の外部IDで変換先を採用する設計だが、採用前に同期が先行した場合の挙動は未検証)。手順書1.2の「既存Accountを選ぶ」原則を守るか、新規Account作成時は変換直後に外部IDを人が転記する手順が必要(本番前に要決定)。
 - 本番組織への同Flowのデプロイ有無・有効化状態は未確認(S6は「Sandboxでは充足、本番は未確認」)。
 
 ### 8.6 総括・次に必要な判断

@@ -19,14 +19,26 @@
 //     名称/URL/メールでの照合結果は参考情報(hint)として同じ分類表に載せるが、
 //     手順書8.3の運用ルールどおり、これをもって自動変換・外部ID補完は行わない。
 //
-// 事前準備(実行前に本人が行う):
-//   環境変数 DATABASE_URL(照合したいDB)、SALESFORCE_CLIENT_ID / SALESFORCE_CLIENT_SECRET /
-//   SALESFORCE_LOGIN_URL / SALESFORCE_EXPECTED_ORG_ID(照合したい組織)をシェルで設定する。
-//   このファイルには値を書かない。SALESFORCE_PROVIDER の値は参照しない(disabledのままでよい)。
+// 誤接続防止(停止条件):
+//   - Salesforce: OAuth応答の組織IDが SALESFORCE_EXPECTED_ORG_ID と一致しなければ、
+//     salesforceClient.getAccessToken が ORG_MISMATCH で例外を投げ、照会前に停止する。
+//   - DB: --expect-db-host <ホスト名> を必須にし、DATABASE_URL のホスト名と一致しなければ
+//     DBに接続する前に停止する(接続文字列そのものは表示しない。ホスト名のみ表示)。
+//   - 本番照合のつもりでSandboxに繋いだ(またはその逆)場合に気付けるよう、Salesforceの
+//     接続先種別(sandbox / production_or_unknown)を開始時に表示する。
+//
+// 事前準備(実行前に本人が行う。秘密値をコマンドラインに直接書かない):
+//   秘密値はファイル(例: salesforce/.env.production-readonly、リポジトリ外・gitignore対象)に置き、
+//     set -a; source <そのファイル>; set +a
+//   で環境変数に読み込む(コマンド履歴に値が残らない)。必要な変数:
+//   DATABASE_URL(照合したいDB)、SALESFORCE_CLIENT_ID / SALESFORCE_CLIENT_SECRET /
+//   SALESFORCE_LOGIN_URL / SALESFORCE_EXPECTED_ORG_ID(照合したい組織)。
+//   SALESFORCE_PROVIDER の値は参照しない(disabledのままでよい)。
 //
 // 使い方:
 //   cd /Users/masatokimura/Documents/dent-shift
-//   npx tsx --conditions=react-server scripts/salesforce-lead-clinic-match-readonly.ts
+//   set -a; source <秘密値ファイル>; set +a
+//   npx tsx --conditions=react-server scripts/salesforce-lead-clinic-match-readonly.ts --expect-db-host <DBホスト名>
 //   (--out <path> で出力ファイルの場所を変更可。既定は scripts/output/lead-clinic-match-<timestamp>.json)
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -117,7 +129,28 @@ async function main() {
   }
   const loginHost = new URL(config.loginUrl).host;
   const targetKind = /--[^.]+\.sandbox\./.test(loginHost) ? "sandbox" : "production_or_unknown";
-  console.log(JSON.stringify({ event: "start", salesforceTarget: targetKind, mode: "read-only" }));
+
+  // DB接続先の確認(接続前に停止できるようにする)。値そのものは表示しない。
+  const expectDbHost = argValue("--expect-db-host");
+  if (!expectDbHost) {
+    console.error("--expect-db-host <DATABASE_URLのホスト名> が必要です(誤ったDBへ接続しないための確認)。");
+    process.exitCode = 1;
+    return;
+  }
+  let dbHost: string;
+  try {
+    dbHost = new URL(process.env.DATABASE_URL ?? "").hostname;
+  } catch {
+    console.error("DATABASE_URL が未設定、またはURLとして解釈できません。停止します。");
+    process.exitCode = 1;
+    return;
+  }
+  if (dbHost.toLowerCase() !== expectDbHost.toLowerCase()) {
+    console.error(`DATABASE_URL のホスト名が --expect-db-host と一致しません(実際: ${dbHost})。停止します。`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(JSON.stringify({ event: "start", salesforceTarget: targetKind, dbHost, mode: "read-only" }));
 
   // --- DB側(読み取りのみ) ---
   const clinics = await prisma.clinic.findMany({

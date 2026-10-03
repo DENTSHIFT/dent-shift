@@ -306,6 +306,46 @@ Sandbox全体では **人手作成12件 + 変換による新規5件(Account 2 / 
 
 ---
 
+## 10. 実施結果(2026-10-03、Sandbox dsverify、PO限定承認)
+
+### 10.1 実施条件
+
+| 項目 | 実績 |
+|---|---|
+| 対象組織 | Sandbox `dsverify`(組織ID先頭15桁 `00DBS000008Dj7Z`、`SALESFORCE_EXPECTED_ORG_ID`一致を接続時に確認、My Domainが`--dsverify.sandbox.`) |
+| 実行者 | 木村正人(システム管理者、User Id `005d500000LC6C6AAL`)のChromeログインセッションで変換操作 |
+| ダミー作成 | Account 3・Contact 1・Lead 6は連携ユーザー(dssync)のAPIで作成(`scripts/salesforce-dryrun-manual-conversion-sandbox.ts create`)。**連携ユーザーは電話禁止項目(`DentShift_Do_Not_Call__c`/`_Reason__c`)を書けず、Task/Eventにもアクセスできない**ため、Lead 5件+Contact 1件の電話禁止false化(根拠入力)とSfのTask/Event作成は管理者が画面で実施 |
+| 7章未確認事項 | 1(Convert Leads権限)=確認済み(手順書8.7.1)、2(Flow)=確認済み(手順書8.7.2)。実施前に充足 |
+| 既存レコードへの変更 | **0件**(ダミー以外の変換済みLead件数 6 → 6、Opportunity総数 16 → 16) |
+| 件数 | Lead 35→41(+6)、Account 23→28(+3人手 +2変換)、Contact 20→24(+1人手 +3変換)、Opportunity 16→16 — 3.2節の計画値どおり |
+| 後片付け | 削除していない(残置) |
+
+### 10.2 Lead別実績
+
+| シナリオ | Lead Id | 判定 | 実績(ConvertedAccountId / ConvertedContactId / ConvertedOpportunityId) | 確認結果 |
+|---|---|---|---|---|
+| (a) | `00QBS00000RPFU92AP` | 変換 | `001BS00001m7lVXYAY`(既存Sa、事前作成) / `003BS00000qyBibYAE`(新規) / null | ✓ 既存Accountに紐付き、Account外部ID不変、Contact `DentShift_Do_Not_Call__c=false`(Leadの値が対応付けで転記) |
+| (b) | `00QBS00000RPFVl2AP` | 変換 | `001BS00001m7oqLYAQ`(既存Sb) / `003BS00000qyAjJYAU`(既存Sb Contact、`…-sb-user`) / null | ✓ 既存Contactに紐付き(新規Contactなし)、Contact外部ID不変、DoNotCall=false維持 |
+| (c) | `00QBS00000RPCGA2A5` | **停止** | 未変換(IsConverted=false、外部IDnullのまま) | ✓ 期待どおり |
+| (d) | `00QBS00000RPFM62AP` | **未検証** | 未変換 | Sd Account(`001BS00001m7aNcYAI`)のOwnerは実行者と同一で作成(第2の有効な人間ユーザーなし、無効ユーザーの有効化は行わない)。所有者差異の停止判断は未検証 |
+| (e) | `00QBS00000RPFXN2A5` | 変換 | `001BS00001m7qFRYAY`(新規) / `003BS00000qyCWbYAM`(新規) / null | ✓ Contact `DentShift_Do_Not_Call__c=true`。ただし対応付け(Lead電話禁止→Contact電話禁止)でも同じ結果になるため、**Flowが働いた証明ではない**(2.5注意欄のとおり) |
+| (f) | `00QBS00000RPFYz2AP` | 変換 | `001BS00001m7hNwYAI`(新規) / `003BS00000qyABPYA2`(新規) / null | ✓ Task「【DRYRUN-MC】Sf Task」・Event「【DRYRUN-MC】Sf Event」が変換先Contactの活動タイムラインに表示(管理者画面で確認。連携ユーザーはTask/Eventを参照できないためSOQLでは未確認) |
+
+人手作成レコードのId一覧: `scripts/output/dryrun-mc-20261003-created.json`(gitignore対象、ローカル保管)。変換後SOQL結果: `scripts/output/dryrun-mc-20261003-after-conversion.txt`。
+
+### 10.3 新たに判明した事項(計画時点で想定していなかったもの)
+
+1. **新規Account作成で変換すると`DentShift_Clinic_Id__c`が空になる**((e)(f)で確認)。リード項目の対応付けで「DENT SHIFTの医院ID → なし」のため。アプリ同期はAccountを外部IDでupsertするため、この状態のAccountは同期から「存在しない」扱いになり、別Accountが作られる恐れがある。本番で手動変換する場合、**既存Accountを選ぶ**か、新規作成時は変換直後に外部IDを人が入力する手順(または対応付け設定の変更=設定変更のため別途承認)が必要。
+2. 電話禁止・根拠はリード項目の対応付けでContactへ転記される(Flowとは独立)。この組織に標準項目`DoNotCall`は存在せず、営業リストビュー2件・アプリ同期ともカスタム項目のみを参照する(手順書8.7.2)。
+3. 変換画面の「既存の取引先を選択」「既存の取引先責任者を選択」は、名称一致の自動候補が0件でも検索欄から任意の既存レコードを指定できる(外部IDで事前に特定したレコードを名称で検索して選ぶ運用が成立する)。
+4. 検証ルール`DentShift_Do_Not_Call_Reason_Required`により、電話禁止をfalseにするには根拠の入力が必須(ダミーでは「【DRYRUN-MC】検証用ダミー(実在の同意ではない)」と入力)。
+
+### 10.4 本計画で未検証のまま残るもの
+
+- (d) 所有者差異での停止判断(第2ユーザー不在)。
+- Flowの動作証明(既存Contact=false、Lead=trueの組み合わせ。6章のとおり手順書6章項目5との整合をPOと要相談)。
+- 本番組織での同一挙動(対応付け設定・Flow・検証ルールの本番反映状況は未確認)。
+
 ## 参照
 
 - `docs/SALESFORCE_LEAD_MANUAL_CONVERSION_PROCEDURE_2026-10-03.md`(手順書、特に1・2・3・4・5・6・8章)
