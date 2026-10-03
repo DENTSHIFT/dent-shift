@@ -106,14 +106,37 @@ describe("verifyEmailToken", () => {
     expect(mocks.activateTrialIfEligible).not.toHaveBeenCalled();
   });
 
-  it("同一トークンへの同時多重アクセス(race condition): 先行リクエストが既にトークンを消費済みなら、updateManyのcountが0になり、already_verifiedとして扱い、Salesforce連携イベントを二重発行しない(2026-10-03追加)", async () => {
-    // 2つの並行リクエストがどちらもfindFirstでは未消費のcontactを見つける
-    // (レースなので両方とも更新前の状態を読む)が、DB側の条件付きupdateMany
-    // (where: tokenHash一致)は先着1件にしかマッチしない想定。
-    mocks.updateMany.mockResolvedValue({ count: 0 });
-    const result = await verifyEmailToken(RAW_TOKEN);
-    expect(result).toEqual({ status: "already_verified", contactId: "contact-1", email: "owner@example.com" });
-    expect(mocks.enqueueIntegrationEvent).not.toHaveBeenCalled();
+  describe("updateManyのcountが0(2026-10-03追加)", () => {
+    it("race condition: 先行リクエストが既にトークンを消費し、実際にemailVerifiedAtが設定済みならalready_verifiedとして扱い、Salesforce連携イベントを二重発行しない", async () => {
+      // 2つの並行リクエストがどちらもfindFirstでは未消費のcontactを見つける
+      // (レースなので両方とも更新前の状態を読む)が、DB側の条件付きupdateMany
+      // (where: tokenHash一致)は先着1件にしかマッチしない想定。count: 0後に
+      // 現在のDB状態を読み直し、先行リクエストが実際にemailVerifiedAtを
+      // 設定済みであることを確認した上でのみ成功扱いにする。
+      mocks.updateMany.mockResolvedValue({ count: 0 });
+      mocks.findUnique.mockResolvedValue({
+        id: "contact-1",
+        email: "owner@example.com",
+        emailVerifiedAt: new Date(),
+      });
+      const result = await verifyEmailToken(RAW_TOKEN);
+      expect(result).toEqual({ status: "already_verified", contactId: "contact-1", email: "owner@example.com" });
+      expect(mocks.enqueueIntegrationEvent).not.toHaveBeenCalled();
+    });
+
+    it("count:0だが実際にはまだemailVerifiedAtが設定されていない(例: 再送で別トークンへ差し替わった)場合、無条件にalready_verifiedとして成功扱いにはせず、invalidとして扱う", async () => {
+      // 競合以外でcount:0になるケース(再送による別トークンへの差し替え等)で
+      // 「成功した」と誤って案内しないことを確認する。
+      mocks.updateMany.mockResolvedValue({ count: 0 });
+      mocks.findUnique.mockResolvedValue({
+        id: "contact-1",
+        email: "owner@example.com",
+        emailVerifiedAt: null,
+      });
+      const result = await verifyEmailToken(RAW_TOKEN);
+      expect(result).toEqual({ status: "error", code: "invalid", message: expect.any(String) });
+      expect(mocks.enqueueIntegrationEvent).not.toHaveBeenCalled();
+    });
   });
 
   describe("使用済みリンクの再アクセス(2026-10-03、PO承認)", () => {

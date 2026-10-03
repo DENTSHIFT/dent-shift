@@ -98,8 +98,15 @@ export async function verifyEmailToken(
   });
 
   if (count === 0) {
-    // 他の並行リクエストが先にこのトークンを消費した。
-    return { status: "already_verified", contactId: contact.id, email: contact.email };
+    // count 0は「並行リクエストが先に消費した」以外にも起こりうる(例: この間に
+    // メール再送で新しいトークンハッシュへ差し替わった等)。後者ではemailVerifiedAtは
+    // 設定されていないため、無条件にalready_verifiedとして成功扱いにはしない。
+    // 現在のDB状態を読み直し、実際に確認済みになっている場合に限り成功扱いとする。
+    const latest = await prisma.contact.findUnique({ where: { id: contact.id } });
+    if (latest?.emailVerifiedAt) {
+      return { status: "already_verified", contactId: latest.id, email: latest.email };
+    }
+    return { status: "error", code: "invalid", message: "確認リンクが無効です" };
   }
 
   await enqueueIntegrationEvent({
