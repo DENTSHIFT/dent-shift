@@ -17,6 +17,7 @@
 import { prisma } from "@/server/db/prismaClient";
 import { resolveSalesforceConfigFromProcessEnv } from "@/server/config/salesforceConfig";
 import { MAX_RETRY_COUNT, isConnectionLevelError, syncIntegrationEvent } from "@/server/services/salesforceSync";
+import { resolveSalesforceSyncClinicAllowlistFromProcessEnv } from "@/server/config/salesforceSyncAllowlist";
 
 function argValue(name: string): string | undefined {
   const index = process.argv.indexOf(name);
@@ -34,10 +35,18 @@ const maxConsecutiveFailures = Number(argValue("--max-consecutive-failures") ?? 
 const ESTIMATED_CALLS_PER_CLINIC = 8;
 
 async function main() {
+  // 2026-10-03: 段階的同期ガード(SALESFORCE_SYNC_CLINIC_ALLOWLIST)。未設定/空/不正なら対象0件。
+  // 実行時の送信判定はsyncIntegrationEvent側でも行われる(許可外は"held"、API呼び出しなし)。
+  const allowlist = resolveSalesforceSyncClinicAllowlistFromProcessEnv();
+  console.log(`clinic allowlist: ${allowlist.mode === "list" ? `${allowlist.clinicIds.size} clinic(s)` : allowlist.mode}`);
+  if (allowlist.mode === "none") {
+    console.error("SALESFORCE_SYNC_CLINIC_ALLOWLIST が未設定・空・不正のため対象0件(全件停止)。");
+    return;
+  }
   const where = {
     status: { in: ["pending", "failed"] },
     retryCount: { lt: MAX_RETRY_COUNT },
-    clinicId: { not: null },
+    clinicId: allowlist.mode === "list" ? { in: [...allowlist.clinicIds] } : { not: null },
     ...(since ? { createdAt: { gte: since } } : {}),
     ...(eventTypes ? { eventType: { in: eventTypes } } : {}),
   };

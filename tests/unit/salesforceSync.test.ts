@@ -155,6 +155,8 @@ function upsertCallsFor(sobject: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // 2026-10-03: 段階的同期ガード。既存テストは「全医院許可」の前提で動かす(個別テストで上書き)。
+  process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = "*";
   mocks.resolveSalesforceConfig.mockReturnValue(SF);
   mocks.upsert.mockResolvedValue({ id: "sf_id", created: false });
   mocks.getByExternalId.mockResolvedValue(null);
@@ -765,5 +767,89 @@ describe("retryPendingIntegrationEvents", () => {
     const result = await retryPendingIntegrationEvents(10);
 
     expect(result).toEqual({ attempted: 1, stoppedReason: "connection_error" });
+  });
+});
+
+describe("段階的同期ガード(SALESFORCE_SYNC_CLINIC_ALLOWLIST、2026-10-03追加)", () => {
+  function expectHeldWithoutSideEffects() {
+    expect(mocks.upsert).not.toHaveBeenCalled();
+    expect(mocks.getByExternalId).not.toHaveBeenCalled();
+    expect(mocks.getById).not.toHaveBeenCalled();
+    expect(mocks.updateById).not.toHaveBeenCalled();
+    expect(mocks.acquireLock).not.toHaveBeenCalled();
+    expect(mocks.eventUpdate).not.toHaveBeenCalled();
+  }
+
+  it("許可リスト未設定なら syncIntegrationEvent は held を返し、外部API呼び出し0回・イベント不変", async () => {
+    delete process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST;
+    mocks.eventFindUnique.mockResolvedValue(event());
+    expect(await syncIntegrationEvent("evt_1")).toBe("held");
+    expectHeldWithoutSideEffects();
+  });
+
+  it("許可リストが空・不正でも held(fail-closed)", async () => {
+    mocks.eventFindUnique.mockResolvedValue(event());
+    for (const value of ["", "   ", "clinic_1,", "*,clinic_1"]) {
+      process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = value;
+      expect(await syncIntegrationEvent("evt_1")).toBe("held");
+    }
+    expectHeldWithoutSideEffects();
+  });
+
+  it("許可リストに含まれない医院のイベントは held、含まれる医院は同期される(既存・新規イベントとも医院単位)", async () => {
+    process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = "clinic_allowed";
+    mocks.eventFindUnique.mockResolvedValueOnce(event({ id: "evt_other", clinicId: "clinic_1" }));
+    expect(await syncIntegrationEvent("evt_other")).toBe("held");
+    expectHeldWithoutSideEffects();
+
+    mocks.eventFindUnique.mockResolvedValueOnce(event({ id: "evt_ok", clinicId: "clinic_allowed" }));
+    mocks.clinicFindUnique.mockResolvedValue(clinicRow({ id: "clinic_allowed" }));
+    expect(await syncIntegrationEvent("evt_ok")).toBe("synced");
+    expect(mocks.upsert).toHaveBeenCalled();
+  });
+
+  it("clinicIdが無くcontact経由で医院を解決するイベントも、解決後の医院で判定する", async () => {
+    process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = "clinic_allowed";
+    mocks.eventFindUnique.mockResolvedValue(event({ clinicId: null, contactId: "user_1" }));
+    mocks.contactFindUnique.mockResolvedValue({ clinicId: "clinic_1" });
+    expect(await syncIntegrationEvent("evt_1")).toBe("held");
+    expectHeldWithoutSideEffects();
+  });
+
+  it("retryPendingIntegrationEvents: 許可リスト未設定ならDBを参照せず allowlist_closed で終了", async () => {
+    delete process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST;
+    const result = await retryPendingIntegrationEvents(10);
+    expect(result).toEqual({ attempted: 0, stoppedReason: "allowlist_closed" });
+    expect(mocks.eventFindMany).not.toHaveBeenCalled();
+  });
+
+  it("retryPendingIntegrationEvents: 医院列挙時は抽出条件に clinicId in を含め、許可外が処理枠(limit)を占有しない", async () => {
+    process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = "clinic_a,clinic_b";
+    mocks.eventFindMany.mockResolvedValue([]);
+    await retryPendingIntegrationEvents(10);
+    expect(mocks.eventFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ clinicId: { in: ["clinic_a", "clinic_b"] } }),
+        take: 10,
+      })
+    );
+  });
+
+  it("retryPendingIntegrationEvents: '*' では clinicId 条件を付けない(従来どおり)", async () => {
+    process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = "*";
+    mocks.eventFindMany.mockResolvedValue([]);
+    await retryPendingIntegrationEvents(10);
+    const where = mocks.eventFindMany.mock.calls[0]![0].where;
+    expect(where).not.toHaveProperty("clinicId");
+  });
+
+  it("retryPendingIntegrationEvents: 抽出済みでも許可外医院(contact経由で解決)の分は held で数えるだけで送信しない", async () => {
+    process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = "clinic_a";
+    mocks.eventFindMany.mockResolvedValue([{ id: "evt_x" }]);
+    mocks.eventFindUnique.mockResolvedValue(event({ id: "evt_x", clinicId: null, contactId: "user_1" }));
+    mocks.contactFindUnique.mockResolvedValue({ clinicId: "clinic_other" });
+    const result = await retryPendingIntegrationEvents(10);
+    expect(result).toEqual({ attempted: 1 });
+    expectHeldWithoutSideEffects();
   });
 });

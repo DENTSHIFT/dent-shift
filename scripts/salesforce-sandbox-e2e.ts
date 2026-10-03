@@ -99,6 +99,8 @@ async function main() {
   const dbDir = mkdtempSync(path.join(tmpdir(), "dentshift-sf-e2e-"));
   process.env.DATABASE_URL = `file:${path.join(dbDir, "e2e.db")}`;
   process.env.SALESFORCE_PROVIDER = "salesforce";
+  // 2026-10-03: 段階的同期ガード。この検証は一時DB内の検証用医院だけを扱うため全件許可する。
+  process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST || "*";
   process.env.TIMEREX_BOOKING_REF_SECRET = `e2e-${runId}`;
   process.env.APP_BASE_URL = process.env.APP_BASE_URL || "https://test.dentshift.jp";
   delete process.env.SALESFORCE_ALERT_EMAIL; // 検証中の失敗通知メールは送らない

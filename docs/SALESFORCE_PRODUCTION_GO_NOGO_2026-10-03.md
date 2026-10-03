@@ -160,7 +160,7 @@ S1〜S12のいずれか1つでも未充足なら**No-Go**とする。特にS1は
 1. `SALESFORCE_PROVIDER=disabled`のまま、`SALESFORCE_CLIENT_ID`/`SALESFORCE_CLIENT_SECRET`/`SALESFORCE_LOGIN_URL`/`SALESFORCE_EXPECTED_ORG_ID`を本番値で設定する。`resolveSalesforceConfig`は`disabled`なら接続しないため、この段階で同期は走らない。
 2. `/api/ops/salesforce-connection-check`(`parseSalesforceCredentials`経由の読み取り専用診断)で、認証成功・接続先組織IDが`SALESFORCE_EXPECTED_ORG_ID`と一致することを確認する。不一致なら中止する。
 3. 本番組織に外部ID項目(`DentShift_Clinic_Id__c` / `DentShift_User_Id__c` / `DentShift_Subscription_Id__c` 等)が存在することを確認する(メタデータ未デプロイなら`scripts/salesforce-metadata-deploy.mjs`の実行承認が別途必要)。
-4. `IntegrationEvent`で`status in (pending, failed)`かつ`retryCount < 8`の行数を確認する。**有効化した瞬間、これらが最初のCronで最大50件ずつ送られる**(`retryPendingIntegrationEvents(limit = 50)`)。本番DBが新規なら0件のはずで、0件でなければ内容を確認してから進む。
+4. `IntegrationEvent`で`status in (pending, failed)`かつ`retryCount < 8`の行数を確認する(2026-10-03時点: **32件、全件pending**)。**2026-10-03追加の段階的同期ガード**(`SALESFORCE_SYNC_CLINIC_ALLOWLIST`、`SALESFORCE_PRODUCTION_METADATA_DEPLOY_PLAN` 11.1節)により、許可リスト未設定なら有効化しても1件も送られない。許可する医院IDを列挙した場合のみ、その医院の保留分と新規分が送られる。
 
 ### 4.3 有効化
 1. `SALESFORCE_PROVIDER=salesforce`に変更し、再デプロイする(環境変数は再デプロイで反映)。

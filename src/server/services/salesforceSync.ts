@@ -6,6 +6,10 @@ import {
   type SalesforceOAuthConfig,
 } from "@/server/config/salesforceConfig";
 import {
+  isClinicSyncAllowed,
+  resolveSalesforceSyncClinicAllowlistFromProcessEnv,
+} from "@/server/config/salesforceSyncAllowlist";
+import {
   DUPLICATES_DETECTED_ERROR_CODE,
   OAUTH_ERROR_CODE,
   ORG_MISMATCH_ERROR_CODE,
@@ -588,7 +592,10 @@ async function recordFailure(
   }
 }
 
-export type SyncOutcome = "disabled" | "skipped" | "synced" | "failed" | "busy";
+// 2026-10-03追加: "held" = 医院許可リスト(SALESFORCE_SYNC_CLINIC_ALLOWLIST)の対象外。
+// 外部API呼び出しは0回、イベントの status / retryCount / nextRetryAt は変更しない
+// (DBに新しいステータスは追加しない。処理結果としてのみ扱う)。
+export type SyncOutcome = "disabled" | "skipped" | "synced" | "failed" | "busy" | "held";
 
 /**
  * pending/failed状態の1件を同期する。Salesforce未接続(disabled)時は何もせず終了する
@@ -610,6 +617,11 @@ export async function syncIntegrationEvent(eventId: string): Promise<SyncOutcome
     clinicId = await resolveClinicId(event);
     if (!clinicId) {
       throw new PermanentSyncError("no_clinic_id: 医院を特定できないイベントです(要確認)");
+    }
+    // 段階的同期ガード: 送信直前の共通地点(Cron・即時送信・初期同期・手動再送後の送信は
+    // すべてこの関数を通る)。許可外は何もせず保持する(ロックも取らず、API呼び出しもしない)。
+    if (!isClinicSyncAllowed(clinicId, resolveSalesforceSyncClinicAllowlistFromProcessEnv())) {
+      return "held";
     }
     locked = await acquireCrmSyncLock(clinicId, ownerId);
     if (!locked) {
@@ -689,9 +701,15 @@ export function computeNextRetryAt(retryCountAfterThisFailure: number, now: Date
  */
 export async function retryPendingIntegrationEvents(
   limit = 50
-): Promise<{ attempted: number; stoppedReason?: "connection_error" }> {
+): Promise<{ attempted: number; stoppedReason?: "connection_error" | "allowlist_closed" }> {
   const config = resolveSalesforceConfigFromProcessEnv();
   if (config.provider === "disabled") return { attempted: 0 };
+
+  // 段階的同期ガード: 許可リストが無い(未設定・空・不正)ならDBも参照せず終了する。
+  // 許可リストが医院IDの列挙なら、抽出条件にも含めて許可外イベントが処理枠(limit)を
+  // 占有しないようにする(送信直前の判定はsyncIntegrationEvent側でも行う)。
+  const allowlist = resolveSalesforceSyncClinicAllowlistFromProcessEnv();
+  if (allowlist.mode === "none") return { attempted: 0, stoppedReason: "allowlist_closed" };
 
   const now = new Date();
   const events = await prisma.integrationEvent.findMany({
@@ -699,6 +717,7 @@ export async function retryPendingIntegrationEvents(
       status: { in: ["pending", "failed"] },
       retryCount: { lt: MAX_RETRY_COUNT },
       OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
+      ...(allowlist.mode === "list" ? { clinicId: { in: [...allowlist.clinicIds] } } : {}),
     },
     orderBy: { createdAt: "asc" },
     take: limit,

@@ -133,7 +133,8 @@
 | `ConsultationBooking` テーブル作成 + インデックス | 追加 | なし。**現状の本番にはこのテーブルが無い**ため、TimeRex Webhookが本番に届いた場合は保存できない(現行デプロイのコードがどのバージョンかは未確認) |
 | **`UPDATE "Subscription" SET firstActivatedAt = …`(バックフィル2文)** | **データ更新** | **本番全体の読み取り集計(2026-10-03、Neon main)**: `Subscription` 総数 **1**(`trial` 1)。更新1(`status='active'` かつ Stripe契約: `externalSubscriptionId` が `pilot_`以外・`billingExempt=false`)の対象 **0件**、更新2(`subscription_activated:` の`IntegrationEvent`が存在する契約)の対象 **0件**(`subscription_activated` イベント自体 0件、`pilot_` 契約 0件、`billingExempt` 契約 0件)。`firstActivatedAt` 列は未存在(=追加後は全行NULL)。**現時点で適用してもバックフィルは1行も更新しない** |
 | 更新前値の保存(適用時) | 適用直前に、更新1・更新2の `WHERE` と同じ条件で `SELECT id, "externalSubscriptionId", status, "statusEventAt", "createdAt"` を取得し、`scripts/output/`(gitignore)に JSON 保存する(列が無いため更新前の`firstActivatedAt`は定義上NULL)。加えてNeonで `pre-migration-20261001-salesforce-crm-sync` ブランチを作成(過去2回と同じ運用)。**実行は未承認** | — |
-| 復旧(バックフィルのみ戻す場合) | **一律NULL化はしない**。保存した対象行IDに限り、`UPDATE "Subscription" SET "firstActivatedAt" = NULL WHERE id IN (<保存ID>) AND "firstActivatedAt" = <バックフィルで入った値>` のように「適用時に入れた値と現在値が一致する行だけ」を戻す。適用後にアプリ(`billingRepository`)が正常に設定した値は一致しないため保持される。現状は対象0件のため、復旧対象も0件 | — |
+| 復旧(バックフィルのみ戻す場合) | **一律NULL化はしない**。保存した対象行IDに限定して戻すが、「現在値がバックフィル投入値と一致すれば安全に戻せる」とは**断定しない**(正常更新でも同じ値になりうる: `billingRepository`は`statusEventAt`等から同じ時刻を設定しうる)。戻す前に、対象行ごとに適用後の`IntegrationEvent`/Stripe Webhookの有無(`updatedAt`が適用時刻より後か)を確認し、適用後に正常更新が入った行は戻さない。判断は1行ずつ記録してPO確認。現状は対象0件のため、復旧対象も0件 | — |
+| **適用手順に必須**(PO方針 2026-10-03) | (1) 適用直前に上記の対象件数を**再確認**(SELECT)、(2) 更新前の対象情報をJSON保存、(3) Neonバックアップブランチ作成、(4) `prisma migrate deploy`。**ブランチ作成・DB適用は未承認** | — |
 | ロールバック(DDL) | Prismaは自動ロールバック不可。列・テーブル追加は残しても害がない(アプリが参照しない限り受動的)。削除は行わない | — |
 
 適用は `prisma migrate deploy`(Vercelビルド時、または手動)。**未承認**。適用前の確認: 対象行数のSELECT、Neonのバックアップブランチ作成(過去の`pre-migration-*`ブランチと同じ運用)。
@@ -160,9 +161,26 @@
 | 運用画面の再送(`/api/ops/integration-events/[id]/retry`、`bulk-retry`) | **failed → pending に戻す**操作のみ(送信そのものは Cron/即時試行が行う) | 「特定医院だけ送る」用途には使えない。pending→保留へ落とす操作も無い |
 | `scripts/salesforce-initial-sync.ts` | `--max-clinics`・`--since`・`--event-types` で医院数/期間/種別は絞れるが、**医院IDの指定は不可**。かつ `SALESFORCE_PROVIDER=salesforce` が必要=同時にCron・即時送信も有効になる | 単独では段階化できない |
 
-**結論: 現行実装では、承認対象の医院・イベントだけを段階的に同期することはできない。**
+**結論(実装前): 現行実装では、承認対象の医院・イベントだけを段階的に同期することはできなかった。**
 
-### 11.1 設計案(未実装・未承認)
+### 11.1 設計案 → **ローカル実装済み(2026-10-03、未デプロイ・未有効化)**
+
+実装(A案「医院許可リスト」):
+
+| 箇所 | 内容 |
+|---|---|
+| `src/server/config/salesforceSyncAllowlist.ts`(新規) | `SALESFORCE_SYNC_CLINIC_ALLOWLIST` を解析。未設定/空/不正(空要素・記号・`*`と医院IDの混在)= `none`(**全件停止**)、`*` = `all`、医院IDのカンマ区切り = `list` |
+| `syncIntegrationEvent`(送信直前の共通地点) | `resolveClinicId` 直後・ロック取得前に判定。許可外は **`"held"` を返す**(外部API呼び出し0回、ロック取得なし、status/retryCount/nextRetryAt 不変)。Cron・即時送信(`enqueueIntegrationEvent`/`attemptIntegrationEventSync`)・初期同期(`salesforce-initial-sync.ts`)・運用画面の再送後の送信はすべてこの関数を通るため、共通に適用される |
+| `retryPendingIntegrationEvents`(Cron) | 許可リスト `none` ならDB参照なしで `{attempted:0, stoppedReason:"allowlist_closed"}`。`list` なら抽出条件に `clinicId in [...]` を加え、**許可外イベントが処理枠(limit=50)を占有しない**。`clinicId` が空で contact 経由に解決されるイベントは抽出されても送信直前判定で `held` |
+| `scripts/salesforce-initial-sync.ts` | ドライラン集計も許可リストで絞る。`none` なら対象0件で終了 |
+| `scripts/salesforce-sandbox-e2e.ts` | 一時DB内の検証用医院のみを扱うため、未設定時は `*` を明示設定(**既存Sandbox E2Eへの影響: 設定しなければ全件 held になり検証が成立しないため、スクリプト側で許可**) |
+| `held` の扱い | `SyncOutcome` に追加した**処理結果**。DBの新ステータスは追加しない |
+| 許可の範囲 | **医院単位**。許可した医院の保留中(既存)イベントと、以後の新規イベントの両方が送信対象になる。許可外医院は既存・新規とも保持される |
+| テスト | `tests/unit/salesforceSyncAllowlist.test.ts`(解析・fail-closed)、`tests/unit/salesforceSync.test.ts`(held時の副作用0、医院単位、contact経由解決、Cron抽出条件、`*`で条件なし、抽出済み許可外の非送信) |
+
+既存Sandbox同期への影響: Sandbox(`dsverify`)に対する同期は、`SALESFORCE_PROVIDER=salesforce` に加えて `SALESFORCE_SYNC_CLINIC_ALLOWLIST` の設定が必要になる(`dent-shift-test` の環境変数に未設定なら全件停止)。Sandbox検証を続ける場合は `*` または検証用医院IDを設定する(環境変数の変更は別途承認)。`verify-duplicate-retry-sandbox.ts` は `upsertContactAllowingOwnLeadDuplicate` を直接呼ぶためガードの対象外(Sandbox限定スクリプト)。
+
+設計案(参考、未採用)
 
 | 案 | 内容 | 影響範囲 |
 |---|---|---|
@@ -191,6 +209,8 @@ A案の安全性: 許可リスト未設定時は何も送らない(fail-closed)�
 | Lead自体の upsert(`hasAccount=false` の医院)が「Standard Lead Duplicate Rule」で `DUPLICATES_DETECTED` になる場合 | Lead には allowSave 分岐が無い(2.1節のとおり Contact のみ) → 同様に上限到達。本番の重複ルール設定(S5)は未確認 |
 
 結論: **「既存Leadが残っていても限定allowSaveで救済される」とは言えない。** 救済経路は「外部ID付与」か「変換」のどちらかが先に必要で、どちらも本番では未着手・前提未成立(S12)。
+
+**方針(PO 2026-10-03)**: 既存Lead 37件は**保持**する。「8回失敗させて上限到達を許容」は採用しない。既存Leadと競合する医院(メール一致の `cmujiyx…` 等)は許可リストに**載せず同期を保留**し、メタデータ配備後に同一性を確認できた対象だけ、外部ID対応・変換を別途承認する。一括付与・変換・削除は行わない。
 
 ## 10. 本書で決めないこと
 
