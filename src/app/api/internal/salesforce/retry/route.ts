@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 import { retryPendingIntegrationEvents } from "@/server/services/salesforceSync";
+
+function timingSafeEqualStrings(a: string, b: string): boolean {
+  const bufferA = Buffer.from(a);
+  const bufferB = Buffer.from(b);
+  if (bufferA.length !== bufferB.length) return false;
+  return timingSafeEqual(bufferA, bufferB);
+}
 
 /**
  * Vercel Cronから定期起動される、Salesforce同期失敗イベントの再試行エンドポイント。
@@ -15,8 +23,12 @@ export async function GET(request: NextRequest) {
       console.error("[GET /api/internal/salesforce/retry] CRON_SECRET is not configured; refusing to run.");
       return NextResponse.json({ error: "cron_secret_not_configured" }, { status: 503 });
     }
-  } else if (request.headers.get("authorization") !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  } else {
+    const providedAuthorization = request.headers.get("authorization");
+    const expectedAuthorization = `Bearer ${cronSecret}`;
+    if (!providedAuthorization || !timingSafeEqualStrings(providedAuthorization, expectedAuthorization)) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
   }
 
   const result = await retryPendingIntegrationEvents();
