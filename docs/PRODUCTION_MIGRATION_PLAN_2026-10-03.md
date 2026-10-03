@@ -76,9 +76,9 @@
 - `SALESFORCE_REQUIREMENTS_STATUS.md`記載の未解決事項: 未ログイン再診断により同じ医院が別の医院ID(=別Leadのexternal ID)になるケースがあり、自動統合しない方針を提案中・未決定。`SALESFORCE_PRODUCTION_ROLLOUT.md`3章も同様に「未ログインでの再診断により同じ医院が別の医院IDになるケースは未解決。自動統合はせず、`DentShift_Site_Domain__c`をSalesforceの重複ルール・レポートで確認する運用を推奨」とするのみで、最終承認された運用ルールではない。
 - 既存Leadとの照合状況(件数の正確な記載): `docs/SALESFORCE_PRODUCTION_ROLLOUT.md`3章では、本番組織の既存リード31件について「確実に一致1件/要確認3件/対応先なし27件(うち19件はテスト用ドメインと推測)」という内訳を示しているが、これは**ローカルDBとの件数照合による概算**であり、同文書内に「本番DBとの照合は未実施」と明記されている。
   その後、`docs/SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md`(2026-10-02、読み取り専用SOQL)で本番Salesforceから直接Id・作成日時・Status・IsConvertedを取得した結果、**本番Lead総数は37件**であることが確認された。同ファイルには「この37件のうちどれが元の31件に相当するかを機械的に突き合わせる基準が存在しない」と明記されており、同ファイルは氏名・会社名・URL等の個人情報/医院情報を一切取得していない(Id・作成日時・状態・変換有無のみ)。
-  - **PO指摘による訂正**: 上記に対しPOから、「基準はLead37件で、本番Clinic5件との名称・URL照合は実施済み。一致なし、URL欠損9件、メール照合未実施という限定付き結果です」という数値が提示されている。これは「照合を一切行っていない」ではなく、「名称・URL照合は実施済みで一致なし、URL欠損が37件中9件、ただしメール照合は未実施」という限定的な結果として正確に記載する。
-  - **根拠ファイルの特定状況**: リポジトリ内の`docs/SALESFORCE_SANDBOX_TEST_DATA_AUDIT.md`、`docs/SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md`、`scripts/`配下(`salesforce-initial-sync.ts`、`salesforce-sandbox-e2e.ts`等)を確認したが、「本番Clinic5件」「名称・URL照合」「URL欠損9件」に該当する実施記録・出力ファイルは見つからなかった。`SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md`は明示的に氏名・URL等を取得していないため、この照合はそれとは別の(本ドキュメント群に記録されていない)作業である可能性が高い。
-    **→ PO提供の数値、根拠ファイル未特定。** 数値自体はPO指示のとおり正確に記載するが、再現性確認のためには実施記録(クエリ・出力)の提示または追記をPOに依頼することを推奨する。
+  - **出典の訂正**: 「基準はLead37件で、本番Clinic5件との名称・URL照合は実施済み。一致なし、URL欠損9件、メール照合未実施という限定付き結果です」という数値は、**POから提示されたものではなく、2026-10-02の過去のClaude実施報告**である(当該セッションのログに、この結論をPOへ報告し、POがその場で「本番照合は『名称・URLで一致なし、URL欠損9件、メール照合未実施』という限定付き結果として受領します」と確認した記録が残っている)。これは「照合を一切行っていない」ではなく、「名称・URL照合は実施済みで一致なし、URL欠損が37件中9件、ただしメール照合は未実施」という限定的な結果として正確に記載する。
+  - **根拠ファイルの特定状況**: リポジトリ内の`docs/SALESFORCE_SANDBOX_TEST_DATA_AUDIT.md`、`docs/SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md`、`scripts/`配下(`salesforce-initial-sync.ts`、`salesforce-sandbox-e2e.ts`等)を確認したが、この比較作業自体の生出力ファイルはリポジトリ内に保存されておらず、見つからなかった。`SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md`は明示的に氏名・URL等を取得していないため、この照合は会話内でのみ実施・報告され、ファイルとしては保存されなかった作業であると考えられる。
+    **→ 過去のClaude実施報告。元の出力ファイルは未特定(未保存)。** 2026-10-03に、同じ承認済み読み取り専用アクセス(本番Salesforce Client Credentials、本番DB)での再確認を試みたが、Claude Codeの自動権限分類器により「[Production Reads]」として拒否され、再確認は完了していない(迂回は行っていない)。再確認が必要な場合はユーザー自身の操作、または別途の明示的な承認が必要。
 
 ### 4.2c TimeRexの医院紐付け・日程変更(reschedule)時の紐付け維持
 - `docs/TIMEREX_URL_PARAMS_INVESTIGATION_2026-10-03.md`参照。`url_params`(`ds_ref`)の欠落原因は未特定で、TimeRex公式サポートへの問い合わせ後、正式回答待ちで停止中(4.1節参照)。

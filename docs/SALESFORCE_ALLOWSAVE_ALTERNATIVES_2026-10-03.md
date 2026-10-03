@@ -35,13 +35,15 @@
 Contact upsert前に、`SF_FIELDS.contact.externalId`またはEmail+医院の外部IDで対象候補を明示的にSOQLクエリし、「自医院の未コンバートLeadが存在する場合のみ、そのLeadをConvertしてからContactを更新する」フローに変更する。allowSaveは一切使わず、重複ルールに引っかかった場合は即座にエラーとして扱い、アプリ側で検出した候補のみを信頼する。
 
 - 仕組み: (1) Contact upsert前に`SELECT Id FROM Lead WHERE <externalIdField> = :clinicId AND Email = :email AND IsConverted = false`を実行、(2) 0件ならそのままContact upsert(通常のallowSave無しリクエスト)、(3) 1件なら`Database.convertLead()`相当のLead Convert APIで先にConvertしてからContact upsertを再試行、(4) DUPLICATES_DETECTEDが発生した場合は即座にエラーとして運用画面に出す(再送しない)。
+- **断定しない点**: 事前にSOQLで一意性を確認すること自体は、クエリとその後の書き込みの間の時間差(TOCTOU)を完全には排除しない。「事前照合を挟めば競合がなくなる」という前提では設計しておらず、1.2節のリスクと同種の(発生確率は下げられるが理論上残る)競合の可能性がある設計として扱う。
 - `src/server/services/salesforceSync.ts`には既にLead Convert呼び出し(`convertLead`相当、`input.convertedId`を扱う関数が近傍に存在)があり、実装基盤は一部流用できる。
 
-### 案B: Salesforce Bulk API 2.0のupsertジョブを使う
-個別のREST同期ではなく、Bulk API 2.0(`/services/data/vXX.X/jobs/ingest`)でexternal ID upsertジョブを作成し、Salesforce側のトランザクション・バッチ処理に重複判定を一任する。Bulk APIのingestジョブは重複ルールのエラーをレコード単位の失敗として結果ファイルに返すため、allowSaveのような「全体に対する保存許可フラグ」を使わずに済む(失敗したレコードだけを個別にエラーハンドリングする設計にできる)。
+### 案B: Salesforce Bulk API 2.0のupsertジョブを使う(転送方式の変更に過ぎない点に注意)
 
+> **重要な訂正**: Bulk API 2.0は**転送方式(個別REST呼び出し→バッチジョブ)の変更にすぎず、それ自体はLeadとContactの並存(重複)問題を解決する手段ではない**。重複ルールの適用有無・挙動がREST APIと同一かどうかは、Salesforce公式のBulk API 2.0開発者ガイド(重複ルール・マッチングルールの適用に関する記載、`Sforce-Duplicate-Rule-Header`相当の扱いがBulk APIのジョブAPIで同様にサポートされるか)で**未確認**であり、本資料の時点では公式仕様による裏付けができていない。この点を確認しないまま「案B採用でallowSave問題が解消する」と判断するべきではない。
+- 仮にBulk API 2.0でも重複ルールが評価される場合、個別レコードのupsert失敗(`DUPLICATES_DETECTED`相当)はジョブの結果ファイルにレコード単位で返る可能性が高いと推測されるが、これも公式ドキュメントでの確認が必要な推測にとどまる。
 - 現状、`src/server/providers/salesforce/salesforceClient.ts`はBulk APIを実装しておらず、単一レコードのREST upsert(`upsertSalesforceRecordByExternalId`)のみ。Bulk API対応には新規クライアントコード(ジョブ作成・CSV/JSON投入・ポーリング・結果取得)の追加が必要。
-- 本サービスは医院単位・イベント単位の都度同期(Webhook契機のリアルタイム性が前提)であり、Bulk APIは本来まとめて大量データを非同期処理する用途のため、1件ずつの即時同期には不向き(ジョブ作成からクローズまで数秒〜数分のレイテンシが発生しうる)。初期移行時の一括データ投入(既存31/37件のLeadとの突合作業等)には適性があるが、日常のリアルタイムContact upsertの置き換えとしては過剰かつレイテンシ面で不利。
+- 本サービスは医院単位・イベント単位の都度同期(Webhook契機のリアルタイム性が前提)であり、Bulk APIは本来まとめて大量データを非同期処理する用途のため、1件ずつの即時同期には不向き(ジョブ作成からクローズまで数秒〜数分のレイテンシが発生しうる)。初期移行時の一括データ投入(既存31/37件のLeadとの突合作業等)に使う場合も、**重複ルール・データ整合性の挙動を公式仕様で確認してからでなければ採用判断はできない**。
 
 ### (参考・不採用) Salesforce側の自動保存抑止に任せてエラーハンドリングのみ行う案
 重複ルールのアクション設定自体を「保存をブロック」のままにし、アプリ側では`DUPLICATES_DETECTED`を受けたら一切再送せず、常に運用画面の「要確認」キューに回す案。実装は最も単純だが、現行要件(自医院の同一Email Leadとの衝突は自動的に解消したい)を満たせず、これまでSandbox E2Eで検証済みのLead→Contact変換フローの自動化効果が失われるため、比較表には参考として記載するのみで独立案としては推さない。
@@ -62,6 +64,6 @@ Contact upsert前に、`SF_FIELDS.contact.externalId`またはEmail+医院の外
 
 ## 4. まとめ・推奨
 
-- 日常のリアルタイムContact upsertを置き換える目的であれば、**案A(事前SOQL厳密チェック+Lead Convert)**が現行アーキテクチャとの親和性が高く、実装コストも相対的に小さい。ただし競合耐性は「原理的にやや改善」にとどまり、TOCTOUを完全には排除できない点は現行と同様に明記しておく必要がある。
-- **案B(Bulk API)**はリアルタイム同期には不向きだが、初期データ移行(既存Lead 31/37件との名寄せ作業など、`docs/PRODUCTION_MIGRATION_PLAN_2026-10-03.md` 4.2b節参照)のような一括処理用途であれば検討価値がある。
+- 日常のリアルタイムContact upsertを置き換える目的であれば、**案A(事前SOQL厳密チェック+Lead Convert)**が現行アーキテクチャとの親和性が高く、実装コストも相対的に小さい。ただし**事前照合だけで競合がなくなるとは断定しない**。TOCTOUを完全には排除できない点は現行と同様に明記しておく必要がある。
+- **案B(Bulk API)はまだ重複問題の解決策として扱わない**。転送方式の変更にすぎず、重複ルールの適用有無・データ整合性の挙動はSalesforce公式のBulk API 2.0仕様で未確認であり、この裏付けなしに初期データ移行(既存Lead 31/37件との名寄せ作業など、`docs/PRODUCTION_MIGRATION_PLAN_2026-10-03.md` 4.2b節参照)用途にも採用判断はできない。次のアクションとして、Salesforce公式開発者ドキュメントでBulk API 2.0ジョブにおける重複ルール・マッチングルールの適用有無を確認することが必要。
 - いずれの案も新規実装であり、Sandbox `dsverify`での追加検証(既存の`scripts/salesforce-sandbox-e2e.ts`等を流用)なしに本番適用することはできない。本番適用はPO未承認のままであり、本資料はその判断材料として作成した比較に留まる。
