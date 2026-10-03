@@ -1,16 +1,18 @@
-import { BOOKING_REF_PARAM } from "@/server/integration/bookingRef";
-
 /**
  * TimeRexへ転記してよいと用途を確認済みのクエリパラメータのみの許可リスト。
  * bookingUrlには将来どのようなクエリが付与されるか呼び出し側次第で予測できないため、
  * 全転記はせず、ここに列挙したキーだけを対象にする(機密値を誤ってTimeRexへ
  * 送らないため)。
- * - ds_ref: 医院紐付け用の署名付き参照(このアプリが発行)
+ * - ds_ref: 医院紐付け用の署名付き参照(このアプリが発行、src/server/integration/
+ *   bookingRef.tsのBOOKING_REF_PARAMと同じキー名)。このファイルはTimeRexEmbed(use
+ *   client)から読み込まれるため、"server-only"が付いたbookingRef.tsを直接
+ *   importできない。値そのものは署名鍵ではなく、既にbookingUrlのクエリとして
+ *   ブラウザへ渡っているため、キー名をここに複製しても問題はない。
  * - utm_source/utm_medium/utm_campaign: TimeRex公式Webhookリファレンスの例にも
  *   登場する、計測用の一般的なUTMパラメータ
  */
 const ALLOWED_TIMEREX_URL_PARAM_KEYS: readonly string[] = [
-  BOOKING_REF_PARAM,
+  "ds_ref",
   "utm_source",
   "utm_medium",
   "utm_campaign",

@@ -4,8 +4,17 @@ import {
   extractTimerexWidgetUrlParams,
   stripTimerexWidgetDataUrl,
 } from "@/components/timerex/timerexWidgetParams";
+import { BOOKING_REF_PARAM } from "@/server/integration/bookingRef";
 
 describe("timerexWidgetParams", () => {
+  // timerexWidgetParams.tsはTimeRexEmbed("use client")から読み込まれるため、
+  // "server-only"が付いたbookingRef.tsをimportできず、キー名"ds_ref"を複製している。
+  // このテストファイルはNode(vitest)実行でクライアントバンドルではないため
+  // bookingRef.tsを直接importでき、両者が食い違えば検知できる。
+  it("許可リストのds_refはbookingRef.tsのBOOKING_REF_PARAMと同じキー名を複製している", () => {
+    expect(BOOKING_REF_PARAM).toBe("ds_ref");
+  });
+
   it("ds_refをクエリから取り出してurl_params引数を組み立てる", () => {
     expect(extractTimerexWidgetUrlParams("https://timerex.net/s/team/cal?ds_ref=clinic_1.sig")).toEqual({
       ds_ref: "clinic_1.sig",
