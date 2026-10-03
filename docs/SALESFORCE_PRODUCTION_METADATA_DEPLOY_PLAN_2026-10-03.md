@@ -169,16 +169,18 @@
 
 | 箇所 | 内容 |
 |---|---|
-| `src/server/config/salesforceSyncAllowlist.ts`(新規) | `SALESFORCE_SYNC_CLINIC_ALLOWLIST` を解析。未設定/空/不正(空要素・記号・`*`と医院IDの混在)= `none`(**全件停止**)、`*` = `all`、医院IDのカンマ区切り = `list` |
+| `src/server/config/salesforceSyncAllowlist.ts`(新規) | `SALESFORCE_SYNC_CLINIC_ALLOWLIST` を解析。未設定/空/不正(空要素・記号・`*` などのワイルドカード)= `none`(**全件停止**)、医院IDのカンマ区切り = `list`。**全医院を一括許可する指定は存在しない**(PO指示: 承認は医院IDの明示列挙のみ) |
 | `syncIntegrationEvent`(送信直前の共通地点) | `resolveClinicId` 直後・ロック取得前に判定。許可外は **`"held"` を返す**(外部API呼び出し0回、ロック取得なし、status/retryCount/nextRetryAt 不変)。Cron・即時送信(`enqueueIntegrationEvent`/`attemptIntegrationEventSync`)・初期同期(`salesforce-initial-sync.ts`)・運用画面の再送後の送信はすべてこの関数を通るため、共通に適用される |
-| `retryPendingIntegrationEvents`(Cron) | 許可リスト `none` ならDB参照なしで `{attempted:0, stoppedReason:"allowlist_closed"}`。`list` なら抽出条件に `clinicId in [...]` を加え、**許可外イベントが処理枠(limit=50)を占有しない**。`clinicId` が空で contact 経由に解決されるイベントは抽出されても送信直前判定で `held` |
+| `retryPendingIntegrationEvents`(Cron) | 許可リスト `none` ならDB参照なしで `{attempted:0, stoppedReason:"allowlist_closed"}`。`list` なら、許可医院に所属するContactのIDを先に引き、抽出条件を「`clinicId` が許可医院」**または**「`clinicId` が空かつ `contactId` が許可医院のContact」に限定する。これにより **contact経由で医院を特定するイベントも取りこぼさず**、**許可外イベントは処理枠(limit=50)を占有しない**(テストで検証)。送信直前の判定(`held`)は別途 `syncIntegrationEvent` 側でも行う |
 | `scripts/salesforce-initial-sync.ts` | ドライラン集計も許可リストで絞る。`none` なら対象0件で終了 |
-| `scripts/salesforce-sandbox-e2e.ts` | 一時DB内の検証用医院のみを扱うため、未設定時は `*` を明示設定(**既存Sandbox E2Eへの影響: 設定しなければ全件 held になり検証が成立しないため、スクリプト側で許可**) |
+| `scripts/salesforce-sandbox-e2e.ts` | 一時DBに作成した検証用医院のIDを、作成直後に `SALESFORCE_SYNC_CLINIC_ALLOWLIST` へ**明示設定**する(その医院以外は送信されない) |
 | `held` の扱い | `SyncOutcome` に追加した**処理結果**。DBの新ステータスは追加しない |
 | 許可の範囲 | **医院単位**。許可した医院の保留中(既存)イベントと、以後の新規イベントの両方が送信対象になる。許可外医院は既存・新規とも保持される |
 | テスト | `tests/unit/salesforceSyncAllowlist.test.ts`(解析・fail-closed)、`tests/unit/salesforceSync.test.ts`(held時の副作用0、医院単位、contact経由解決、Cron抽出条件、`*`で条件なし、抽出済み許可外の非送信) |
 
-既存Sandbox同期への影響: Sandbox(`dsverify`)に対する同期は、`SALESFORCE_PROVIDER=salesforce` に加えて `SALESFORCE_SYNC_CLINIC_ALLOWLIST` の設定が必要になる(`dent-shift-test` の環境変数に未設定なら全件停止)。Sandbox検証を続ける場合は `*` または検証用医院IDを設定する(環境変数の変更は別途承認)。`verify-duplicate-retry-sandbox.ts` は `upsertContactAllowingOwnLeadDuplicate` を直接呼ぶためガードの対象外(Sandbox限定スクリプト)。
+既存Sandbox同期への影響: Sandbox(`dsverify`)に対する同期は、`SALESFORCE_PROVIDER=salesforce` に加えて `SALESFORCE_SYNC_CLINIC_ALLOWLIST` に**検証用医院IDの明示列挙**が必要になる(`dent-shift-test` の環境変数に未設定なら全件停止)。環境変数の変更は別途承認。
+
+**ガード対象外(明記)**: `scripts/verify-duplicate-retry-sandbox.ts` は `upsertContactAllowingOwnLeadDuplicate` を直接呼ぶ再現スクリプトであり、`syncIntegrationEvent` を通らないため許可リストの対象外。**今回の段階的同期検証では実行しない。**
 
 設計案(参考、未採用)
 

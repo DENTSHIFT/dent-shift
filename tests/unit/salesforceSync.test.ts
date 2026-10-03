@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   eventUpdate: vi.fn(),
   clinicFindUnique: vi.fn(),
   contactFindUnique: vi.fn(),
+  contactFindMany: vi.fn(),
   eventCount: vi.fn(),
   eventFindFirst: vi.fn(),
   bookingFindMany: vi.fn(),
@@ -54,7 +55,7 @@ vi.mock("@/server/db/prismaClient", () => ({
     },
     consultationBooking: { findMany: mocks.bookingFindMany },
     clinic: { findUnique: mocks.clinicFindUnique },
-    contact: { findUnique: mocks.contactFindUnique },
+    contact: { findUnique: mocks.contactFindUnique, findMany: mocks.contactFindMany },
   },
 }));
 
@@ -155,8 +156,9 @@ function upsertCallsFor(sobject: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // 2026-10-03: 段階的同期ガード。既存テストは「全医院許可」の前提で動かす(個別テストで上書き)。
-  process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = "*";
+  // 2026-10-03: 段階的同期ガード。既存テストは検証用医院(clinic_1)を許可した前提で動かす(個別テストで上書き)。
+  process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = "clinic_1";
+  mocks.contactFindMany.mockResolvedValue([]);
   mocks.resolveSalesforceConfig.mockReturnValue(SF);
   mocks.upsert.mockResolvedValue({ id: "sf_id", created: false });
   mocks.getByExternalId.mockResolvedValue(null);
@@ -235,6 +237,7 @@ describe("syncIntegrationEvent", () => {
   });
 
   it("同じメールアドレスでも医院IDが異なれば別々の外部IDで送り、メールで統合しない", async () => {
+    process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = "clinic_a,clinic_b";
     mocks.eventFindUnique
       .mockResolvedValueOnce(event({ id: "evt_a", clinicId: "clinic_a" }))
       .mockResolvedValueOnce(event({ id: "evt_b", clinicId: "clinic_b" }));
@@ -735,7 +738,7 @@ describe("retryPendingIntegrationEvents", () => {
         where: expect.objectContaining({
           status: { in: ["pending", "failed"] },
           retryCount: { lt: MAX_RETRY_COUNT },
-          OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: expect.any(Date) } }],
+          AND: expect.arrayContaining([{ OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: expect.any(Date) } }] }]),
         }),
         take: 10,
       })
@@ -789,7 +792,7 @@ describe("段階的同期ガード(SALESFORCE_SYNC_CLINIC_ALLOWLIST、2026-10-03
 
   it("許可リストが空・不正でも held(fail-closed)", async () => {
     mocks.eventFindUnique.mockResolvedValue(event());
-    for (const value of ["", "   ", "clinic_1,", "*,clinic_1"]) {
+    for (const value of ["", "   ", "clinic_1,", "*", "*,clinic_1"]) {
       process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = value;
       expect(await syncIntegrationEvent("evt_1")).toBe("held");
     }
@@ -823,24 +826,49 @@ describe("段階的同期ガード(SALESFORCE_SYNC_CLINIC_ALLOWLIST、2026-10-03
     expect(mocks.eventFindMany).not.toHaveBeenCalled();
   });
 
-  it("retryPendingIntegrationEvents: 医院列挙時は抽出条件に clinicId in を含め、許可外が処理枠(limit)を占有しない", async () => {
+  it("retryPendingIntegrationEvents: 抽出条件は「clinicIdが許可医院」または「clinicIdが空かつcontactIdが許可医院のContact」に限定し、許可外が処理枠(limit)を占有しない", async () => {
     process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = "clinic_a,clinic_b";
+    mocks.contactFindMany.mockResolvedValue([{ id: "user_a1" }, { id: "user_b1" }]);
     mocks.eventFindMany.mockResolvedValue([]);
     await retryPendingIntegrationEvents(10);
+    expect(mocks.contactFindMany).toHaveBeenCalledWith({ where: { clinicId: { in: ["clinic_a", "clinic_b"] } }, select: { id: true } });
     expect(mocks.eventFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ clinicId: { in: ["clinic_a", "clinic_b"] } }),
+        where: expect.objectContaining({
+          status: { in: ["pending", "failed"] },
+          retryCount: { lt: MAX_RETRY_COUNT },
+          AND: [
+            { OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: expect.any(Date) } }] },
+            { OR: [{ clinicId: { in: ["clinic_a", "clinic_b"] } }, { clinicId: null, contactId: { in: ["user_a1", "user_b1"] } }] },
+          ],
+        }),
         take: 10,
       })
     );
   });
 
-  it("retryPendingIntegrationEvents: '*' では clinicId 条件を付けない(従来どおり)", async () => {
-    process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = "*";
+  it("retryPendingIntegrationEvents: 許可医院にContactが無い場合は contact経由条件を付けない", async () => {
+    process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = "clinic_a";
+    mocks.contactFindMany.mockResolvedValue([]);
     mocks.eventFindMany.mockResolvedValue([]);
     await retryPendingIntegrationEvents(10);
     const where = mocks.eventFindMany.mock.calls[0]![0].where;
-    expect(where).not.toHaveProperty("clinicId");
+    expect(where.AND[1]).toEqual({ OR: [{ clinicId: { in: ["clinic_a"] } }] });
+  });
+
+  it("retryPendingIntegrationEvents: clinicIdが空でcontact経由に許可医院へ解決されるイベントはCron経由で取得・送信される", async () => {
+    process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = "clinic_1";
+    mocks.contactFindMany.mockResolvedValue([{ id: "user_1" }]);
+    mocks.eventFindMany.mockResolvedValue([{ id: "evt_c" }]);
+    mocks.eventFindUnique.mockResolvedValue(event({ id: "evt_c", clinicId: null, contactId: "user_1" }));
+    mocks.contactFindUnique.mockResolvedValue({ clinicId: "clinic_1" });
+    mocks.clinicFindUnique.mockResolvedValue(clinicRow());
+    const result = await retryPendingIntegrationEvents(10);
+    expect(result).toEqual({ attempted: 1 });
+    expect(mocks.upsert).toHaveBeenCalled();
+    expect(mocks.eventUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "evt_c" }, data: expect.objectContaining({ status: "synced" }) })
+    );
   });
 
   it("retryPendingIntegrationEvents: 抽出済みでも許可外医院(contact経由で解決)の分は held で数えるだけで送信しない", async () => {

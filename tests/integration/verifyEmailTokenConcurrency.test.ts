@@ -70,8 +70,10 @@ describe("verifyEmailToken: 実DBでの同時多重アクセス", () => {
     const statuses = [resultA.status, resultB.status].sort();
     // 先着1件だけが"verified"、競合した側は"already_verified"(invalidにはならない)。
     expect(statuses).toEqual(["already_verified", "verified"]);
-    expect(resultA.contactId).toBe(contact.id);
-    expect(resultB.contactId).toBe(contact.id);
+    for (const result of [resultA, resultB]) {
+      expect(result.status).not.toBe("error");
+      if (result.status !== "error") expect(result.contactId).toBe(contact.id);
+    }
 
     const latest = await prisma.contact.findUniqueOrThrow({ where: { id: contact.id } });
     expect(latest.emailVerifiedAt).not.toBeNull();
@@ -81,6 +83,6 @@ describe("verifyEmailToken: 実DBでの同時多重アクセス", () => {
 
     const events = await prisma.integrationEvent.findMany({ where: { contactId: contact.id } });
     expect(events).toHaveLength(1);
-    expect(events[0].eventType).toBe("email_verified");
+    expect(events[0]?.eventType).toBe("email_verified");
   });
 });

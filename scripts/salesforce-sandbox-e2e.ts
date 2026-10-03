@@ -99,8 +99,8 @@ async function main() {
   const dbDir = mkdtempSync(path.join(tmpdir(), "dentshift-sf-e2e-"));
   process.env.DATABASE_URL = `file:${path.join(dbDir, "e2e.db")}`;
   process.env.SALESFORCE_PROVIDER = "salesforce";
-  // 2026-10-03: 段階的同期ガード。この検証は一時DB内の検証用医院だけを扱うため全件許可する。
-  process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST || "*";
+  // 2026-10-03: 段階的同期ガード(SALESFORCE_SYNC_CLINIC_ALLOWLIST)。全件許可の指定は存在しないため、
+  // 一時DBに作成した検証用医院のIDを作成直後に明示設定する(下記 clinic 作成箇所)。
   process.env.TIMEREX_BOOKING_REF_SECRET = `e2e-${runId}`;
   process.env.APP_BASE_URL = process.env.APP_BASE_URL || "https://test.dentshift.jp";
   delete process.env.SALESFORCE_ALERT_EMAIL; // 検証中の失敗通知メールは送らない
@@ -131,6 +131,8 @@ async function main() {
       utmCampaign: runId,
     },
   });
+  // 段階的同期ガード: この検証で作成した医院だけを許可する(他の医院は送信されない)。
+  process.env.SALESFORCE_SYNC_CLINIC_ALLOWLIST = clinic.id;
   const diagnosis = await prisma.diagnosis.create({
     data: {
       clinicId: clinic.id,
@@ -224,7 +226,7 @@ async function main() {
   const future = (days: number) => new Date(Date.now() + days * 86400000).toISOString();
   await applyTimeRexBooking(booking(`${runId}-tx1`, future(7)));
   await applyTimeRexBooking(booking(`${runId}-tx1`, future(7))); // TimeRexの再送
-  let consults = await one(`SELECT Id FROM DentShift_Consultation__c WHERE DentShift_Clinic_Id__c = '${clinic.id}'`);
+  const consults = await one(`SELECT Id FROM DentShift_Consultation__c WHERE DentShift_Clinic_Id__c = '${clinic.id}'`);
   check("予約成立→相談予約1件(再通知で重複しない)", consults.length === 1, `${consults.length}件`);
   // 予約変更: TimeRexの通知仕様は確定・取消のみ。変更は「旧予約の取消+新予約の確定」として届く想定で検証(実挙動は要確認)
   await applyTimeRexBooking(booking(`${runId}-tx1`, future(7), "event_cancelled"));

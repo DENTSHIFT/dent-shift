@@ -8,8 +8,9 @@ describe("parseSalesforceSyncClinicAllowlist(段階的同期ガード)", () => {
     expect(parseSalesforceSyncClinicAllowlist({ SALESFORCE_SYNC_CLINIC_ALLOWLIST: "   " })).toEqual({ mode: "none", reason: "empty" });
   });
 
-  it("'*' は全医院許可", () => {
-    expect(parseSalesforceSyncClinicAllowlist({ SALESFORCE_SYNC_CLINIC_ALLOWLIST: " * " })).toEqual({ mode: "all" });
+  it("'*'(全医院許可)は存在せず不正値として全件停止", () => {
+    expect(parseSalesforceSyncClinicAllowlist({ SALESFORCE_SYNC_CLINIC_ALLOWLIST: "*" })).toEqual({ mode: "none", reason: "invalid" });
+    expect(parseSalesforceSyncClinicAllowlist({ SALESFORCE_SYNC_CLINIC_ALLOWLIST: " * " })).toEqual({ mode: "none", reason: "invalid" });
   });
 
   it("医院IDの列挙は list(前後空白を除去)", () => {

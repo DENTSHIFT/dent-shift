@@ -706,18 +706,34 @@ export async function retryPendingIntegrationEvents(
   if (config.provider === "disabled") return { attempted: 0 };
 
   // 段階的同期ガード: 許可リストが無い(未設定・空・不正)ならDBも参照せず終了する。
-  // 許可リストが医院IDの列挙なら、抽出条件にも含めて許可外イベントが処理枠(limit)を
+  // 許可リスト(医院IDの列挙)を抽出条件にも含め、許可外イベントが処理枠(limit)を
   // 占有しないようにする(送信直前の判定はsyncIntegrationEvent側でも行う)。
   const allowlist = resolveSalesforceSyncClinicAllowlistFromProcessEnv();
   if (allowlist.mode === "none") return { attempted: 0, stoppedReason: "allowlist_closed" };
+  const allowedClinicIds = [...allowlist.clinicIds];
+  // clinicIdが空でcontact経由に医院を特定するイベント(resolveClinicId参照)も取りこぼさないよう、
+  // 許可医院に所属するContactのIDを先に引き、「clinicIdが許可医院」または
+  // 「clinicIdが空かつcontactIdが許可医院のContact」を抽出対象にする。
+  const allowedContacts = await prisma.contact.findMany({
+    where: { clinicId: { in: allowedClinicIds } },
+    select: { id: true },
+  });
+  const allowedContactIds = allowedContacts.map((c) => c.id);
 
   const now = new Date();
   const events = await prisma.integrationEvent.findMany({
     where: {
       status: { in: ["pending", "failed"] },
       retryCount: { lt: MAX_RETRY_COUNT },
-      OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
-      ...(allowlist.mode === "list" ? { clinicId: { in: [...allowlist.clinicIds] } } : {}),
+      AND: [
+        { OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }] },
+        {
+          OR: [
+            { clinicId: { in: allowedClinicIds } },
+            ...(allowedContactIds.length > 0 ? [{ clinicId: null, contactId: { in: allowedContactIds } }] : []),
+          ],
+        },
+      ],
     },
     orderBy: { createdAt: "asc" },
     take: limit,
