@@ -21,3 +21,32 @@ PO承認(2026-10-03): `dent-shift-test` 限定で `1cb6d03` の配備と許可�
 
 ## 1. 実施ログ
 (以下、実施順に追記)
+
+| 時刻(JST) | 操作 | 結果 |
+|---|---|---|
+| 22:00頃 | `git push origin feature/salesforce-crm-sync`(`583316c..d7b6942`) | Vercel Preview `d7b6942` ビルド → Ready(46s) |
+| 22:05頃 | Vercel `dent-shift-test` Production に `SALESFORCE_SYNC_CLINIC_ALLOWLIST=cmuqz3wv40003vb6wrh259iph`(Config型、Productionのみ)を追加 | 追加成功(「再デプロイが必要」表示) |
+| 22:08頃 | Preview `d7b6942` の「…」→「Promote to Production」(本番環境変数で再ビルド。Force等は未使用) | Production デプロイ `7PYtWGzdD` ビルド開始 |
+| 22:00:37 | Production `7PYtWGzdD`(ソース `d7b6942`)Ready(57s)。`test.dentshift.jp` に反映。ビルド警告10行は npm `install-scripts` 通知のみ | 配備完了 |
+| 22:01:22 | `GET /api/ops/salesforce-connection-check` → 401(ログインが必要) | 接続先の読み取り確認は運用者ログインが無いため未実施(代替: Cronログ/イベント結果で判定) |
+| 22:01:38 | テストDB `IntegrationEvent` に検証イベント3件をINSERT(status pending, retryCount 0) | `alwverify20261003a1`(A, clinicIdあり)/ `alwverify20261003a2`(clinicId NULL, contactId=AのContact)/ `alwverify20261003b1`(B, clinicIdあり) |
+| 22:07:46 | 直前のCron(22:00:41、旧配備/新配備の切替直後)は検証イベント作成前のため対象外。次回Cron(22:15)待ち | 3件とも pending / retryCount 0 のまま |
+| 22:15:41 | Cron `GET /api/internal/salesforce/retry`(新配備 `7PYtWGzdD` / host `dent-shift-test-71b8on1w2…`、vercel-cron、200、3.27s) | Vercelログの外部API記録: `inspiration-customization-3670--dsverify.sandbox.my.salesforce.com` へ OAuth 1回、`Lead GET(DentShift_Clinic_Id__c=A)` → `Account/Contact/Opportunity PATCH` のシーケンスが **2回**(A1・A2分)。**医院B向けの呼び出しは0回** |
+| 22:16:56 (DB) | 検証イベントの状態 | `a1`: **synced**(attempted/processed 13:15:43 UTC)/ `a2`(clinicId NULL・contact経由): **synced**(13:15:44)/ `b1`: **pending・retryCount 0・lastAttemptedAt なし・nextRetryAt なし**(保持) |
+
+## 2. 実測結果まとめ
+
+| 確認項目 | 結果 |
+|---|---|
+| 接続先 | `dsverify` Sandbox(Cronの外部API記録のホスト名で確認。組織ID照合はアプリ内 `SALESFORCE_EXPECTED_ORG_ID` チェックを通過して書き込みが成功したことで間接確認。`/api/ops/salesforce-connection-check` は運用者ログインが無く未実施) |
+| 許可医院(A)の同期 | ✓ 2件とも synced。Sandboxの Account/Contact/Opportunity(契約 `cmur2hsyx000214cgfnm82jys`)が外部IDでupsertされた |
+| Contact経由イベント(clinicId NULL) | ✓ Cronで取得され、contact→医院Aに解決して同期(a2) |
+| 許可外(B)の保持 | ✓ 外部API呼び出し0回、status pending・retryCount 0・試行日時なし・nextRetryAt なし |
+| 実通知 | SMS/メール/Stripe/TimeRex は発生せず(Cronの外部APIはSalesforce Sandboxのみ) |
+| 許可リスト | `SALESFORCE_SYNC_CLINIC_ALLOWLIST=cmuqz3wv40003vb6wrh259iph`(医院Aのみ)を**維持**。無制限同期へは戻さない |
+
+## 3. 残件
+- 不明なテスト失敗1回(ローカル `vitest`、2026-10-03 21:43頃、失敗テスト名未捕捉。以後5回連続全件通過)— 未解決事項として保持。再発時は失敗箇所を特定するまで検証を止める。
+- `SALESFORCE_PROVIDER` の値は Vercel 上で秘密扱いのため未表示(Stage2報告では `salesforce`。Cronが実際にSandboxへ書き込んだことから有効と判断)。
+- 検証イベント3件(`alwverify20261003a1/a2/b1`)は削除せず残す。`b1` は許可外のため以後も pending のまま(Cronの抽出対象外)。
+- 本番DB適用・本番メタデータ配備・本番データ変更は引き続き未承認。
