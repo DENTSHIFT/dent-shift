@@ -7,6 +7,11 @@
 > 変換の実行・自動化実装(Apex/Flow等による自動変換)はこの文書の対象外。`docs/PRODUCTION_MIGRATION_PLAN_2026-10-03.md` 4.2a節・4.2b節の「Lead運用方針」「医院重複統合の要否」自体の最終決定は、本書では行わない(未決のまま、判断に必要な材料のみ整理する)。
 > 本書の記載は `src/server/services/salesforceSync.ts`、`src/domain/integration/salesforceCrmMapping.ts`、`src/server/providers/salesforce/salesforceClient.ts`、`salesforce/force-app/main/default/flows/DentShift_Preserve_Do_Not_Call_On_Convert.flow-meta.xml`、および `docs/SALESFORCE_CRM_FIELD_SPEC.md` 等の既存ドキュメントを読んだ内容に基づく。想定・推測は「未確認」「未決定」と明記する。
 
+> **採用状況(2026-10-03、PO判断)**: 本手順は「初期運用の候補」として採用された。**本番運用の開始・実際のLead変換の実行はまだ承認されていない。** 以下は実行前に確認・決定すべき未確認事項として明示的に残す:
+> - 所有者(Owner)割当ルール(新規Lead/既存Accountの所有者をどちらに揃えるか)は未決定。
+> - DoNotCall保持Flowの本番組織への反映有無は未確認(現状Sandbox限定での存在のみ確認済み)。
+> - 既存Account/Contactの選択条件(外部IDが見つからない場合に、どの基準で「既存候補とみなす」か)は、本書のチェックリスト(6節)以上には踏み込んでおらず、Salesforce標準の重複ルール・マッチングルールとの整合は未確認。
+
 ---
 
 ## 0. 前提: 自動連携との関係
