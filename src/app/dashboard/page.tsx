@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { withBookingRef } from "@/server/integration/bookingRef";
 import type { DomainScore, OverallScoreStatus } from "@/domain/diagnosis/types";
 import type { CompetitorClinic, PatientQuestionResult } from "@/domain/competitor/types";
 import type { ImprovementCandidate } from "@/domain/improvement-task/types";
@@ -278,9 +277,10 @@ export default async function DashboardPage() {
     history,
     previousForDisplay
   );
-  const rawBookingUrl = process.env.NEXT_PUBLIC_SPECIALIST_BOOKING_URL;
-  // 予約と医院の対応付け用に署名付き医院参照を付ける(TimeRexのurl_paramsで返る)。
-  const bookingUrl = rawBookingUrl ? withBookingRef(rawBookingUrl, contact.clinicId) : undefined;
+  // 署名付きds_refはウィジェットのurl_params経由でのみWebhookへ届く(直接リンクでは
+  // 反映されないことを実機で確認済み、2026-10-03)。医院紐付けを保証するため、TimeRexへ
+  // 直接リンクさせず、埋め込みウィジェットを持つ/consultページを必ず経由させる。
+  const bookingUrl = process.env.NEXT_PUBLIC_SPECIALIST_BOOKING_URL ? "/consult" : undefined;
   let checkoutReady = false;
   try {
     checkoutReady = resolveBillingConfigFromProcessEnv().provider === "stripe";

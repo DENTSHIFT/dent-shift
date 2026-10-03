@@ -3,10 +3,11 @@
 import Script from "next/script";
 import { useRef } from "react";
 import styles from "./TimeRexEmbed.module.css";
+import { callTimerexCalendarWithBookingUrl, stripTimerexWidgetDataUrl } from "./timerexWidgetParams";
 
 declare global {
   interface Window {
-    TimerexCalendar?: () => void;
+    TimerexCalendar?: (args?: { url_params?: Record<string, string> }) => void;
   }
 }
 
@@ -14,9 +15,14 @@ const TIMEREX_EMBED_SCRIPT_ID = "timerex-embed-script";
 const TIMEREX_EMBED_SCRIPT_SRC = "https://asset.timerex.net/js/embed.js";
 
 /**
- * 診断結果ページの「診断結果について無料相談」CTA直下にのみ埋め込むTimeRexカレンダー
- * (2026-09-24)。LP・/visualは従来どおり外部URL(bookingUrl)への遷移CTAのみを維持し、
- * この埋め込みは診断後の結果ページに限定する。
+ * 医院とTimeRex予約を対応付ける必要がある全ての導線(診断結果ページ、/consult経由の
+ * ダッシュボード・初期設定ページ)で共通して使うTimeRex埋め込みカレンダー(2026-09-24、
+ * 2026-10-03に共通化)。bookingUrlのクエリに付いたds_ref(withBookingRefで署名済み)を
+ * ウィジェット公式のurl_params経由でWebhookまで届ける(ホスト型ページへの直接リンクでは
+ * Webhookのevent.url_paramsに反映されないことを実機で確認済み、2026-10-03)。
+ *
+ * 下の直接リンク(フォールバック)はJS無効・読み込み失敗時のためのものであり、
+ * url_paramsを運ばないため医院紐付けは保証されない。
  *
  * 二重初期化・画面遷移時のエラー対策:
  * - next/scriptの`onReady`は「スクリプトが既に他所で読み込み済みでも、このコンポーネントが
@@ -35,10 +41,11 @@ export function TimeRexEmbed({ bookingUrl }: { bookingUrl: string }) {
 
   function initializeIfReady() {
     if (initializedRef.current) return;
-    if (typeof window === "undefined" || typeof window.TimerexCalendar !== "function") return;
+    if (typeof window === "undefined") return;
     try {
-      window.TimerexCalendar();
-      initializedRef.current = true;
+      if (callTimerexCalendarWithBookingUrl(window.TimerexCalendar, bookingUrl)) {
+        initializedRef.current = true;
+      }
     } catch {
       // 埋め込みウィジェットの初期化失敗時も、下のフォールバックリンクで予約は継続できる。
     }
@@ -53,7 +60,7 @@ export function TimeRexEmbed({ bookingUrl }: { bookingUrl: string }) {
       <div className={styles.desktopCalendar}>
         <div
           id="timerex_calendar"
-          data-url={bookingUrl}
+          data-url={stripTimerexWidgetDataUrl(bookingUrl)}
           style={{ width: "100%", minWidth: 0, minHeight: 480, boxSizing: "border-box" }}
         />
         <p style={{ margin: "10px 0 0", fontSize: 11, color: "#6B7280", overflowWrap: "anywhere" }}>

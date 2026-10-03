@@ -23,7 +23,7 @@ import { isDiagnosisResultAccessible } from "./resultAccess";
 import { formatMeasuredAtInJapan } from "@/domain/diagnosis/formatMeasuredAt";
 import { buildResultEmailDeliveryNotice } from "@/domain/email/resultEmailDeliveryStatus";
 import { TrackedCtaLink } from "./TrackedCtaLink";
-import { TimeRexEmbed } from "./TimeRexEmbed";
+import { TimeRexEmbed } from "@/components/timerex/TimeRexEmbed";
 import { InstructionPdfOrderButton } from "./InstructionPdfOrderButton";
 import { SelfServeToggleButton } from "./SelfServeToggleButton";
 

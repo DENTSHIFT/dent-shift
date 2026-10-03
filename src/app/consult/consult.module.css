@@ -1,0 +1,32 @@
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.back {
+  display: inline-block;
+  color: #2563eb;
+  font-size: 13px;
+  text-decoration: none;
+  margin-bottom: 16px;
+}
+
+.title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f1b2d;
+}
+
+.lead {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #374151;
+}
+
+.unavailable {
+  margin-top: 24px;
+  font-size: 13px;
+  color: #6b7280;
+}
