@@ -1207,9 +1207,7 @@ function ConsultationCta({
       <TrackedCtaLink
         diagnosisId={diagnosisId}
         eventType="online_consultation_clicked"
-        href={bookingUrl}
-        target="_blank"
-        rel="noreferrer"
+        href="#timerex_calendar"
         aria-label="スペシャリストとの45分相談の空き日時を確認する"
         style={{
           display: "inline-flex",
@@ -1231,7 +1229,10 @@ function ConsultationCta({
 
       {/* 2026-09-24: 診断前(LP/visual)は外部URLへ遷移するボタンのみだが、
           診断後のこの結果ページでは、その場で予約できるようTimeRexカレンダーを
-          CTA直下に埋め込む。同じbookingUrlを使うため、LP・メールと予約URLは統一されている。 */}
+          CTA直下に埋め込む。同じbookingUrlを使うため、LP・メールと予約URLは統一されている。
+          2026-10-03: 上のCTAボタンはTimeRexへの直接リンクをやめ、この埋め込み
+          (#timerex_calendar)へページ内遷移するよう変更した(直接リンクはds_refが
+          Webhookのurl_paramsに載らず医院紐付けを保証できないため)。 */}
       <TimeRexEmbed bookingUrl={bookingUrl} />
     </div>
   );

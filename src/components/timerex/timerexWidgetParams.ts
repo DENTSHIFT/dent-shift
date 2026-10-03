@@ -1,15 +1,34 @@
+import { BOOKING_REF_PARAM } from "@/server/integration/bookingRef";
+
+/**
+ * TimeRexへ転記してよいと用途を確認済みのクエリパラメータのみの許可リスト。
+ * bookingUrlには将来どのようなクエリが付与されるか呼び出し側次第で予測できないため、
+ * 全転記はせず、ここに列挙したキーだけを対象にする(機密値を誤ってTimeRexへ
+ * 送らないため)。
+ * - ds_ref: 医院紐付け用の署名付き参照(このアプリが発行)
+ * - utm_source/utm_medium/utm_campaign: TimeRex公式Webhookリファレンスの例にも
+ *   登場する、計測用の一般的なUTMパラメータ
+ */
+const ALLOWED_TIMEREX_URL_PARAM_KEYS: readonly string[] = [
+  BOOKING_REF_PARAM,
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+];
+
 /**
  * TimeRex埋め込みウィジェット公式仕様(ウィジェットリファレンス「Integration by
- * parameters」)に基づき、bookingUrlのクエリ文字列に付いた全パラメータ(ds_ref、
- * および将来utm_*等が付与された場合も含む)を、window.TimerexCalendar({ url_params:
- * {...} }) へ渡す引数として組み立てる。
+ * parameters」)に基づき、bookingUrlのクエリ文字列のうち許可リストに載っている
+ * パラメータだけを、window.TimerexCalendar({ url_params: {...} }) へ渡す引数として
+ * 組み立てる。
  *
  * data-url(#timerex_calendarのカレンダーURL)からはクエリを取り除く構成にするため
- * (stripTimerexWidgetDataUrl参照)、既存のクエリパラメータをここで落とさず全て
- * url_paramsへ転記する。ホスト型ページへの直接リンク(URLクエリへの付与のみ)では
- * WebhookのEvent.url_paramsに反映されないことを実機で確認済み(2026-10-03)。
- * ウィジェットのJavaScript API経由で明示的に渡した場合にWebhookへ反映される旨は
- * 公式ドキュメントに記載がある。
+ * (stripTimerexWidgetDataUrl参照)、許可リスト内のパラメータはここで落とさず
+ * url_paramsへ転記する。それ以外のクエリ(将来何らかの理由で付与された場合)は
+ * 用途未確認のためTimeRexへは送らない。ホスト型ページへの直接リンク(URLクエリへの
+ * 付与のみ)ではWebhookのEvent.url_paramsに反映されないことを実機で確認済み
+ * (2026-10-03)。ウィジェットのJavaScript API経由で明示的に渡した場合にWebhookへ
+ * 反映される旨は公式ドキュメントに記載がある。
  *
  * 署名鍵(TIMEREX_BOOKING_REF_SECRET)はここでは一切扱わない。ds_refの値はサーバー側で
  * 生成済みの署名付き文字列であり、bookingUrlのクエリとして既にブラウザへ渡っている
@@ -22,12 +41,12 @@ export function extractTimerexWidgetUrlParams(bookingUrl: string): Record<string
   } catch {
     return undefined;
   }
-  if ([...parsed.searchParams.keys()].length === 0) return undefined;
   const params: Record<string, string> = {};
-  for (const [key, value] of parsed.searchParams.entries()) {
-    if (!(key in params)) params[key] = value;
+  for (const key of ALLOWED_TIMEREX_URL_PARAM_KEYS) {
+    const value = parsed.searchParams.get(key);
+    if (value) params[key] = value;
   }
-  return params;
+  return Object.keys(params).length > 0 ? params : undefined;
 }
 
 /** ウィジェットの#timerex_calendarへ渡すdata-url(クエリなしのカレンダーURL)。 */

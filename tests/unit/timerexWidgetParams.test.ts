@@ -12,7 +12,7 @@ describe("timerexWidgetParams", () => {
     });
   });
 
-  it("ds_ref以外の既存クエリ(utm_*等)もdata-urlから落とさずurl_paramsへ転記する", () => {
+  it("許可リストのutm_*もds_refと一緒にurl_paramsへ転記する", () => {
     expect(
       extractTimerexWidgetUrlParams(
         "https://timerex.net/s/team/cal?utm_source=x&utm_medium=email&ds_ref=clinic_1.sig"
@@ -20,12 +20,21 @@ describe("timerexWidgetParams", () => {
     ).toEqual({ utm_source: "x", utm_medium: "email", ds_ref: "clinic_1.sig" });
   });
 
+  it("許可リストに無いクエリは用途未確認のため転記しない(機密値を誤送信しない)", () => {
+    expect(
+      extractTimerexWidgetUrlParams(
+        "https://timerex.net/s/team/cal?ds_ref=clinic_1.sig&session_token=secret&email=user@example.com"
+      )
+    ).toEqual({ ds_ref: "clinic_1.sig" });
+    expect(extractTimerexWidgetUrlParams("https://timerex.net/s/team/cal?session_token=secret")).toBeUndefined();
+  });
+
   it("クエリが無ければundefinedを返す(不正なURLでも例外を投げない)", () => {
     expect(extractTimerexWidgetUrlParams("https://timerex.net/s/team/cal")).toBeUndefined();
     expect(extractTimerexWidgetUrlParams("not a url")).toBeUndefined();
   });
 
-  it("#timerex_calendarのdata-url用にクエリを取り除く(utm_*を含め全て)", () => {
+  it("#timerex_calendarのdata-url用にクエリを取り除く(許可外のパラメータを含め全て)", () => {
     expect(
       stripTimerexWidgetDataUrl("https://timerex.net/s/team/cal?utm_source=x&ds_ref=clinic_1.sig")
     ).toBe("https://timerex.net/s/team/cal");
