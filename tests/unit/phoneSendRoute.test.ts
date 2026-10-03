@@ -90,3 +90,87 @@ describe("POST /api/auth/phone/send: 外部障害時のエラーハンドリン�
     expect(mocks.sendVerification).toHaveBeenCalledWith("+819012345678");
   });
 });
+
+describe("POST /api/auth/phone/send: 再送制限", () => {
+  it("1分以内の再送は429で、Twilioを呼ばない", async () => {
+    mocks.currentContact.mockResolvedValue({
+      id: "contact-1",
+      clinicId: "clinic-1",
+      phoneNumber: "+819012345678",
+      smsStatus: "sent",
+      smsSentAt: new Date(Date.now() - 1000 * 10),
+      smsResendCount: 0,
+      registrationStep: "sms",
+    });
+    const response = await POST(request({ phoneNumber: "09012345678" }));
+    expect(response.status).toBe(429);
+    expect((await response.json()).error).toBe("再送は1分間隔でのみ可能です");
+    expect(mocks.sendVerification).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("送信回数の上限を超えると429で、Twilioを呼ばない", async () => {
+    mocks.currentContact.mockResolvedValue({
+      id: "contact-1",
+      clinicId: "clinic-1",
+      phoneNumber: "+819012345678",
+      smsStatus: "sent",
+      smsSentAt: new Date(Date.now() - 1000 * 60 * 10),
+      smsResendCount: 5,
+      registrationStep: "sms",
+    });
+    const response = await POST(request({ phoneNumber: "09012345678" }));
+    expect(response.status).toBe(429);
+    expect((await response.json()).error).toBe(
+      "送信回数の上限に達しました。時間をおいて再度お試しください"
+    );
+    expect(mocks.sendVerification).not.toHaveBeenCalled();
+  });
+
+  it("誤入力ロック中(クールダウン内)は429でTwilioを呼ばない", async () => {
+    mocks.currentContact.mockResolvedValue({
+      id: "contact-1",
+      clinicId: "clinic-1",
+      phoneNumber: "+819012345678",
+      smsStatus: "locked",
+      smsSentAt: new Date(Date.now() - 1000 * 60 * 5), // 5分前(クールダウン15分以内)
+      smsResendCount: 0,
+      registrationStep: "sms",
+    });
+    const response = await POST(request({ phoneNumber: "09012345678" }));
+    expect(response.status).toBe(429);
+    expect((await response.json()).error).toBe(
+      "誤入力の上限に達しました。しばらく待ってから再度お試しください"
+    );
+    expect(mocks.sendVerification).not.toHaveBeenCalled();
+  });
+
+  it("ロックのクールダウン経過後は再送できる", async () => {
+    mocks.currentContact.mockResolvedValue({
+      id: "contact-1",
+      clinicId: "clinic-1",
+      phoneNumber: "+819012345678",
+      smsStatus: "locked",
+      smsSentAt: new Date(Date.now() - 1000 * 60 * 20), // 20分前(クールダウン15分超過)
+      smsResendCount: 0,
+      registrationStep: "sms",
+    });
+    const response = await POST(request({ phoneNumber: "09012345678" }));
+    expect(response.status).toBe(200);
+    expect(mocks.sendVerification).toHaveBeenCalledWith("+819012345678");
+  });
+});
+
+describe("POST /api/auth/phone/send: 送信失敗からの復帰", () => {
+  it("Twilio送信失敗後、再試行すれば正常に送信できる", async () => {
+    mocks.sendVerification.mockRejectedValueOnce(new SmsDeliveryError("Twilio API error"));
+    const first = await POST(request({ phoneNumber: "09012345678" }));
+    expect(first.status).toBe(502);
+    expect(mocks.update).not.toHaveBeenCalled();
+
+    mocks.sendVerification.mockResolvedValueOnce(undefined);
+    const second = await POST(request({ phoneNumber: "09012345678" }));
+    expect(second.status).toBe(200);
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+  });
+});
