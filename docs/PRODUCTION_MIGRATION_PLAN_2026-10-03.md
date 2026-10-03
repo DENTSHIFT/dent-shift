@@ -45,12 +45,12 @@
 
 以下は**現時点ですべて未充足**。1つでも未解決のまま本番適用することをPOは想定していない前提で記載する。
 
-1. **TimeRex url_params欠落原因の特定または回避策確定**(4.1節参照) — 未解決。
-2. **Lead重複防止の運用ルール最終合意**(4.2節参照) — 未解決。
+1. **TimeRex url_params欠落原因の特定または回避策確定**(4.1節・4.2c節参照) — 未解決。TimeRexの医院紐付け・日程変更後の紐付け維持は、PO判断により**本番有効化前の必須条件**(4.2c節参照)。
+2. **Lead運用方針・医院重複統合の運用ルール最終合意**(4.2a節・4.2b節参照) — 未解決。
 3. **SMS実送信体制の確定**(4.3節参照) — 未解決。
 4. **本番Salesforce組織の同一性照合**(有料契約組織IDとAPI接続先組織IDが一致するか) — `SALESFORCE_PRODUCTION_ROLLOUT.md`記載の手順1が未完了。
 5. **Salesforce連携ユーザーの権限最小化** — 現状「システム管理者」プロファイルで動作しており、本番投入前に専用インテグレーションユーザー(最小権限)への切替が必要(`SALESFORCE_PRODUCTION_ROLLOUT.md`記載)。
-6. **Stage2検証の完了**(`SALESFORCE_STAGE1_FINAL_REPORT.md` 3章): Stripeテスト環境との実接続、TimeRex本番分離環境との実接続、本番Salesforce同期ログ集計、既存31件リードとの照合(本番DBとの照合は未実施、ローカルDB照合のみ)、契約組織確認。
+6. **Stage2検証の完了**(`SALESFORCE_STAGE1_FINAL_REPORT.md` 3章): Stripeテスト環境との実接続、TimeRex本番分離環境との実接続、本番Salesforce同期ログ集計、既存リードとの照合(4.2b節参照: 本番Lead総数37件、本番Clinic5件との名称・URL照合は実施済みで一致なし・URL欠損9件、メール照合は未実施。根拠ファイルは一部未特定)、契約組織確認。
 7. **`dent-shift-production` VercelプロジェクトのGit連携状態の確認**(未連携の可能性、`PRODUCTION_DEPLOYMENT.md`記載)。
 8. **本番用DBの新規作成**(testと共有しない)。
 9. **`.claude/launch.json`混入の扱い決定**。
@@ -67,15 +67,30 @@
 - 対象予約は取消済み(`ConsultationBooking.status = cancelled`)。
 - **判断材料**: url_paramsが届かない場合、クリニック紐付け予約は会員メール完全一致でのみ紐づき、それ以外は「医院を特定できない予約」として運用画面に残る仕様(`SALESFORCE_REQUIREMENTS_STATUS.md`)。これは機能停止ではなく運用上のフォールバックがあるため、**原因特定を本番移行のブロッカーにするかはPO判断が必要**。ただし原因未特定のまま本番投入すると、本番環境でも同じ欠落が再現し、クリニック紐付けの精度が担保できないリスクがある。
 
-### 4.2 Lead運用方針: 重複防止ルール未確定
-- `docs/SALESFORCE_REQUIREMENTS_STATUS.md`の未解決事項として: (1)未ログイン再診断による医院重複の統合要否(自動統合しない方針を提案中、未決定)、(2)TimeRex予約とds_ref紐付けの実際の到達可否(4.1と関連)、(3)TimeRexのreschedule通知形式(取消+新規 or 同一ID再確定)未確認、(4)契約組織同一性未完了、(5)Salesforce構築チームとの決定記録がリポジトリ内に存在しない。
-- `SALESFORCE_PRODUCTION_ROLLOUT.md`3章: 既存リード31件は削除・統合しない方針。確実一致1件、要確認3件、対応先なし27件(うち19件はテスト用ドメインと推測)。**本番DBとの照合は未実施**、ローカルDB照合のみ。
-- Lead→Contact変換時のDoNotCall保持Flowは実装・Sandbox E2Eで検証済み(Stage1範囲内で完了)だが、これは重複防止そのものとは別の話。**重複防止運用ルール自体は最終決定していない**。
+### 4.2a Lead運用方針そのもの(重複Lead防止ルール・所有権/担当割当)
+- `docs/SALESFORCE_REQUIREMENTS_STATUS.md`の未解決事項として: (1)TimeRex予約とds_ref紐付けの実際の到達可否(4.1および4.2cと関連)、(2)TimeRexのreschedule通知形式(取消+新規 or 同一ID再確定)未確認、(3)契約組織同一性未完了、(4)Salesforce構築チームとの決定記録がリポジトリ内に存在しない。
+- `src/server/services/salesforceSync.ts`の`upsertContactAllowingOwnLeadDuplicate`は、「この医院自身の、同じEmailを持つ未コンバートLead」に限定してSalesforce標準重複ルールのallowSaveで再送する設計(重複Lead自体を防ぐルールではなく、Contact upsert時に自医院の既存Leadとだけ衝突した場合の救済策)。重複防止運用ルール(誰が・どの条件で統合/割当を判断するか)そのものは**最終決定していない**。代替設計の比較は`docs/SALESFORCE_ALLOWSAVE_ALTERNATIVES_2026-10-03.md`を参照。
+- 所有権・担当割当: `SALESFORCE_PRODUCTION_ROLLOUT.md`3章に「担当営業(所有者)の手動変更は上書きしない」との記載はあるが、新規割当ルール(誰が新規Leadの担当になるか)の明文化はリポジトリ内に見つからなかった。
+
+### 4.2b 医院(Clinic)の重複統合の要否
+- `SALESFORCE_REQUIREMENTS_STATUS.md`記載の未解決事項: 未ログイン再診断により同じ医院が別の医院ID(=別Leadのexternal ID)になるケースがあり、自動統合しない方針を提案中・未決定。`SALESFORCE_PRODUCTION_ROLLOUT.md`3章も同様に「未ログインでの再診断により同じ医院が別の医院IDになるケースは未解決。自動統合はせず、`DentShift_Site_Domain__c`をSalesforceの重複ルール・レポートで確認する運用を推奨」とするのみで、最終承認された運用ルールではない。
+- 既存Leadとの照合状況(件数の正確な記載): `docs/SALESFORCE_PRODUCTION_ROLLOUT.md`3章では、本番組織の既存リード31件について「確実に一致1件/要確認3件/対応先なし27件(うち19件はテスト用ドメインと推測)」という内訳を示しているが、これは**ローカルDBとの件数照合による概算**であり、同文書内に「本番DBとの照合は未実施」と明記されている。
+  その後、`docs/SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md`(2026-10-02、読み取り専用SOQL)で本番Salesforceから直接Id・作成日時・Status・IsConvertedを取得した結果、**本番Lead総数は37件**であることが確認された。同ファイルには「この37件のうちどれが元の31件に相当するかを機械的に突き合わせる基準が存在しない」と明記されており、同ファイルは氏名・会社名・URL等の個人情報/医院情報を一切取得していない(Id・作成日時・状態・変換有無のみ)。
+  - **PO指摘による訂正**: 上記に対しPOから、「基準はLead37件で、本番Clinic5件との名称・URL照合は実施済み。一致なし、URL欠損9件、メール照合未実施という限定付き結果です」という数値が提示されている。これは「照合を一切行っていない」ではなく、「名称・URL照合は実施済みで一致なし、URL欠損が37件中9件、ただしメール照合は未実施」という限定的な結果として正確に記載する。
+  - **根拠ファイルの特定状況**: リポジトリ内の`docs/SALESFORCE_SANDBOX_TEST_DATA_AUDIT.md`、`docs/SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md`、`scripts/`配下(`salesforce-initial-sync.ts`、`salesforce-sandbox-e2e.ts`等)を確認したが、「本番Clinic5件」「名称・URL照合」「URL欠損9件」に該当する実施記録・出力ファイルは見つからなかった。`SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md`は明示的に氏名・URL等を取得していないため、この照合はそれとは別の(本ドキュメント群に記録されていない)作業である可能性が高い。
+    **→ PO提供の数値、根拠ファイル未特定。** 数値自体はPO指示のとおり正確に記載するが、再現性確認のためには実施記録(クエリ・出力)の提示または追記をPOに依頼することを推奨する。
+
+### 4.2c TimeRexの医院紐付け・日程変更(reschedule)時の紐付け維持
+- `docs/TIMEREX_URL_PARAMS_INVESTIGATION_2026-10-03.md`参照。`url_params`(`ds_ref`)の欠落原因は未特定で、TimeRex公式サポートへの問い合わせ後、正式回答待ちで停止中(4.1節参照)。
+- reschedule(日程変更)時に`ds_ref`を含む紐付けが維持されるかは、同調査内で問い合わせ済みだが**未確認**(取消+新規作成なのか、同一イベントIDでの再確定なのかも含め未確認)。
+- **PO判断(承認済み方針、そのまま記載)**: TimeRexの医院紐付け・日程変更後の維持は、今回の連携を本番有効化する前の必須条件である。
 
 ### 4.3 SMS実送信: 体制未確定
-- メモリ記録: Twilioアップグレードは個人カード決済の仮契約であり、法人カード発行後に差し替えが必要。
-- `.env.example`現在値: `SMS_PROVIDER=disabled`、コメントで「プロバイダー未確定(IVRyのOTP API可否を優先確認)」と明記。
-- **矛盾**: `PRODUCTION_DEPLOYMENT.md`(2026-09-22付)は本番移行表で「SMS_PROVIDER=twilio-verify据え置き」と記載しているが、`.env.example`の最新コメントは「未確定・disabled」。**どちらが正式な現状か文書間で食い違っており、PRODUCTION_DEPLOYMENT.mdの記述が古い可能性が高い**。本番でSMS認証を有効化する場合、法人カード決済への切替と、IVRy/Twilioいずれを採用するかの最終決定が先に必要。
+- **根拠(1): Twilio個人カード決済の件** — このプロジェクトのメモリ記録(`project_twilio_personal_card.md`)による申し送り事項: Twilioアップグレードは個人カード決済の仮契約であり、法人カード発行後に差し替えが必要。リポジトリ内の一次ファイルでは確認できないため、記録の出典はメモリであることを明示する。
+- **根拠(2): IVRy確認待ちの件** — `.env.example`現在値: `SMS_PROVIDER=disabled`、コメントで「プロバイダー未確定(IVRyのOTP API可否を優先確認)」と明記されている(リポジトリ内の一次ファイル)。
+- **矛盾**: `PRODUCTION_DEPLOYMENT.md`(2026-09-22付)は本番移行表で「SMS_PROVIDER=twilio-verify据え置き」と記載しているが、`.env.example`の最新コメントは「未確定・disabled」。**どちらが正式な現状か文書間で食い違っており、PRODUCTION_DEPLOYMENT.mdの記述が古い可能性が高い**。
+- **今回実装したSMS認証(電話番号OTP)機能との関係**: サインアップ導線は電話番号OTP(SMS認証)を必須ステップとしている(`docs/DESIGN_HANDOFF_AUTH_PAGES_2026-09-20.md`に「`/verify-phone`へ遷移する(SMS認証が必須ステップのため)」と記載)。つまり、本番で`SMS_PROVIDER`が実際にSMSを送信できる状態(Twilio法人カードへの切替完了、またはIVRy採用確定のいずれか)になっていない限り、本番のサインアップ導線はSMS認証のステップで機能しない(新規会員登録が完了できない)。本番移行前に、決済手段の切替とプロバイダー(Twilio/IVRy)の最終決定が先に必要となる所以はここにある。
+- **未確認事項(断定しない)**: IVRyでOTP送信用APIが実際に利用可能かどうかの最終結論は**未確認・要確認**。Twilio法人カードへの切替時期も本ドキュメント作成時点では未確定。
 
 ---
 
@@ -148,6 +163,8 @@
 - `docs/SALESFORCE_CRM_FIELD_SPEC.md`
 - `docs/SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md`
 - `docs/SALESFORCE_SANDBOX_TEST_DATA_AUDIT.md`
+- `docs/SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md`
+- `docs/SALESFORCE_ALLOWSAVE_ALTERNATIVES_2026-10-03.md`
 - `docs/TIMEREX_URL_PARAMS_INVESTIGATION_2026-10-03.md`
 - `docs/INCIDENT_RUNBOOK.md`
 - `docs/TEST_DEPLOYMENT.md`
