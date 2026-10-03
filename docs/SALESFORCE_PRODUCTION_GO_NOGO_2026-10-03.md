@@ -119,7 +119,31 @@
 | S10 | 本番用DBが新規作成され、`IntegrationEvent`・`CrmSyncLock`テーブルがマイグレーション済み | 未完了 | `PRODUCTION_MIGRATION_PLAN` 3章#8、5章手順7 |
 | S11 | 5章の停止条件と6章の復旧手順について、監視担当者と停止権限者が決まっている | 未決 | 監視はログ目視のみ(`PRODUCTION_MIGRATION_PLAN` 7章) |
 
-S1〜S11のいずれか1つでも未充足なら**No-Go**とする。特にS1はPO判断で必須条件と確定しており、「運用フォールバック(メール完全一致)があるから許容」という判断は本書では行わない。
+### 3.1 本番組織の読み取り確認結果(2026-10-03、管理者セッションでSetup画面を目視、変更なし)
+
+対象: 本番組織 `inspiration-customization-3670.my.salesforce.com`(Lightning表示に「トライアルの残り日数 14」。S3の組織ID照合は未完了のまま)。Salesforce上のログインユーザー=木村正人(システム管理者)、画面操作=Claude。
+
+| 確認項目 | 結果 |
+|---|---|
+| システム管理者プロファイル(`00ed5000007OIpN`)の「リードの取引の開始」 | **✓ 有効** |
+| Lead のカスタム項目 | `Event_Type__c` / `Registration_Step__c` / `Trial_Ends_At__c` のみ。**`DentShift_Clinic_Id__c`・`DentShift_Do_Not_Call__c`・`DentShift_Do_Not_Call_Reason__c`・`DentShift_Site_Domain__c` 等のDentShift_*項目は存在しない** |
+| Contact のカスタム項目 | **なし**(`DentShift_User_Id__c`・`DentShift_Do_Not_Call__c` なし) |
+| Account のカスタム項目 | **なし**(`DentShift_Clinic_Id__c` なし、全25項目が標準) |
+| Flow `DentShift_Preserve_Do_Not_Call_On_Convert` | **存在しない**。フロー一覧(40件、全件「管理-インストール済み」のパッケージ由来)を表示ラベル順に目視し、該当ラベルなし。参照項目自体が無いため配備もできない |
+| 本番Lead/Clinic照合(3章S8) | **未実施(保留)**。(a) `SALESFORCE_EXPECTED_ORG_ID`の本番値が未照合・未設定(S3)、(b) 照合対象のClinic DBが未指定(ローカル`.env`はSQLiteファイル、本番DBは未作成=S10)、(c) 本番Leadに外部ID項目が無いため照合は名称/URL/メールのみ。(a)(b)が決まり次第、`scripts/salesforce-lead-clinic-match-readonly.ts`(組織ID・DBホスト確認付き、読み取り専用)をClaudeが実行する |
+| リード項目の対応付け | DentShift_*項目が無いため対象外 |
+
+**帰結**:
+- `salesforce/force-app/` のメタデータ(外部ID項目・電話禁止項目・検証ルール・Flow・権限セット)は**本番組織に未デプロイ**。S6/S6bはSandbox限定の確認であり、本番では前提自体が未成立。
+- 本番Lead 37件(`SALESFORCE_PRODUCTION_LEAD_READONLY_CHECK.md`)は外部IDを持ちえないため、「外部ID一致で既存Account/Contactに紐付ける」手順書1.2は本番ではそのままでは使えない。照合は名称/URL/メールのみとなり、手順書8.3運用ルール(外部ID未設定=個別確認)に全件が該当する。
+- `SALESFORCE_PRODUCTION_ROLLOUT.md` 記載の「既存31件が医院ID未設定」は、項目が存在しない以上「全37件が未設定」が正しい(過去記載は概算)。
+- 本番へのメタデータデプロイ(`scripts/salesforce-metadata-deploy.mjs`)は設定変更にあたり、**別途承認が必要**。本書4.2節手順3の前提条件として扱う(新規 **S12**)。
+
+| # | 条件 | 現状 | 根拠 |
+|---|---|---|---|
+| S12 | 本番組織へのDentShift_*メタデータ(外部ID項目・電話禁止項目・検証ルール・Flow・権限セット)のデプロイ完了と、デプロイ後のS6/S6b/対応付けの再確認 | **未実施(未承認)** | 本節 |
+
+S1〜S12のいずれか1つでも未充足なら**No-Go**とする。特にS1はPO判断で必須条件と確定しており、「運用フォールバック(メール完全一致)があるから許容」という判断は本書では行わない。
 
 ---
 
